@@ -1,0 +1,2558 @@
+<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><!-- AK Delivery v85: keep received orders visible after customer delivery -->
+<title>مسيّر التوصيل</title>
+<style>*{box-sizing:border-box}body{margin:0;font-family:Arial;background:#f4f6f8;color:#222}header{background:#175d79;color:#fff;padding:15px;font-size:21px;font-weight:bold}.app{display:flex;min-height:100vh}aside{width:210px;background:#11191d;color:#ccd4d8;padding:15px 0}aside h3{padding:0 15px;color:white}aside button{width:100%;text-align:right;padding:11px 15px;border:0;background:none;color:inherit}aside button:hover{background:#263238}main{flex:1;padding:14px;overflow:auto}.card{background:white;padding:14px;border-radius:9px;margin-bottom:12px;box-shadow:0 1px 5px #0001}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:8px}input,select,textarea{width:100%;padding:9px;border:1px solid #d6dce1;border-radius:6px}button{cursor:pointer}.btn{border:0;border-radius:5px;padding:8px 11px;color:white;background:#1882b3}table{width:100%;border-collapse:collapse}th,td{padding:9px;border-bottom:1px solid #eee;text-align:right;font-size:13px}.code{color:#1769aa;text-decoration:underline;font-weight:bold;cursor:pointer}.page{display:none}.page.on{display:block}.overlay{display:none;position:fixed;inset:0;background:#0008;z-index:10}.drawer{position:absolute;right:0;top:0;width:min(510px,100%);height:100%;background:white;padding:16px;overflow:auto}.close{float:left;font-size:25px;border:0;background:none}.info{display:grid;grid-template-columns:115px 1fr;gap:7px;font-size:13px}.actions{display:flex;gap:6px;flex-wrap:wrap;margin:14px 0;padding:12px 0;border-block:1px solid #ddd}.actions button{border:0;border-radius:5px;padding:8px;color:#fff}.g{background:#168b55}.y{background:#e2ad09;color:#222!important}.r{background:#dc3d4b}.gr{background:#697681}.c{background:#05aeca}.log{font-size:12px;line-height:1.8}.badge{background:#e8eef3;padding:4px 7px;border-radius:12px}@media(max-width:650px){aside{width:135px;font-size:11px}main{padding:7px}.drawer{width:95%}th,td{font-size:11px;padding:6px}}
+.phone-ltr{direction:ltr!important;unicode-bidi:bidi-override;display:inline-block;text-align:left}
+
+.login-screen{position:fixed;inset:0;background:#eef2f5;z-index:100;display:flex;align-items:center;justify-content:center;padding:20px}
+.login-card{background:#fff;width:min(390px,100%);padding:24px;border-radius:12px;box-shadow:0 8px 30px #0002}
+.login-card h2{text-align:center}.login-card input,.login-card select{margin-bottom:10px}
+.logout{float:left;background:#b42318!important;color:#fff!important;width:auto!important;border-radius:5px;margin:0 8px;padding:7px 10px!important}
+
+/* الوضع المختار يبقى محفوظاً بعد التحديث */
+html[data-view-mode="desktop"] body{min-width:1000px}
+html[data-view-mode="desktop"] .app{min-width:1000px}
+html[data-view-mode="desktop"] aside{display:block!important}
+html[data-view-mode="desktop"] main{min-width:760px}
+html[data-view-mode="mobile"] body{min-width:0!important}
+html[data-view-mode="mobile"] .app{min-width:0!important}
+
+
+/* النسخة 51: تفاصيل الطلب على يمين الشاشة في وضع الكمبيوتر */
+@media (min-width:900px){
+  body, .app, main { overflow-x:auto; }
+  #detail{
+    direction:rtl !important;
+    margin-left:0 !important;
+    margin-right:auto !important;
+    right:0 !important;
+    left:auto !important;
+  }
+  .desktopSplit, .ordersSplit, .splitLayout{
+    display:flex !important;
+    flex-direction:row !important;
+    direction:ltr !important;
+    align-items:flex-start !important;
+  }
+  .desktopSplit .detailPane,
+  .ordersSplit .detailPane,
+  .splitLayout .detailPane{
+    order:2 !important;
+    direction:rtl !important;
+    margin-left:0 !important;
+    margin-right:auto !important;
+  }
+  .desktopSplit .listPane,
+  .ordersSplit .listPane,
+  .splitLayout .listPane{
+    order:1 !important;
+    direction:rtl !important;
+    margin-right:0 !important;
+    margin-left:auto !important;
+  }
+}
+
+
+/* النسخة 52: تفاصيل الطلب ثابتة على يمين الشاشة في الهاتف والكمبيوتر */
+#detail{
+  direction:rtl !important;
+  right:0 !important;
+  left:auto !important;
+  margin-left:0 !important;
+  margin-right:auto !important;
+  text-align:right;
+}
+#detail .card, #detail .modal, #detail .panel{
+  direction:rtl !important;
+  text-align:right;
+}
+.desktopSplit, .ordersSplit, .splitLayout{
+  direction:ltr !important;
+}
+.desktopSplit .detailPane, .ordersSplit .detailPane, .splitLayout .detailPane{
+  order:2 !important;
+  direction:rtl !important;
+  margin-left:0 !important;
+  margin-right:auto !important;
+}
+.desktopSplit .listPane, .ordersSplit .listPane, .splitLayout .listPane{
+  order:1 !important;
+  direction:rtl !important;
+}
+@media (max-width:899px){
+  #detail{
+    width:100% !important;
+    max-width:100% !important;
+    right:0 !important;
+    left:auto !important;
+    margin:0 0 0 auto !important;
+  }
+}
+
+
+/* النسخة 60: تثبيت لوحة تفاصيل الطلب في الجهة اليمنى فعلياً في وضعي الهاتف والكمبيوتر */
+#overlay{direction:ltr !important;}
+#overlay > .drawer{
+  position:absolute !important;
+  right:0 !important;
+  left:auto !important;
+  margin-right:0 !important;
+  margin-left:auto !important;
+  direction:rtl !important;
+  text-align:right !important;
+  transform:none !important;
+}
+#overlay > .drawer #detail{direction:rtl !important;text-align:right !important;}
+@media (max-width:650px){#overlay > .drawer{right:0 !important;left:auto !important;width:95% !important;}}
+
+/* النسخة 63: تثبيت صارم لتفاصيل الطلب على يمين الشاشة */
+#overlay{
+  position:fixed !important;
+  inset:0 !important;
+  direction:ltr !important;
+}
+#overlay > .drawer{
+  position:fixed !important;
+  top:0 !important;
+  bottom:0 !important;
+  right:0 !important;
+  left:auto !important;
+  margin:0 !important;
+  float:none !important;
+  transform:none !important;
+  direction:rtl !important;
+  text-align:right !important;
+  width:min(510px,95vw) !important;
+  max-width:95vw !important;
+  z-index:11 !important;
+}
+html[data-view-mode="desktop"] #overlay > .drawer,
+html[data-view-mode="mobile"] #overlay > .drawer{
+  right:0 !important;
+  left:auto !important;
+  margin:0 !important;
+}
+@media (max-width:650px){
+  #overlay > .drawer{
+    right:0 !important;
+    left:auto !important;
+    width:95vw !important;
+    max-width:95vw !important;
+  }
+}
+
+
+/* النسخة 81: قائمة إرسال/استقبال شبيهة بمثال نظام الإرسال */
+.transfer-shell{background:#fff;border:1px solid #dfe4e8;border-radius:8px;overflow:hidden}
+.transfer-toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:10px;border-bottom:1px solid #e5e8eb;background:#fafbfc}
+.transfer-tab{border:1px solid #c9d1d8;background:#fff;color:#4d5962;border-radius:5px;padding:8px 12px;font-weight:bold}
+.transfer-tab.active{background:#eef4f7;border-color:#7ca6b9;color:#175d79}
+.transfer-table-wrap{width:100%;overflow-x:auto}
+.transfer-table{width:100%;border-collapse:collapse;min-width:760px}
+.transfer-table th{background:#f7f8f9;font-size:13px;font-weight:bold;color:#222;border-bottom:1px solid #dfe4e8;white-space:nowrap}
+.transfer-table td{vertical-align:middle;border-bottom:1px solid #e8ecef;font-size:13px}
+.transfer-table tr:last-child td{border-bottom:0}
+.transfer-code{color:#1769aa;text-decoration:underline;font-weight:bold;cursor:pointer;direction:ltr;display:inline-block}
+.transfer-phone{direction:ltr;display:inline-block;color:#1769aa;text-decoration:underline}
+.transfer-state{font-weight:bold;line-height:1.5}
+.transfer-date{font-size:11px;color:#65727b;white-space:nowrap}
+.receive-btn{background:#ef6666!important;color:white!important;border:0;border-radius:5px;padding:8px 11px;white-space:nowrap}
+.send-btn{background:#168b55!important;color:white!important;border:0;border-radius:5px;padding:8px 11px;white-space:nowrap}
+.transfer-empty{padding:22px;text-align:center;color:#697681}
+.transfer-summary{padding:10px 12px;background:#f7fafb;border-bottom:1px solid #e5e8eb;font-weight:bold}
+@media(max-width:650px){
+ .transfer-table{min-width:680px}
+ .transfer-table th,.transfer-table td{font-size:11px;padding:7px}
+ .receive-btn,.send-btn{padding:7px 8px;font-size:11px}
+}
+
+</style></head>
+<body>
+<div id="loginScreen" class="login-screen">
+ <div class="login-card"><h2>تسجيل الدخول</h2>
+ <select id="loginWorker"><option value="">اختر حسابك</option></select>
+<input id="loginPin" type="password" inputmode="numeric" placeholder="الرمز السري">
+<button class="btn" style="width:100%" onclick="workerLogin()">دخول الموزع</button>
+<hr>
+<h3>إنشاء حساب موزع</h3><p style="font-size:11px;color:#666">أول موزع فقط يُفعّل حسابه تلقائيًا. أي موزع بعده يحتاج موافقة المالك.</p>
+<input id="regName" placeholder="اختر اسمك">
+<input id="regPin" type="password" inputmode="numeric" placeholder="اختر رقمك السري">
+<input id="regPinConfirm" type="password" inputmode="numeric" placeholder="تأكيد الرقم السري">
+<button class="btn g" style="width:100%" onclick="workerRegister()">إنشاء حساب الموزع</button>
+ <hr><button class="btn gr" style="width:100%" onclick="ownerLogin()">دخول المالك</button>
+ <p style="font-size:11px;color:#666">المالك يستخدم رمز المالك الخاص به.</p>
+ </div>
+</div>
+<header id="appHeader" onclick="ownerTap()">مسيّر التوصيل <button class="logout" onclick="event.stopPropagation();logout()">خروج</button> <span style="display:inline-flex;gap:4px;margin-right:8px">
+<button id="viewDesktopBtn" type="button" onclick="event.stopPropagation();saveViewMode('desktop')" style="width:auto;padding:5px 7px">🖥️</button>
+<button id="viewMobileBtn" type="button" onclick="event.stopPropagation();saveViewMode('mobile')" style="width:auto;padding:5px 7px">📱</button>
+</span>
+<span id="ownerCloudMini" style="display:none;margin-right:8px;font-size:12px;padding:4px 8px;border-radius:12px;background:#ffffff22">☁️ جاهز</span>
+<span id="workerNewBadge" style="display:none;margin-right:8px;font-size:12px;padding:4px 8px;border-radius:12px;background:#ffffff22">🔔 0</span>
+</header>
+<div id="syncToast" style="display:none;position:fixed;top:72px;left:50%;transform:translateX(-50%);z-index:9999;background:#222;color:#fff;padding:9px 14px;border-radius:10px;font-size:13px;max-width:90%;text-align:center"></div>
+<div class=app><aside><h3>القائمة</h3><button onclick="go('list')">🏠 الرئيسية</button><button onclick="go('add')">➕ طلب جديد</button><button onclick="go('bulk')">📋 لصق طلبات دفعة واحدة</button><div id=stateMenu></div><button id="returnCreateMenu" onclick="go('returnCreate')">↩ طلبات الرجوع <span id="returnReqCount" class="badge">0</span></button><button id="returnBatchesMenu" onclick="go('returnBatches')">📦 سجل طلبات الإرجاع <span id="returnBatchCount" class="badge">0</span></button><button id="deliveryTransfersMenu" onclick="go('deliveryTransfers')">📥 استقبال / إرسال الطلبات <span id="deliveryTransferCount" class="badge">0</span></button><button onclick="go('workers')">👤 الموزعون</button><button onclick="go('accounts')">💰 الحسابات</button><button onclick="go('invoices')">🧾 الفواتير</button><button onclick="go('backupSafe')">🛡️ النسخ الاحتياطي</button><button onclick="go('cloudSetup')">☁️ المزامنة السحابية</button><button onclick="go('emergencySync')">🔄 مزامنة الموزع</button></aside><main>
+<section id=list class="page on"><div class=card><h2 id=title>قيد التوزيع</h2>
+<div class=grid>
+<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+  <input id=search style="flex:1;min-width:190px" placeholder="بحث برقم الطلب أو الاسم أو الهاتف" oninput="render()" onkeydown="if(event.key==='Enter'){event.preventDefault();runOrderSearch()}">
+  <button type="button" class="btn" onclick="runOrderSearch()">🔎 بحث</button>
+  <button type="button" class="btn gr" onclick="clearOrderSearch()">مسح</button>
+</div>
+<button class="btn g" onclick="exportExcel()">📊 تنزيل Excel</button>
+<button class="btn r" onclick="exportPDF()">📄 تنزيل PDF</button>
+</div></div>
+<div id="workerFinanceSummary" class="card" style="display:none"></div>
+<div class=card><table><tr><th>رقم الترتيب</th><th>رمز الطلب</th><th>المستلم</th><th>العنوان</th><th>الهاتف</th><th>القيمة والحساب</th><th>الحالة</th></tr><tbody id=rows></tbody></table></div></section>
+<section id=bulk class=page><div class=card><h2>إدخال الطلبات بالنسخ واللصق</h2>
+<p>الصق جدول الطلبات كما نسخته من المصدر، ثم اضغط «معاينة». يدعم مختلف رموز الطلبات مهما كانت بدايتها، مثل MP أو BX أو DL أو غيرها، مع الاسم والمدينة والهاتف والمبلغ.</p>
+<textarea id=bulkText style="min-height:180px" placeholder="الصق الطلبات هنا..."></textarea>
+<div style="margin-top:8px;display:flex;gap:7px;flex-wrap:wrap">
+<button class=btn onclick="previewBulk()">معاينة</button>
+<button class="btn g" onclick="importBulk()">إضافة الطلبات</button>
+</div><div id=bulkPreview style="margin-top:12px"></div></div></section>
+<section id=add class=page><div class=card><h2>إضافة طلب جديد</h2><form onsubmit="add(event)"><div class=grid><input id=seq type=text placeholder="رقم الترتيب" readonly><input id=sender placeholder="اسم الزبون المرسل" required><input id=clientNo placeholder="رمز الطلب المرسل من الزبون"><input id=recipient placeholder="اسم المستلم" required><input id=phone placeholder="الهاتف" required><input id=address placeholder="العنوان"><input id=city placeholder="المدينة" value="وجدة"><input id=product placeholder="المنتج"><input id=amount type=number step=.01 placeholder="القيمة">
+<div>
+  <label style="display:block;font-weight:700;margin:0 0 5px">إسناد الطلب إلى الموزع</label>
+  <select id=worker></select>
+</div></div><textarea id=firstComment placeholder="تعليق"></textarea><br><button class=btn>حفظ الطلب</button></form></div></section>
+<section id=returnCreate class=page><div class=card>
+<h2>طلبات الرجوع</h2>
+<p>هذه هي الطلبات التي يطلب المالك من الموزعين إرجاعها. يرسل المالك طلب الإرجاع، ثم يؤكد الموزع التنفيذ بعد إعادة الطلبات فعلياً.</p>
+<div style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:10px">
+<button class="btn g" onclick="sendReturnBatches()">↩ إرسال طلب الإرجاع للموزع</button>
+<button class="btn gr" onclick="go('returnBatches')">فتح سجل طلبات الإرجاع</button>
+</div>
+<input id=returnSearch placeholder="ابحث برقم الترتيب أو رمز الطلب أو اسم المستلم أو الهاتف" oninput="renderReturnCreate()">
+<div id=returnCreateList style="margin-top:12px"></div>
+</div></section>
+<section id=returnBatches class=page><div class=card>
+<h2>📦 سجل طلبات الإرجاع</h2>
+<p>كل مجموعة طلبات إرجاع يرسلها المالك تبقى مسجلة في التطبيق، مع اسم الموزع وعدد الطلبات وتاريخ الإرسال وتاريخ تأكيد التنفيذ.</p>
+<div id=returnBatchesList></div>
+</div></section>
+<section id=deliveryBatches class=page><div class=card>
+<h2>📥 حزم استلام الطلبات</h2>
+<p>المالك يرسل الطلبات المسندة للموزع ضمن حزمة. الموزع يؤكد استلام الحزمة كاملة، وتبقى كل حزمة مسجلة بالتاريخ وعدد الطلبات.</p>
+<div id="deliveryBatchOwnerTools" style="display:none;margin-bottom:10px">
+  <button class="btn g" onclick="createDeliveryBatches()">📦 إنشاء وإرسال حزمة الطلبات للموزع</button>
+</div>
+<div id=deliveryBatchesList></div>
+</div></section>
+<section id=deliveryTransfers class=page><div class=card>
+<h2 id="deliveryTransfersTitle">📤📥 إرسال واستلام الطلبات</h2>
+<p id="deliveryTransfersHelp">كل طلب جديد يدخل هذه القائمة تلقائياً، ثم يرسله المالك للموزع ويبقى الإرسال والاستلام مسجلين بالتاريخ.</p>
+<input id="deliveryTransferSearch" placeholder="بحث برقم الطلب أو المستلم أو الهاتف" oninput="renderDeliveryTransfers()" style="margin-bottom:10px">
+<div id="deliveryTransfersList"></div>
+</div></section>
+<section id=workers class=page><div class=card><h2>الموزعون</h2>
+<p>المالك ينشئ حساب الموزع ويحدد له الرقم السري، ثم يعطيه بيانات الدخول.</p>
+<div class=card style="margin-top:10px">
+<h3 style="margin-top:0">إنشاء حساب موزع بواسطة المالك</h3>
+<div class=grid>
+<input id="ownerWorkerName" placeholder="اسم الموزع">
+<input id="ownerWorkerPin" type="password" inputmode="numeric" placeholder="الرقم السري (4 أرقام أو أكثر)">
+<input id="ownerWorkerRate" type="number" step=".01" placeholder="الأجرة لكل طلب">
+<button class="btn g" onclick="ownerCreateWorker()">+ إنشاء الحساب وتفعيله</button>
+</div></div>
+<div id=workerList></div></div></section>
+<section id=accounts class=page></section>
+
+
+
+<section id="cloudSetup" class="page">
+<div class="card">
+<h2>☁️ AK Delivery Cloud</h2>
+<p>المزامنة التلقائية مفعلة. تُحفظ التغييرات محليًا أولًا، ثم تُدمج مع السحابة تلقائيًا عند توفر الإنترنت.</p>
+<div style="display:flex;gap:8px;flex-wrap:wrap">
+<button class="btn gr" onclick="cloudTest()">اختبار الاتصال</button>
+<button class="btn g" onclick="cloudPull()">⬇️ جلب البيانات</button>
+<button class="btn" onclick="cloudPush()">⬆️ رفع البيانات</button>
+</div>
+<div id="cloudStatus" style="margin-top:12px"><b>الحالة:</b> جاهز</div>
+</div>
+</section>
+<section id=emergencySync class=page>
+<div class=card>
+<h2>🔄 مزامنة المالك والموزع</h2>
+<p>طريقة مستقرة مؤقتة للعمل بين جهازين إلى حين تفعيل المزامنة السحابية المباشرة.</p>
+
+<div id=emOwnerBox>
+<h3>للمالك</h3>
+<button class="btn g" onclick="exportWorkPackage()">⬇️ إنشاء ملف عمل للموزع</button>
+<label class="btn" style="display:inline-block;margin-top:8px">⬆️ استلام تحديث الموزع
+<input type=file hidden accept=".json,application/json" onchange="importWorkerUpdate(event)">
+</label>
+</div>
+
+<div id=emWorkerBox>
+<h3>للموزع</h3>
+<label class="btn" style="display:inline-block">⬆️ استلام ملف العمل من المالك
+<input type=file hidden accept=".json,application/json" onchange="importOwnerWork(event)">
+</label>
+<button class="btn g" style="margin-top:8px" onclick="exportWorkerUpdate()">⬇️ إنشاء ملف تحديث للمالك</button>
+</div>
+
+<div id=emSyncStatus style="margin-top:12px"></div>
+</div>
+</section>
+
+<section id=backupSafe class=page>
+  <div class=card>
+    <h2>🛡️ حماية بيانات التطبيق</h2>
+    <p>احفظ نسخة احتياطية كاملة بانتظام. الملف يشمل الطلبات، الموزعين، الحسابات، التسويات، الإعدادات، وحالة الدخول.</p>
+    <div class=grid>
+      <button class="btn g" onclick="downloadFullBackup()">⬇️ تنزيل نسخة احتياطية كاملة</button>
+      <label class="btn" style="display:block;text-align:center">⬆️ استعادة نسخة احتياطية
+        <input id="backupFile" type="file" accept=".json,application/json" hidden onchange="restoreFullBackup(event)">
+      </label>
+      <button class="btn gr" onclick="createLocalSnapshot()">💾 إنشاء لقطة محلية الآن</button>
+      <button class="btn" onclick="showLocalSnapshots()">📚 عرض اللقطات المحلية</button>
+    </div>
+    <div id="backupStatus" style="margin-top:12px"></div>
+  </div>
+  <div class=card>
+    <h3>النسخ التلقائي المحلي</h3>
+    <p>ينشئ التطبيق لقطة محلية تلقائيًا عند التغييرات المهمة ويحفظ آخر 20 لقطة على نفس الجهاز.</p>
+    <div id="snapshotsList"></div>
+  </div>
+</section>
+
+<section id=invoices class=page><div class=card><h2>الفواتير</h2>
+<div class=grid><select id=invoiceOrder></select><button class=btn onclick="printInvoice()">🧾 فتح / حفظ الفاتورة PDF</button><button class="btn g" onclick="exportInvoicesExcel()">📊 تنزيل سجل الفواتير Excel</button></div>
+<div id=invoiceSummary style="margin-top:12px"></div></div></section></main></div>
+<div id=overlay class=overlay onclick="if(event.target===this)closeDrawer()"><div class=drawer><button class=close onclick=closeDrawer()>×</button><h2 id=dcode></h2><div id=detail></div><div id="ownerActions" style="display:none;margin:10px 0">
+<button class=btn onclick="openEdit()">✏️ تعديل الطلب</button>
+<span class=badge>وضع المالك</span>
+</div>
+<div id="ownerAssignBox" class="card" style="display:none;margin:10px 0">
+  <h3 style="margin-top:0">👤 إسناد الطلب إلى موزع</h3>
+  <div style="display:flex;gap:7px;flex-wrap:wrap;align-items:center">
+    <select id="assignWorkerSelect" style="min-width:180px"></select>
+    <button class="btn g" onclick="assignCurrentOrder()">✓ إسناد وحفظ</button>
+    <button class="btn gr" onclick="unassignCurrentOrder()">إلغاء الإسناد</button>
+  </div>
+  <div id="assignStatus" style="margin-top:7px;font-size:13px"></div>
+</div>
+<div id="editBox" class=card style="display:none">
+<h3>تعديل جميع بيانات الطلب — للمالك فقط</h3>
+<div class=grid>
+<input id=eSeq type=text placeholder="رقم الترتيب مثل AK000001"><input id=eSender placeholder="اسم الزبون المرسل">
+<input id=eClientNo placeholder="رمز الطلب المرسل من الزبون">
+<input id=eRecipient placeholder="اسم المستلم">
+<input id=ePhone placeholder="الهاتف">
+<input id=eAddress placeholder="العنوان">
+<input id=eCity placeholder="المدينة">
+<input id=eProduct placeholder="المنتج">
+<input id=eAmount type=number step=.01 placeholder="القيمة">
+<select id=eWorker></select>
+<select id=eStatus>
+<option>قيد التوزيع</option><option>تعذر الاتصال</option><option>مؤجل</option>
+<option>مبرمج</option><option>تم التسليم</option><option>رفض</option><option>مرتجع</option>
+</select>
+</div>
+<textarea id=eOwnerNote placeholder="ملاحظة داخلية للمالك (لا تظهر للموزع)"></textarea>
+<div style="margin-top:8px;display:flex;gap:6px">
+<button class=btn onclick="saveEdit()">حفظ التعديل</button>
+<button class="btn gr" onclick="closeEdit()">إلغاء</button>
+</div>
+</div>
+<div class=actions><button class=g onclick="statusSet('تم التسليم')">تم التسليم</button><button class=y onclick="statusSet('تعذر الاتصال')">تعذر الاتصال</button><div style="display:flex;gap:4px;align-items:center">
+<select id="rejectReason" style="width:auto;min-width:130px">
+<option value="">سبب الرفض...</option>
+<option>الثمن مرتفع</option>
+<option>المنتج غير مطلوب</option>
+<option>طلب بالخطأ</option>
+<option>غير رأيه</option>
+<option>الطلب مكرر</option>
+<option>العنوان غير مناسب</option>
+<option>سبب آخر</option>
+</select>
+<button class=r onclick="rejectOrder()">رفض</button>
+</div>
+<div style="display:flex;gap:4px;align-items:center">
+<input id="postponeDate" type="date" style="width:auto">
+<button class=gr onclick="postponeOrder()">تأجيل</button>
+</div>
+<div id="returnRequestBox" style="margin-top:10px"></div>
+<div id="ownerRestoreBox" style="margin-top:10px"></div>
+<div id="ownerDeleteBox" style="margin-top:10px"></div>
+<button class=c onclick="statusSet('مبرمج')">برمجة</button><button class=gr onclick="statusSet('طلب رجوع','مرتجع')">مرتجع</button></div><h3>سجل حالة التوصيل</h3><div id=history class=log></div><hr><h3>التعليقات</h3><div id=remarks class=log></div><textarea id=remark placeholder="تعليق جديد"></textarea><button class=btn onclick=remarkAdd()>إضافة تعليق</button></div></div>
+<script>
+const K='delivery12';
+/* النسخة 73: اعتماد رمز المالك 0534 مرة واحدة على هذا الجهاز */
+if(localStorage.getItem('ak_owner_pin_migration_v73')!=='done'){
+  localStorage.setItem('owner_pin_v13','0534');
+  localStorage.setItem('ak_owner_pin_migration_v73','done');
+}
+
+let session=JSON.parse(localStorage.getItem('delivery_session_v43')||'null')||{role:null,workerId:null};
+
+
+const BACKUP_VERSION='45';
+const SNAP_KEY='delivery_local_snapshots_v45';
+let snapshotTimer=null;
+
+function fullBackupPayload(){
+  return {
+    app:'AK Delivery',
+    backupVersion:BACKUP_VERSION,
+    createdAt:new Date().toISOString(),
+    data:db,
+    settings:{
+      ownerPin:localStorage.getItem('owner_pin_v13')||'0534',
+      viewMode:localStorage.getItem('delivery_view_mode_v44')||'auto'
+    }
+  };
+}
+function safeFileDate(){
+  let d=new Date(),pad=n=>String(n).padStart(2,'0');
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}_${pad(d.getHours())}-${pad(d.getMinutes())}`;
+}
+function downloadFullBackup(){
+  if(!((session&&session.role==='owner')||ownerMode===true))return alert('هذه الصلاحية للمالك فقط');
+  let payload=fullBackupPayload();
+  let blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json;charset=utf-8'});
+  let a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download=`AK_Delivery_Backup_${safeFileDate()}.json`;
+  document.body.appendChild(a);a.click();a.remove();
+  setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+  localStorage.setItem('delivery_last_export_v45',new Date().toISOString());
+  createLocalSnapshot();
+  updateBackupStatus();
+}
+function restoreFullBackup(event){
+  if(!((session&&session.role==='owner')||ownerMode===true))return alert('هذه الصلاحية للمالك فقط');
+  let file=event.target.files&&event.target.files[0]; if(!file)return;
+  let r=new FileReader();
+  r.onload=()=>{
+    try{
+      let payload=JSON.parse(r.result);
+      let incoming=payload&&payload.data?payload.data:payload;
+      if(!incoming || !Array.isArray(incoming.orders) || !Array.isArray(incoming.workers)) throw new Error('bad');
+      if(!confirm('سيتم استبدال بيانات التطبيق الحالية بالنسخة المختارة. هل تريد المتابعة؟'))return;
+      createLocalSnapshot();
+      db=incoming;
+      localStorage.setItem(K,JSON.stringify(db));
+      if(payload.settings){
+        if(payload.settings.ownerPin)localStorage.setItem('owner_pin_v13',payload.settings.ownerPin);
+        if(payload.settings.viewMode)localStorage.setItem('delivery_view_mode_v44',payload.settings.viewMode);
+      }
+      alert('تمت استعادة النسخة الاحتياطية بنجاح');
+      location.reload();
+    }catch(e){alert('ملف النسخة الاحتياطية غير صالح أو غير متوافق');}
+    event.target.value='';
+  };
+  r.readAsText(file);
+}
+function getSnapshots(){
+  try{return JSON.parse(localStorage.getItem(SNAP_KEY)||'[]')||[]}catch(e){return []}
+}
+function createLocalSnapshot(){
+  if(typeof db==='undefined')return;
+  let snaps=getSnapshots();
+  let payload=fullBackupPayload();
+  payload.snapshotId=Date.now();
+  snaps.unshift(payload);
+  snaps=snaps.slice(0,20);
+  try{
+    localStorage.setItem(SNAP_KEY,JSON.stringify(snaps));
+    localStorage.setItem('delivery_last_snapshot_v45',new Date().toISOString());
+  }catch(e){
+    // If storage is full, keep fewer snapshots.
+    try{localStorage.setItem(SNAP_KEY,JSON.stringify(snaps.slice(0,5)))}catch(_){}
+  }
+  updateBackupStatus();
+}
+function scheduleAutoSnapshot(){
+  clearTimeout(snapshotTimer);
+  snapshotTimer=setTimeout(createLocalSnapshot,1200);
+}
+function restoreSnapshot(id){
+  if(!((session&&session.role==='owner')||ownerMode===true))return alert('هذه الصلاحية للمالك فقط');
+  let snap=getSnapshots().find(x=>String(x.snapshotId)===String(id)); if(!snap)return;
+  if(!confirm('استعادة هذه اللقطة المحلية؟ سيتم حفظ لقطة من الوضع الحالي أولاً.'))return;
+  let current=fullBackupPayload(); current.snapshotId=Date.now();
+  let snaps=getSnapshots(); snaps.unshift(current); localStorage.setItem(SNAP_KEY,JSON.stringify(snaps.slice(0,20)));
+  db=snap.data; localStorage.setItem(K,JSON.stringify(db)); location.reload();
+}
+function deleteSnapshot(id){
+  let snaps=getSnapshots().filter(x=>String(x.snapshotId)!==String(id));
+  localStorage.setItem(SNAP_KEY,JSON.stringify(snaps)); showLocalSnapshots(); updateBackupStatus();
+}
+function showLocalSnapshots(){
+  let el=document.getElementById('snapshotsList'); if(!el)return;
+  let snaps=getSnapshots();
+  if(!snaps.length){el.innerHTML='لا توجد لقطات محلية بعد.';return;}
+  el.innerHTML=snaps.map(x=>{
+    let dt=x.createdAt?new Date(x.createdAt).toLocaleString('ar-MA'):'—';
+    let oc=x.data?.orders?.length||0,wc=x.data?.workers?.length||0;
+    return `<div class=card style="margin:7px 0"><b>${dt}</b><br>الطلبات: ${oc} — الموزعون: ${wc}<br>
+    <button class="btn g" onclick="restoreSnapshot('${x.snapshotId}')">استعادة</button>
+    <button class="btn r" onclick="deleteSnapshot('${x.snapshotId}')">حذف</button></div>`;
+  }).join('');
+}
+function updateBackupStatus(){
+  let el=document.getElementById('backupStatus'); if(!el)return;
+  let ex=localStorage.getItem('delivery_last_export_v45');
+  let sn=localStorage.getItem('delivery_last_snapshot_v45');
+  el.innerHTML=`<b>آخر نسخة ملف:</b> ${ex?new Date(ex).toLocaleString('ar-MA'):'لم تُنشأ بعد'}<br>
+  <b>آخر لقطة محلية:</b> ${sn?new Date(sn).toLocaleString('ar-MA'):'لم تُنشأ بعد'}<br>
+  <b>عدد الطلبات الحالية:</b> ${db.orders?.length||0}`;
+}
+
+
+function renderEmergencySync(){
+ const isOwner=(session&&session.role==='owner')||ownerMode===true;
+ const a=document.getElementById('emOwnerBox');
+ const b=document.getElementById('emWorkerBox');
+ if(a)a.style.display=isOwner?'block':'none';
+ if(b)b.style.display=isOwner?'none':'block';
+}
+function dlJson(name,obj){
+ const blob=new Blob([JSON.stringify(obj,null,2)],{type:'application/json'});
+ const url=URL.createObjectURL(blob);
+ const a=document.createElement('a');
+ a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();
+ setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
+function stamp(){
+ const d=new Date(),p=n=>String(n).padStart(2,'0');
+ return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}_${p(d.getHours())}-${p(d.getMinutes())}`;
+}
+function exportWorkPackage(){
+ const isOwner=(session&&session.role==='owner')||ownerMode===true;
+ if(!isOwner)return alert('هذه الصلاحية للمالك فقط');
+ createLocalSnapshot();
+ dlJson(`AK_Work_${stamp()}.json`,{type:'AK_OWNER_WORK_PACKAGE',version:48,db,createdAt:new Date().toISOString()});
+ const el=document.getElementById('emSyncStatus');if(el)el.textContent='تم إنشاء ملف العمل. أرسله للموزع.';
+}
+function importOwnerWork(e){
+ if(!(session&&session.role==='worker'))return alert('هذه العملية للموزع فقط');
+ const f=e.target.files&&e.target.files[0];if(!f)return;
+ const r=new FileReader();
+ r.onload=()=>{
+   try{
+     const j=JSON.parse(r.result);
+     if(j.type!=='AK_OWNER_WORK_PACKAGE'||!j.db||!Array.isArray(j.db.orders))throw 0;
+     db=j.db;localStorage.setItem(K,JSON.stringify(db));
+     menu();render();renderWorkers();accountsRender();
+     alert('تم استلام ملف العمل بنجاح');
+   }catch(_){alert('الملف غير صالح');}
+   e.target.value='';
+ };
+ r.readAsText(f);
+}
+function exportWorkerUpdate(){
+ if(!(session&&session.role==='worker'))return alert('هذه العملية للموزع فقط');
+ dlJson(`AK_Update_${stamp()}.json`,{type:'AK_WORKER_UPDATE',version:48,workerId:session.workerId,db,createdAt:new Date().toISOString()});
+ const el=document.getElementById('emSyncStatus');if(el)el.textContent='تم إنشاء ملف التحديث. أرسله للمالك.';
+}
+function importWorkerUpdate(e){
+ const isOwner=(session&&session.role==='owner')||ownerMode===true;
+ if(!isOwner)return alert('هذه الصلاحية للمالك فقط');
+ const f=e.target.files&&e.target.files[0];if(!f)return;
+ const r=new FileReader();
+ r.onload=()=>{
+   try{
+     const j=JSON.parse(r.result);
+     if(j.type!=='AK_WORKER_UPDATE'||!j.db||!Array.isArray(j.db.orders))throw 0;
+     if(!confirm('دمج تحديثات الموزع الآن؟')){e.target.value='';return;}
+     createLocalSnapshot();
+     const incoming=new Map(j.db.orders.map(o=>[String(o.id),o]));
+     db.orders.forEach(o=>{
+       const n=incoming.get(String(o.id));if(!n)return;
+       o.status=n.status;o.history=n.history||o.history;o.remarks=n.remarks||o.remarks;
+       o.rejectReason=n.rejectReason||'';o.postponeDate=n.postponeDate||'';
+       o.returnRequestedAt=n.returnRequestedAt||o.returnRequestedAt;
+       o.returnCompletedAt=n.returnCompletedAt||o.returnCompletedAt;
+     });
+     localStorage.setItem(K,JSON.stringify(db));
+     save();
+     alert('تم دمج تحديثات الموزع بنجاح');
+   }catch(_){alert('ملف التحديث غير صالح');}
+   e.target.value='';
+ };
+ r.readAsText(f);
+}
+
+
+function normalizePhoneNumber(raw){
+  let p=String(raw||'').trim().replace(/[^\d+]/g,'');
+  if(p.startsWith('00')) p='+'+p.slice(2);
+  if(p.startsWith('0')) p='+212'+p.slice(1);
+  else if(/^6\d{8}$/.test(p) || /^7\d{8}$/.test(p)) p='+212'+p;
+  return p;
+}
+function directCall(raw){
+  const p=normalizePhoneNumber(raw);
+  if(!p)return alert('رقم الهاتف غير صالح');
+  window.location.href='tel:'+p;
+}
+function openWhatsApp(raw){
+  const p=normalizePhoneNumber(raw).replace(/^\+/,'');
+  if(!p)return alert('رقم الهاتف غير صالح');
+  window.location.href='https://wa.me/'+p;
+}
+
+function contactPhone(raw){
+  const p=normalizePhoneNumber(raw);
+  if(!p)return alert('رقم الهاتف غير صالح');
+  // Direct tel link is more reliable on Android/local HTML.
+  const a=document.createElement('a');
+  a.href='tel:'+p;
+  a.style.display='none';
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(()=>a.remove(),500);
+}
+function contactWhatsApp(raw,name){
+  const p=normalizePhoneNumber(raw).replace(/^\+/,'');
+  if(!p)return alert('رقم الهاتف غير صالح');
+  const msg=encodeURIComponent('السلام عليكم'+(name?' '+name:''));
+  window.location.href='https://wa.me/'+p+'?text='+msg;
+}
+
+function saveSession(){
+  localStorage.setItem('delivery_session_v43',JSON.stringify(session));
+}
+function clearSession(){
+  localStorage.removeItem('delivery_session_v43');
+}
+
+function saveViewMode(mode){
+  localStorage.setItem('delivery_view_mode_v44',mode);
+  applyViewMode();
+}
+function applyViewMode(){
+  let mode=localStorage.getItem('delivery_view_mode_v44')||'auto';
+  document.documentElement.setAttribute('data-view-mode',mode);
+}
+
+function restoreSession(){
+  if(!session||!session.role){
+    loginScreen.style.display='flex';
+    return;
+  }
+  if(session.role==='worker'){
+    let w=db.workers.find(x=>x.id===session.workerId&&!x.deletedAt);
+    if(!w || w.blocked || w.approved===false){
+      session={role:null,workerId:null};
+      clearSession();
+      loginScreen.style.display='flex';
+      return;
+    }
+    loginScreen.style.display='none';
+    applyPermissions();
+    filter='قيد التوزيع';
+    go('list');
+    return;
+  }
+  if(session.role==='owner'){
+    ownerMode=true;
+    loginScreen.style.display='none';
+    applyPermissions();
+    go('list');
+    return;
+  }
+  loginScreen.style.display='flex';
+}
+
+function refreshLoginWorkers(){
+ loginWorker.innerHTML='<option value="">اختر الموزع</option>'+db.workers.filter(w=>!w.deletedAt).map(w=>`<option value="${w.id}">${w.name}</option>`).join('');
+}
+async function workerLogin(){
+ let id=loginWorker.value,pin=String(loginPin.value||'').trim();
+ if(!id)return alert('اختر حسابك');
+ if(!pin)return alert('أدخل الرقم السري');
+
+ // النسخة 66: قبل فحص الرقم السري نجلب أحدث حسابات الموزعين من السحابة.
+ // هذا يمنع جهاز الموزع من استعمال رقم قديم محفوظ لديه.
+ if(navigator.onLine){
+   try{
+     await cloudPull(true,true);
+     // لا نرفع شيئاً من جهاز الموزع قبل نجاح الدخول؛ يكفي الجلب هنا.
+   }catch(_){}
+ }
+
+ let w=db.workers.find(x=>String(x.id)===String(id));
+ if(!w)return alert('لم يتم العثور على الحساب. أعد فتح التطبيق وحاول من جديد');
+ if(w.blocked)return alert('هذا الحساب محظور من طرف المالك');
+ if(w.approved===false)return alert('الحساب في انتظار موافقة المالك');
+ if(String(w.pin||'').trim()!==pin)return alert('الرمز السري غير صحيح');
+
+ session={role:'worker',workerId:String(w.id)};
+ // ترحيل آمن للطلبات القديمة التي خُزّن فيها اسم الموزع بدلاً من المعرّف.
+ let assignmentChanged=false;
+ for(const o of (db.orders||[])){
+   if(!o||o.deletedAt)continue;
+   const raw=(o.worker&&typeof o.worker==='object')?(o.worker.id??o.worker.name):o.worker;
+   if(String(raw??'').trim().toLowerCase()===String(w.name||'').trim().toLowerCase() && String(raw??'').trim()!==String(w.id)){
+     o.worker=String(w.id);
+     o.modifiedAt=o.modifiedAt||isoNow();
+     assignmentChanged=true;
+   }
+ }
+ if(assignmentChanged)localStorage.setItem(K,JSON.stringify(db));
+ saveSession();
+ loginPin.value='';
+ loginScreen.style.display='none';
+ applyPermissions();
+
+ // جلب نهائي بعد تحديد هوية الموزع حتى تظهر طلباته والعدادات فوراً.
+ if(navigator.onLine){
+   try{await cloudPull(true,true);}catch(_){}
+ }
+ filter='قيد التوزيع';
+ menu();render();renderWorkers();accountsRender();
+ go('list');
+}
+function ownerLogin(){
+ let pin=prompt('رمز المالك:'); if(pin===null)return;
+ let saved=localStorage.getItem('owner_pin_v13')||'0534';
+ if(pin!==saved)return alert('رمز المالك غير صحيح');
+ session={role:'owner',workerId:null};ownerMode=true;saveSession();loginScreen.style.display='none';applyPermissions();go('list');
+}
+function logout(){
+ session={role:null,workerId:null};ownerMode=false;clearSession();loginScreen.style.display='flex';refreshLoginWorkers();
+}
+function applyPermissions(){
+ let buttons=[...document.querySelectorAll('aside > button')];
+ buttons.forEach(b=>b.style.display='block');
+ const isWorker=session.role==='worker';
+ if(isWorker){
+   buttons.forEach(b=>{
+     let t=b.textContent;
+     if(t.includes('طلب جديد')||t.includes('لصق طلبات')||(t.includes('إنشاء طلب رجوع')||t.includes('طلبات الرجوع'))||t.includes('الموزعون')||t.includes('الحسابات')||t.includes('الفواتير')||t.includes('النسخ الاحتياطي')||t.includes('المزامنة السحابية')||t.includes('مزامنة الموزع')) b.style.display='none';
+   });
+ }
+ const ownerMini=document.getElementById('ownerCloudMini');
+ if(ownerMini) ownerMini.style.display=session.role==='owner'?'inline-block':'none';
+ const wb=document.getElementById('workerNewBadge');
+ if(wb) wb.style.display=isWorker?'inline-block':'none';
+ render();menu();updateSyncIndicators();
+}
+let db=JSON.parse(localStorage.getItem(K)||'null')||{orders:[],workers:[]},filter='قيد التوزيع',current=null,states=['الكل','قيد التوزيع','تعذر الاتصال','مؤجل','مبرمج','تم التسليم','رفض','مرتجع'];
+if(!Array.isArray(db.returnBatches))db.returnBatches=[];
+if(!Array.isArray(db.deliveryBatches))db.deliveryBatches=[];
+if(!Array.isArray(db.deliveryTransfers))db.deliveryTransfers=[];
+
+/* النسخة 76: تنظيف الحسابات القديمة المطلوبة من المالك مرة واحدة.
+   نستخدم حذفاً منطقياً حتى يتزامن الحذف مع السحابة ولا تعود الحسابات المحذوفة. */
+if(localStorage.getItem('ak_worker_cleanup_v76')!=='done'){
+  const removeNames=new Set(['صالح','Mada','Nada']);
+  const now=new Date().toISOString();
+  for(const w of (db.workers||[])){
+    if(w && removeNames.has(String(w.name||'').trim()) && String(w.name||'').trim()!=='Salah'){
+      w.deletedAt=now;
+      w.modifiedAt=now;
+      w.modifiedBy='المالك';
+    }
+  }
+  localStorage.setItem(K,JSON.stringify(db));
+  localStorage.setItem('ak_worker_cleanup_v76','done');
+}
+
+/* النسخة 77: ضبط أجرة Salah إلى 10 د.م لكل طلب مرة واحدة فقط */
+if(localStorage.getItem('ak_salah_rate_v77')!=='done'){
+  const w=(db.workers||[]).find(x=>!x.deletedAt&&String(x.name||'').trim()==='Salah');
+  if(w){
+    w.rate=10;
+    w.modifiedAt=new Date().toISOString();
+    w.modifiedBy='المالك';
+    localStorage.setItem(K,JSON.stringify(db));
+  }
+  localStorage.setItem('ak_salah_rate_v77','done');
+}
+
+const formatSeq=v=>{
+ let x=String(v??'').trim();
+ if(/^AK\d+$/i.test(x)) return 'AK'+String(parseInt(x.replace(/\D/g,''),10)).padStart(6,'0');
+ if(/^\d+$/.test(x)) return 'AK'+String(parseInt(x,10)).padStart(6,'0');
+ return x||'—';
+};
+const tm=()=>new Date().toLocaleString('ar-MA'),cash=n=>Number(n||0).toFixed(2)+' د.م';
+
+const CLOUD_URL='https://script.google.com/macros/s/AKfycbyx_Ux59er_GZ3xO_qhgdFoBdizpJsBUuxSH4Qo2r7Qb6yeqdSS7F2akzWxC9_w-WtV/exec';
+const CLOUD_KEY='AKD-0534-CLOUD';
+let cloudSyncTimer=null;
+let cloudSyncBusy=false;
+const CLOUD_PENDING_KEY='ak_delivery_cloud_pending_v59';
+const CLOUD_LAST_OK_KEY='ak_delivery_last_cloud_ok_v59';
+const CLOUD_SEEN_ASSIGNED_KEY='ak_delivery_seen_assigned_v59';
+
+// النسخة 70: مطابقة موحدة وآمنة بين الطلب وحساب الموزع.
+// تدعم اختلاف النوع بين رقم/نص، وتدعم البيانات القديمة التي قد تحفظ اسم الموزع بدل المعرّف.
+function orderAssignedToWorker(o,workerId){
+  if(!o||workerId==null)return false;
+  const wanted=String(workerId).trim();
+  const raw=o.worker;
+  if(raw!=null && typeof raw==='object'){
+    if(raw.id!=null && String(raw.id).trim()===wanted)return true;
+    const w=db.workers.find(x=>String(x.id).trim()===wanted);
+    if(w&&raw.name!=null&&String(raw.name).trim().toLowerCase()===String(w.name||'').trim().toLowerCase())return true;
+    return false;
+  }
+  if(String(raw??'').trim()===wanted)return true;
+  const w=db.workers.find(x=>String(x.id).trim()===wanted);
+  if(w && String(raw??'').trim().toLowerCase()===String(w.name||'').trim().toLowerCase())return true;
+  return false;
+}
+
+
+function actorName(){
+  if(session&&session.role==='owner')return 'المالك';
+  if(session&&session.role==='worker'){
+    const w=db.workers.find(x=>x.id===session.workerId);
+    return w?.name||'الموزع';
+  }
+  return 'النظام';
+}
+function isoNow(){return new Date().toISOString();}
+function markOrderChanged(o,kind='تعديل'){
+  if(!o)return;
+  o.modifiedAt=isoNow();
+  o.modifiedBy=actorName();
+  o.lastChangeKind=kind;
+}
+function appendOrderHistory(o,text){
+  if(!o)return;
+  if(!Array.isArray(o.history))o.history=[];
+  o.history.push({time:tm(),text:text+' — بواسطة '+actorName()});
+  markOrderChanged(o,text);
+}
+function showToast(msg,ms=2600){
+  const el=document.getElementById('syncToast'); if(!el)return;
+  el.textContent=msg; el.style.display='block';
+  clearTimeout(showToast._t);
+  showToast._t=setTimeout(()=>el.style.display='none',ms);
+}
+function updateCloudStatus(msg){
+ const el=document.getElementById('cloudStatus');
+ if(el)el.innerHTML='<b>الحالة:</b> '+msg;
+ updateSyncIndicators(msg);
+}
+function updateSyncIndicators(msg){
+ const mini=document.getElementById('ownerCloudMini');
+ if(mini&&session.role==='owner'){
+   const last=localStorage.getItem(CLOUD_LAST_OK_KEY);
+   const pending=localStorage.getItem(CLOUD_PENDING_KEY)==='1';
+   let txt='☁️ ';
+   if(!navigator.onLine)txt+='دون إنترنت';
+   else if(pending)txt+='بانتظار المزامنة';
+   else if(last)txt+='متصل';
+   else txt+='جاهز';
+   mini.textContent=txt;
+   mini.title=last?'آخر مزامنة: '+new Date(last).toLocaleString('ar-MA'):'لم تتم مزامنة تلقائية بعد';
+ }
+ const st=document.getElementById('cloudStatus');
+ if(st && !msg){
+   const last=localStorage.getItem(CLOUD_LAST_OK_KEY);
+   const pending=localStorage.getItem(CLOUD_PENDING_KEY)==='1';
+   st.innerHTML='<b>الحالة:</b> '+(!navigator.onLine?'لا يوجد إنترنت':pending?'توجد تغييرات بانتظار المزامنة':last?'متصل — آخر مزامنة '+new Date(last).toLocaleString('ar-MA'):'جاهز');
+ }
+ updateWorkerNewBadge();
+}
+function updateWorkerNewBadge(){
+ const el=document.getElementById('workerNewBadge'); if(!el||session.role!=='worker')return;
+ const seen=JSON.parse(localStorage.getItem(CLOUD_SEEN_ASSIGNED_KEY)||'[]');
+ const assigned=db.orders.filter(o=>!o.deletedAt&&orderAssignedToWorker(o,session.workerId)).map(o=>String(o.id));
+ const n=assigned.filter(id=>!seen.includes(id)).length;
+ el.textContent='🔔 '+n;
+}
+function markAssignedSeen(){
+ if(session.role!=='worker')return;
+ const assigned=db.orders.filter(o=>!o.deletedAt&&orderAssignedToWorker(o,session.workerId)).map(o=>String(o.id));
+ localStorage.setItem(CLOUD_SEEN_ASSIGNED_KEY,JSON.stringify(assigned));
+ updateWorkerNewBadge();
+}
+async function cloudRequest(action,payload={}){
+  let r;
+
+  if(action==='ping'){
+    r=await fetch(
+      CLOUD_URL+'?key='+encodeURIComponent(CLOUD_KEY)+'&action=ping',
+      {method:'GET',cache:'no-store'}
+    );
+
+  }else if(action==='loadAll'){
+    r=await fetch(
+      CLOUD_URL+'?key='+encodeURIComponent(CLOUD_KEY)+'&action=load',
+      {method:'GET',cache:'no-store'}
+    );
+
+  }else if(action==='saveAll'){
+    // النسخة 68:
+    // Google Apps Script قد ينفذ POST من موقع Netlify لكن المتصفح يمنع قراءة
+    // استجابة POST بسبب CORS/redirect. لذلك نرسل الطلب no-cors ثم نتحقق عبر GET.
+    const token='AKSYNC-'+Date.now()+'-'+Math.random().toString(36).slice(2,8);
+    const data=Object.assign({},payload||{},{_syncToken:token});
+    const body=JSON.stringify({
+      key:CLOUD_KEY,
+      action:'save',
+      data:data
+    });
+
+    await fetch(CLOUD_URL,{
+      method:'POST',
+      mode:'no-cors',
+      headers:{'Content-Type':'text/plain;charset=UTF-8'},
+      body:body,
+      cache:'no-store'
+    });
+
+    // نعطي Google Sheets/Apps Script وقتاً قصيراً لإتمام الكتابة ثم نتحقق من النسخة المحفوظة.
+    let lastErr=null;
+    for(let i=0;i<4;i++){
+      await new Promise(resolve=>setTimeout(resolve,700+i*350));
+      try{
+        const check=await cloudRequest('loadAll',{});
+        let pack=check.snapshot ?? check.payload ?? check.data ?? check.value ?? null;
+        if(typeof pack==='string'){try{pack=JSON.parse(pack)}catch(_){}}
+        if(pack && pack._syncToken===token){
+          return {ok:true,verified:true,token:token};
+        }
+      }catch(e){lastErr=e;}
+    }
+    throw new Error(lastErr?.message||'تم إرسال الحفظ لكن تعذر التحقق منه في السحابة');
+
+  }else{
+    throw new Error('عملية سحابية غير معروفة');
+  }
+
+  const txt=await r.text();
+  let j;
+  try{j=JSON.parse(txt)}catch(_){throw new Error('استجابة غير صالحة من السحابة');}
+  if(!r.ok)throw new Error(j.error||'فشل الاتصال بالسحابة');
+  if(!j.ok)throw new Error(j.error||'خطأ في السحابة');
+  return j;
+}
+function parseCloudDb(j){
+  let pack=j.snapshot ?? j.payload ?? j.data ?? j.value ?? null;
+  if(typeof pack==='string'){try{pack=JSON.parse(pack)}catch(_){}}
+  return (pack&&pack.db)?pack.db:(j.db||null);
+}
+function timeValue(v){const t=Date.parse(v||'');return Number.isFinite(t)?t:0;}
+function mergeById(localArr=[],cloudArr=[]){
+  const m=new Map();
+  for(const x of (cloudArr||[])) if(x&&x.id!=null)m.set(String(x.id),JSON.parse(JSON.stringify(x)));
+  for(const x of (localArr||[])){
+    if(!x||x.id==null)continue;
+    const k=String(x.id), y=m.get(k);
+    if(!y){m.set(k,JSON.parse(JSON.stringify(x)));continue;}
+    const tx=timeValue(x.modifiedAt), ty=timeValue(y.modifiedAt);
+    if(tx>=ty)m.set(k,JSON.parse(JSON.stringify(x)));
+  }
+  return [...m.values()];
+}
+function mergeUniqueById(a=[],b=[]){
+  const m=new Map();
+  for(const x of [...(b||[]),...(a||[])]){
+    if(!x)continue;
+    const id=String(x.id??x.snapshotId??JSON.stringify(x));
+    m.set(id,JSON.parse(JSON.stringify(x)));
+  }
+  return [...m.values()];
+}
+
+function mergeDatabases(localDb,cloudDb){
+  if(!cloudDb)return localDb;
+  const out=JSON.parse(JSON.stringify(cloudDb));
+  for(const [k,v] of Object.entries(localDb||{})){
+    if(k==='orders'||k==='workers'||k==='settlements'||k==='returnBatches'||k==='deliveryBatches'||k==='deliveryTransfers')continue;
+    if(out[k]===undefined)out[k]=JSON.parse(JSON.stringify(v));
+  }
+  out.orders=mergeById(localDb.orders||[],cloudDb.orders||[]);
+  out.workers=mergeById(localDb.workers||[],cloudDb.workers||[]);
+  out.settlements=mergeUniqueById(localDb.settlements||[],cloudDb.settlements||[]);
+  out.returnBatches=mergeById(localDb.returnBatches||[],cloudDb.returnBatches||[]);
+  out.deliveryBatches=mergeById(localDb.deliveryBatches||[],cloudDb.deliveryBatches||[]);
+  out.deliveryTransfers=mergeById(localDb.deliveryTransfers||[],cloudDb.deliveryTransfers||[]);
+  return out;
+}
+async function cloudTest(){
+ try{
+   updateCloudStatus('جاري الاختبار...');
+   await cloudRequest('ping',{});
+   localStorage.setItem(CLOUD_LAST_OK_KEY,isoNow());
+   updateCloudStatus('متصل بالسحابة ✓');
+ }catch(e){updateCloudStatus('غير متصل: '+e.message);}
+}
+async function cloudPush(silent=false){
+ try{
+   if(!silent)updateCloudStatus('جاري مزامنة البيانات...');
+
+   // النسخة 69: قبل أي رفع، نجلب قاعدة السحابة ونضمها إلى البيانات المحلية.
+   // هذا يمنع جهازاً جديداً أو حساب موزع فارغاً من مسح الطلبات الموجودة في السحابة.
+   try{
+     const j=await cloudRequest('loadAll',{});
+     const cloudDb=parseCloudDb(j);
+     if(cloudDb){
+       db=mergeDatabases(db,cloudDb);
+       localStorage.setItem(K,JSON.stringify(db));
+     }
+   }catch(_){
+     // إذا لم توجد نسخة سحابية بعد، نكمل بالنسخة المحلية.
+   }
+
+   await cloudRequest('saveAll',{db:db,updatedAt:isoNow()});
+   localStorage.setItem('ak_delivery_last_cloud_push',isoNow());
+   localStorage.setItem(CLOUD_LAST_OK_KEY,isoNow());
+   localStorage.removeItem(CLOUD_PENDING_KEY);
+   if(!silent)updateCloudStatus('تمت مزامنة جميع البيانات مع السحابة ✓');
+   else updateSyncIndicators();
+   menu();render();renderWorkers();accountsRender();refreshLoginWorkers();if(document.getElementById('deliveryTransfers')?.classList.contains('on'))renderDeliveryTransfers();
+   return true;
+ }catch(e){
+   localStorage.setItem(CLOUD_PENDING_KEY,'1');
+   if(!silent)updateCloudStatus('فشل الرفع: '+e.message);
+   else updateSyncIndicators();
+   return false;
+ }
+}
+async function cloudPull(silent=false,merge=true){
+ try{
+   if(!silent)updateCloudStatus('جاري جلب البيانات...');
+   const j=await cloudRequest('loadAll',{});
+   const cloudDb=parseCloudDb(j);
+   if(!cloudDb)throw new Error('لا توجد بيانات في السحابة بعد');
+   if(typeof createLocalSnapshot==='function'&&!silent)createLocalSnapshot();
+   const beforeAssigned=session.role==='worker'?new Set(db.orders.filter(o=>!o.deletedAt&&orderAssignedToWorker(o,session.workerId)).map(o=>String(o.id))):null;
+   db=merge?mergeDatabases(db,cloudDb):cloudDb;
+   localStorage.setItem(K,JSON.stringify(db));
+   localStorage.setItem('ak_delivery_last_cloud_pull',isoNow());
+   localStorage.setItem(CLOUD_LAST_OK_KEY,isoNow());
+   if(session.role==='worker'&&beforeAssigned){
+      const fresh=db.orders.filter(o=>!o.deletedAt&&orderAssignedToWorker(o,session.workerId)&&!beforeAssigned.has(String(o.id)));
+      if(fresh.length)showToast('🔔 لديك '+fresh.length+' طلب جديد');
+   }
+   if(!silent)updateCloudStatus('تم جلب البيانات من السحابة ✓'); else updateSyncIndicators();
+   menu();render();renderWorkers();accountsRender();refreshLoginWorkers();
+   return true;
+ }catch(e){
+   if(!silent)updateCloudStatus('فشل الجلب: '+e.message);
+   updateSyncIndicators();
+   return false;
+ }
+}
+async function syncNow(silent=true){
+  if(cloudSyncBusy||!navigator.onLine)return false;
+  cloudSyncBusy=true;
+  try{
+    // جلب + دمج ثم رفع؛ يقلل خطر أن يكتب جهاز فوق تغييرات الجهاز الآخر.
+    await cloudPull(true,true);
+    const ok=await cloudPush(true);
+    if(ok){
+      localStorage.setItem(CLOUD_LAST_OK_KEY,isoNow());
+      localStorage.removeItem(CLOUD_PENDING_KEY);
+    }
+    updateSyncIndicators();
+    return ok;
+  }finally{cloudSyncBusy=false;}
+}
+function scheduleCloudSync(){
+  localStorage.setItem(CLOUD_PENDING_KEY,'1');
+  updateSyncIndicators();
+  clearTimeout(cloudSyncTimer);
+  cloudSyncTimer=setTimeout(()=>syncNow(true),1400);
+}
+window.addEventListener('online',()=>{showToast('عاد الاتصال بالإنترنت — جارٍ إرسال التغييرات');syncNow(true);});
+window.addEventListener('offline',()=>{updateSyncIndicators();showToast('لا يوجد إنترنت — سيتم حفظ التغييرات وإرسالها عند عودة الاتصال');});
+setInterval(()=>{if(navigator.onLine)syncNow(true)},45000);
+function save(){
+  localStorage.setItem(K,JSON.stringify(db));
+  scheduleAutoSnapshot();scheduleCloudSync();
+  menu();render();renderWorkers();accountsRender();
+}
+
+function updateReturnRequestCount(){
+ let el=document.getElementById('returnReqCount');
+ if(el){
+   let n=db.orders.filter(o=>!o.deletedAt&&o.status==='طلب رجوع').length;
+   el.textContent=n;
+ }
+ let be=document.getElementById('returnBatchCount');
+ if(be){
+   const n=(db.returnBatches||[]).filter(b=>!b.deletedAt&&b.status!=='completed'&&(session.role!=='worker'||String(b.workerId)===String(session.workerId))).length;
+   be.textContent=n;
+ }
+ let de=document.getElementById('deliveryBatchCount');
+ if(de){
+   const n=(db.deliveryBatches||[]).filter(b=>!b.deletedAt&&b.status!=='received'&&(session.role!=='worker'||String(b.workerId)===String(session.workerId))).length;
+   de.textContent=n;
+ }
+ let te=document.getElementById('deliveryTransferCount');
+ if(te){
+   if(session.role==='worker'){
+     te.textContent=(db.deliveryTransfers||[]).filter(t=>!t.deletedAt&&t.status==='sent'&&String(t.workerId)===String(session.workerId)).length;
+   }else{
+     te.textContent=(db.deliveryTransfers||[]).filter(t=>!t.deletedAt&&t.status==='sent').length;
+   }
+ }
+}
+
+function menu(){updateReturnRequestCount();stateMenu.innerHTML=states.map(s=>`<button onclick="filter='${s}';go('list')">${s} (${s==='الكل'?db.orders.filter(o=>!o.deletedAt&&(session.role!=='worker'||workerCanSeeOrder(o,session.workerId))).length:db.orders.filter(o=>!o.deletedAt&&o.status===s&&(session.role!=='worker'||workerCanSeeOrder(o,session.workerId))).length})</button>`).join('')}
+function go(x){if(session.role==='worker'&&['add','bulk','returnCreate','workers','accounts','invoices','backupSafe','cloudSetup','emergencySync'].includes(x))return;document.querySelectorAll('.page').forEach(p=>p.classList.remove('on'));document.getElementById(x).classList.add('on');if(x==='list'){render();if(session.role==='worker')markAssignedSeen();}if(x==='add')seq.value=nextSeq();if(x==='accounts')accountsRender();if(x==='invoices')invoicesRender();if(x==='returnCreate')renderReturnCreate();if(x==='returnBatches')renderReturnBatches();if(x==='deliveryBatches')renderDeliveryBatches();if(x==='deliveryTransfers'){
+ if(session.role==='worker'&&!['pending','received'].includes(deliveryTransferView))deliveryTransferView='pending';
+ if(session.role!=='worker'&&!['ready','waiting','received'].includes(deliveryTransferView))deliveryTransferView='ready';
+ renderDeliveryTransfers();
+}if(x==='backupSafe'){updateBackupStatus();showLocalSnapshots()}if(x==='emergencySync'){renderEmergencySync()}if(x==='cloudSetup'){updateCloudStatus('جاهز')}}
+
+let bulkParsed=[];
+function parseBulkOrders(txt){
+ let text=String(txt||'').replace(/\u00a0/g,' ').trim();
+ let lines=text.split(/\r?\n/),out=[];
+
+ function clean(v){
+   return String(v||'')
+     .replace(/<br\s*\/?>/gi,' ')
+     .replace(/\*\*/g,'')
+     .replace(/\[([^\]]+)\]\((?:[^()]|\([^)]*\))*\)/g,'$1')
+     .replace(/<tel:[^>]+>/gi,'')
+     .replace(/\s+/g,' ').trim();
+ }
+ function getCode(v){
+   let x=clean(v);
+   // reject separator/header rows
+   if(/^[-:|\s]+$/.test(x))return '';
+   // sender codes generally contain at least one letter and one digit
+   let candidates=x.match(/[A-Za-z][A-Za-z0-9_-]{1,40}/g)||[];
+   return candidates.find(c=>/[A-Za-z]/.test(c)&&/\d/.test(c))||'';
+ }
+ function getPhone(v){
+   let m=String(v||'').match(/(?:\+?212|0)[\s.-]?[5-7](?:[\s.-]?\d){8}/);
+   return m?m[0].replace(/[^\d+]/g,''):'';
+ }
+ function getAmount(v){
+   let x=clean(v);
+   let m=x.match(/(\d+(?:[.,]\d+)?)\s*(?:dh|dhs|mad|د\.?\s?م)?\s*$/i);
+   return m?parseFloat(m[1].replace(',','.')):0;
+ }
+
+ for(let raw of lines){
+   let line=raw.trim();
+   if(!line || /^\|?\s*[-:]+\s*(\|\s*[-:]+\s*)+\|?$/.test(line))continue;
+
+   let cells;
+   if(line.includes('|')) cells=line.split('|').map(x=>x.trim()).filter(Boolean);
+   else if(line.includes('\t')) cells=line.split('\t').map(x=>x.trim()).filter(Boolean);
+   else cells=[line];
+
+   let code=getCode(cells[0]||line);
+   if(!code){
+     // fallback: search the entire line for a code
+     let all=clean(line).match(/[A-Za-z][A-Za-z0-9_-]{1,40}/g)||[];
+     code=all.find(c=>/[A-Za-z]/.test(c)&&/\d/.test(c))||'';
+   }
+   if(!code)continue;
+
+   let name='',address='',city='',phone='',amount=0;
+
+   if(cells.length>=4){
+     name=clean(cells[1]);
+
+     // Search the whole row for phone and amount, not only fixed columns.
+     phone=getPhone(line);
+     for(let i=cells.length-1;i>=0;i--){
+       let a=getAmount(cells[i]);
+       if(a>0){ amount=a; break; }
+     }
+
+     // Everything between recipient name and amount is treated as location/contact data.
+     let middle=cells.slice(2, Math.max(3,cells.length-1)).map(clean).filter(Boolean);
+     let loc=middle.join(' ')
+       .replace(/(?:\+?212|0)[\s.-]?[5-7](?:[\s.-]?\d){8}/g,' ')
+       .replace(/\b(?:tel|tél|phone|الهاتف)\b\s*:*/ig,' ')
+       .replace(/\s+/g,' ').trim();
+
+     // If only one location is supplied (e.g. Oujda), use it as both address and city.
+     // If the source contains address + city, keep the full text as address and infer city from the last segment.
+     address=loc;
+     let parts=loc.split(/\s*[,;،]\s*|\s{2,}/).map(x=>x.trim()).filter(Boolean);
+     city=parts.length>1?parts[parts.length-1]:(loc||'');
+
+     // Extra fallback: amount may be anywhere in the original line.
+     if(!amount){
+       let m=clean(line).match(/(\d+(?:[.,]\d+)?)\s*(?:dh|dhs|mad|د\.?\s?م)\b/i);
+       if(m) amount=parseFloat(m[1].replace(',','.'));
+     }
+   }else{
+     phone=getPhone(line);
+     amount=getAmount(line);
+     let cleaned=clean(line);
+     // remove code, phone and trailing amount; keep remaining text as a best-effort name/city
+     cleaned=cleaned.replace(code,' ');
+     if(phone) cleaned=cleaned.replace(phone,' ');
+     cleaned=cleaned.replace(/\d+(?:[.,]\d+)?\s*(?:dh|dhs|mad|د\.?\s?م)\b/ig,' ');
+     let parts=cleaned.split(/\s{2,}| - | — /).map(x=>x.trim()).filter(Boolean);
+     name=parts[0]||'';
+     address=parts.slice(1).join(' ')||'';
+     city=parts.length>1?parts[parts.length-1]:'';
+   }
+   out.push({code:code.toUpperCase(),name,address,city,phone,amount});
+ }
+
+ let seen=new Set();
+ return out.filter(o=>{
+   let k=o.code.toUpperCase();
+   if(seen.has(k)||db.orders.some(x=>String(x.clientNo||'').toUpperCase()===k))return false;
+   seen.add(k);return true;
+ });
+}
+function previewBulk(){
+ bulkParsed=parseBulkOrders(bulkText.value);
+ if(!bulkParsed.length){
+ let hasCode=/[A-Za-z][A-Za-z0-9_-]*\d[A-Za-z0-9_-]*/.test(bulkText.value);
+ bulkPreview.innerHTML=hasCode?'<b>تم العثور على رمز طلب، لكنه موجود مسبقًا أو لم تكتمل بقية البيانات. جرّب لصق الجدول كاملًا.</b>':'<b>لم أتعرف على أي طلب. الصق السطر أو الجدول كاملًا كما هو.</b>';
+ return;
+}
+ bulkPreview.innerHTML=`<p>تم التعرف على <b>${bulkParsed.length}</b> طلب.</p><table><tr><th>رمز الطلب</th><th>المستلم</th><th>العنوان</th><th>المدينة</th><th>الهاتف</th><th>القيمة</th></tr>${bulkParsed.map(o=>`<tr><td>${htmlEscape(o.code)}</td><td>${htmlEscape(o.name)}</td><td>${htmlEscape(o.address||'')}</td><td>${htmlEscape(o.city)}</td><td dir=ltr>${htmlEscape(o.phone)}</td><td>${cash(o.amount)}</td></tr>`).join('')}</table>`;
+}
+function importBulk(){
+ if(session.role!=='owner')return;
+ bulkParsed=parseBulkOrders(bulkText.value);
+ if(!bulkParsed.length)return alert('لم يتم العثور على طلب جديد صالح. قد يكون رمز الطلب موجودًا مسبقًا أو أن النص المنسوخ غير مكتمل.');
+ let startNums=db.orders.map(o=>{let m=String(o.seq||'').match(/^AK(\d+)$/i);return m?+m[1]:(/^\d+$/.test(String(o.seq||''))?+o.seq:0)}),n=(startNums.length?Math.max(...startNums):0);
+ let t=tm();
+ bulkParsed.forEach((x,i)=>{
+   let seq='AK'+String(n+i+1).padStart(6,'0');
+   db.orders.push({id:'SYS'+Date.now()+i,seq,clientNo:x.code,sender:'',recipient:x.name,phone:x.phone,address:x.address||x.city||'',city:x.city,product:'',amount:+x.amount||0,worker:'',status:'قيد التوزيع',history:[{time:t,text:'طلب جديد — إدخال جماعي — بواسطة '+actorName()},{time:t,text:'قيد التوزيع — بواسطة '+actorName()}],remarks:[],modifiedAt:isoNow(),modifiedBy:actorName()});
+ });
+ localStorage.setItem(K,JSON.stringify(db));bulkText.value='';bulkPreview.innerHTML='';filter='قيد التوزيع';save();alert('تمت إضافة '+bulkParsed.length+' طلبات بنجاح');go('list');
+}
+
+function nextSeq(){
+ let nums=db.orders.map(o=>{
+   let x=String(o.seq||'').trim();
+   let m=x.match(/^AK(\d+)$/i);
+   if(m)return parseInt(m[1],10);
+   if(/^\d+$/.test(x))return parseInt(x,10);
+   return 0;
+ });
+ let n=(nums.length?Math.max(...nums):0)+1;
+ return 'AK'+String(n).padStart(6,'0');
+}
+function add(e){e.preventDefault();let t=tm(),code='MP'+String(Date.now()).slice(-9);seq.value=nextSeq();db.orders.push({id:code,seq:seq.value,sender:sender.value,clientNo:clientNo.value,recipient:recipient.value,phone:phone.value,address:address.value,city:city.value,product:product.value,amount:+amount.value,worker:worker.value,status:'قيد التوزيع',history:[{time:t,text:'طلب جديد — بواسطة '+actorName()},{time:t,text:'قيد التوزيع — بواسطة '+actorName()}],remarks:firstComment.value?[{time:t,text:firstComment.value+' — بواسطة '+actorName()}]:[],modifiedAt:isoNow(),modifiedBy:actorName()});e.target.reset();city.value='وجدة';save();filter='قيد التوزيع';go('list')}
+
+function runOrderSearch(){
+  render();
+  const n=visibleOrders().length;
+  if(search && String(search.value||'').trim()) showSyncToast('نتائج البحث: '+n);
+}
+function clearOrderSearch(){
+  if(search)search.value='';
+  render();
+}
+
+
+const DEFAULT_DELIVERY_FEE=10;
+function deliveryFeeForOrder(o){
+  let w=db.workers.find(x=>String(x.id)===String(o.worker||''));
+  let r=+(w?.rate||0);
+  return r>0?r:DEFAULT_DELIVERY_FEE;
+}
+function deliveryRateForWorker(w){
+  let r=+(w?.rate||0);
+  return r>0?r:DEFAULT_DELIVERY_FEE;
+}
+function unsettledDeliveredForWorker(workerId){
+  if(!db.settlements)db.settlements=[];
+  let settledIds=new Set(db.settlements.flatMap(v=>v.orderIds||[]).map(String));
+  return db.orders.filter(o=>
+    !o.deletedAt &&
+    o.status==='تم التسليم' &&
+    orderAssignedToWorker(o,workerId) &&
+    !settledIds.has(String(o.id))
+  );
+}
+function renderWorkerFinanceSummary(){
+  const box=document.getElementById('workerFinanceSummary');
+  if(!box)return;
+  if(session.role!=='worker'){
+    box.style.display='none';
+    box.innerHTML='';
+    return;
+  }
+  const w=db.workers.find(x=>String(x.id)===String(session.workerId));
+  const arr=unsettledDeliveredForWorker(session.workerId);
+  const total=arr.reduce((sum,o)=>sum+(+o.amount||0),0);
+  const fees=arr.reduce((sum,o)=>sum+deliveryFeeForOrder(o),0);
+  const due=total-fees;
+
+  box.style.display='block';
+  box.innerHTML=`
+    <h2 style="margin-top:0">💰 حسابي</h2>
+    <div class="grid">
+      <div><b>المجموع العام للطلبات المسلّمة</b><h2>${cash(total)}</h2></div>
+      <div><b>خصم ثمن التوصيل</b><h2>- ${cash(fees)}</h2></div>
+      <div><b>المبلغ الواجب دفعه للمالك</b><h2>${cash(due)}</h2></div>
+      <div><b>عدد الطلبات</b><h2>${arr.length}</h2></div>
+    </div>
+    <small>أجرة التوصيل لكل طلب: ${cash(deliveryRateForWorker(w))}</small><br>
+    <button class="btn g" style="margin-top:10px" onclick="workerConfirmPayment()" ${arr.length?'':'disabled'}>
+      ✓ تأكيد دفع ${cash(due)}
+    </button>
+  `;
+}
+async function workerConfirmPayment(){
+  if(session.role!=='worker')return;
+  if(!db.settlements)db.settlements=[];
+  const arr=unsettledDeliveredForWorker(session.workerId);
+  if(!arr.length)return alert('لا توجد مبالغ جديدة للدفع');
+
+  const w=db.workers.find(x=>String(x.id)===String(session.workerId));
+  const collected=arr.reduce((sum,o)=>sum+(+o.amount||0),0);
+  const fees=arr.reduce((sum,o)=>sum+deliveryFeeForOrder(o),0);
+  const net=collected-fees;
+
+  if(!confirm(`تأكيد أنك دفعت للمالك مبلغ ${cash(net)}؟`))return;
+
+  db.settlements.push({
+    id:'WP'+Date.now(),
+    date:tm(),
+    collected,
+    fees,
+    net,
+    orderIds:arr.map(o=>o.id),
+    workerId:String(session.workerId),
+    workerName:w?.name||'',
+    confirmedByWorker:true,
+    confirmedAt:isoNow()
+  });
+  localStorage.setItem(K,JSON.stringify(db));
+  renderWorkerFinanceSummary();
+  render();
+  menu();
+
+  if(navigator.onLine){
+    const ok=await syncNow();
+    if(ok)return alert('تم تأكيد الدفع وحفظه في السحابة ✓');
+  }
+  alert('تم تسجيل تأكيد الدفع على هذا الجهاز، وستتم المزامنة تلقائياً.');
+}
+
+function visibleOrders(){
+ let term=(search?.value||'').toLowerCase();
+ return db.orders.filter(o=>!o.deletedAt&&(session.role!=='worker'||workerCanSeeOrder(o,session.workerId))&&(filter==='الكل'||o.status===filter)&&(`${o.seq||''} ${o.id} ${o.clientNo} ${o.recipient} ${o.phone} ${o.sender} ${o.address||''} ${o.city||''} ${o.product||''}`).toLowerCase().includes(term));
+}
+function render(){title.textContent=filter;let a=visibleOrders();rows.innerHTML=a.map(o=>`<tr><td><b dir="ltr">${formatSeq(o.seq)}</b></td><td class=code onclick="openOrder('${o.id}')">${o.clientNo||'—'}</td><td>${o.recipient}</td><td>${o.address||'—'}${o.city?'، '+o.city:''}</td><td>
+<div dir="ltr" style="direction:ltr;unicode-bidi:bidi-override;display:inline-block">${o.phone}</div>
+<div style="margin-top:4px;display:flex;gap:4px;flex-wrap:wrap">
+<button class="btn g" style="padding:5px 7px;font-size:11px" onclick="contactPhone('${o.phone}')">📞</button>
+<button class="btn c" style="padding:5px 7px;font-size:11px" onclick="contactWhatsApp('${o.phone}','${o.recipient}')">💬</button>
+</div>
+</td><td>
+  <b>${cash(o.amount)}</b>
+  ${o.worker?`<div style="font-size:11px;margin-top:3px">خصم التوصيل: -${cash(deliveryFeeForOrder(o))}</div>
+  <div style="font-size:11px"><b>الصافي: ${cash((+o.amount||0)-deliveryFeeForOrder(o))}</b></div>`:''}
+</td><td><span class=badge>${o.status}</span></td></tr>`).join('');renderWorkerFinanceSummary()}
+function openOrder(id){
+ const _drawer=document.querySelector('#overlay > .drawer');
+ if(_drawer){
+   _drawer.style.position='fixed';
+   _drawer.style.right='0';
+   _drawer.style.left='auto';
+   _drawer.style.margin='0';
+   _drawer.style.transform='none';
+   _drawer.style.direction='rtl';
+ }
+
+ current=id;
+ let o=db.orders.find(x=>x.id===id);
+ if(!o)return;
+ let w=db.workers.find(x=>x.id===o.worker);
+ dcode.textContent=o.clientNo||'بدون رمز';
+ detail.innerHTML=`<div class=info>
+ <b>رقم الترتيب</b><span dir="ltr"><b>${formatSeq(o.seq)}</b></span>
+ <b>المرسل</b><span>${o.sender}</span>
+ <b>رمز الطلب</b><span>${o.clientNo||'—'}</span>
+ <b>المستلم</b><span>${o.recipient}</span>
+ <b>العنوان</b><span>${o.address||'—'}</span>
+ <b>المدينة</b><span>${o.city}</span>
+ <b>الهاتف</b><span>
+   <a href="tel:${normalizePhoneNumber(o.phone)}" dir="ltr" style="direction:ltr;unicode-bidi:plaintext;display:inline-block;text-align:left">${o.phone}</a>
+   <div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap">
+     <button class="btn g" onclick="contactPhone('${o.phone}')">📞 اتصال</button>
+     <button class="btn c" onclick="contactWhatsApp('${o.phone}','${o.recipient}')">💬 واتساب</button>
+   </div>
+ </span>
+ <b>قيمة الطلب</b><span>${cash(o.amount)}</span>
+ <b>خصم ثمن التوصيل</b><span>- ${cash(deliveryFeeForOrder(o))}</span>
+ <b>الصافي بعد التوصيل</b><span><b>${cash((+o.amount||0)-deliveryFeeForOrder(o))}</b></span>
+ <b>إرسال الطلب للموزع</b><span>${latestDeliveryTransferForOrder(o.id)?('✓ '+htmlEscape(latestDeliveryTransferForOrder(o.id).sentLabel||o.deliverySentLabel||'تم الإرسال')):'لم يُرسل بعد'}</span>
+ <b>تأكيد استلام الموزع</b><span>${latestDeliveryTransferForOrder(o.id)?.status==='received'?('✓ '+htmlEscape(latestDeliveryTransferForOrder(o.id).receivedLabel||o.deliveryReceivedLabel||'تم التأكيد')):'لم يؤكد بعد'}</span>
+ <b>المنتج</b><span>${o.product||'—'}</span>
+ <b>الموزع</b><span>${w?.name||'—'}</span>
+ <b>الحالة</b><span>${o.status}</span>
+ <b>آخر تعديل</b><span>${o.modifiedBy||'—'}${o.modifiedAt?' — '+new Date(o.modifiedAt).toLocaleString('ar-MA'):''}</span>
+ ${o.rejectReason?`<b>سبب الرفض</b><span>${o.rejectReason}</span>`:''}
+ ${o.postponeDate?`<b>مؤجل إلى</b><span>${o.postponeDate}</span>`:''}
+ </div>`;
+ history.innerHTML=(o.history||[]).slice().reverse().map(h=>`<div><b>${h.time}</b> : ${h.text}</div>`).join('');
+ remarks.innerHTML=(o.remarks||[]).slice().reverse().map(r=>`<div><b>${r.time}</b> : ${r.text}</div>`).join('')||'لا توجد تعليقات';
+ ownerPanelRender();
+ renderOwnerAssignment(o);
+ renderDeliveryTransferControls(o);
+ renderOwnerRestore(o);
+ renderOwnerDelete(o);
+ renderReturnControls(o);
+ if(document.getElementById('editBox'))editBox.style.display='none';
+ overlay.style.display='block';
+}
+function closeDrawer(){overlay.style.display='none';current=null}
+
+function renderReturnCreate(){
+ updateReturnRequestCount();
+ if(!((session&&session.role==='owner')||ownerMode===true))return;
+ let el=document.getElementById('returnCreateList');if(!el)return;
+ let term=(document.getElementById('returnSearch')?.value||'').toLowerCase().trim();
+ let arr=db.orders.filter(o=>o.status==='طلب رجوع'&&
+   (`${formatSeq(o.seq)} ${o.clientNo||''} ${o.recipient||''} ${o.phone||''} ${o.address||''} ${o.city||''}`).toLowerCase().includes(term));
+ el.innerHTML=arr.length?arr.map(o=>{
+   let w=db.workers.find(x=>x.id===o.worker);
+   return `<div class=card style="margin:7px 0">
+   <b dir=ltr>${formatSeq(o.seq)}</b> — <b>${htmlEscape(o.clientNo||'—')}</b><br>
+   <b>${htmlEscape(o.recipient||'—')}</b><br>
+   ${htmlEscape(o.address||'—')} ${htmlEscape(o.city||'')}<br>
+   <span dir=ltr>${htmlEscape(o.phone||'')}</span> — ${cash(o.amount)}<br>
+   الموزع: <b>${htmlEscape(w?.name||'غير مسند')}</b><br>
+   <span class=badge>${o.returnBatchId?'تم إرسال طلب الإرجاع للموزع':'طلب إرجاع لم يُرسل للموزع بعد'}</span>
+   ${o.returnBatchCode?`<span class=badge>${htmlEscape(o.returnBatchCode)}</span>`:''}
+   <button class="btn gr" style="margin-top:7px" onclick="openOrder('${o.id}')">فتح الطلب</button>
+   </div>`;
+ }).join(''):'لا توجد طلبات رجوع حالياً.';
+}
+
+
+
+function ensureDeliveryTransfers(){
+ if(!Array.isArray(db.deliveryTransfers))db.deliveryTransfers=[];
+}
+function latestDeliveryTransferForOrder(orderId){
+ ensureDeliveryTransfers();
+ return (db.deliveryTransfers||[])
+   .filter(t=>!t.deletedAt&&String(t.orderId)===String(orderId))
+   .sort((a,b)=>timeValue(b.modifiedAt||b.sentAt)-timeValue(a.modifiedAt||a.sentAt))[0]||null;
+}
+function workerCanSeeOrder(o,workerId){
+ if(!orderAssignedToWorker(o,workerId))return false;
+ const t=latestDeliveryTransferForOrder(o.id);
+ return !!t && String(t.workerId)===String(workerId) && (t.status==='sent'||t.status==='received');
+}
+function deliveryTransferStatusText(t){
+ if(!t)return 'لم يُرسل للموزع';
+ if(t.status==='received')return '✓ تم الاستلام';
+ return 'بانتظار تأكيد الاستلام';
+}
+
+let deliveryTransferView='pending';
+
+function deliveryTransferTab(view){
+ deliveryTransferView=view;
+ renderDeliveryTransfers();
+}
+function transferOrderRow(o,t,mode){
+ const w=db.workers.find(x=>String(x.id)===String(o.worker||'')&&!x.deletedAt);
+ const received=t&&t.status==='received';
+ const code=htmlEscape(o.clientNo||formatSeq(o.seq)||'—');
+ const recipient=htmlEscape(o.recipient||'—');
+ const city=htmlEscape(o.city||'—');
+ const phone=htmlEscape(o.phone||'—');
+ const amount=cash(o.amount);
+ let state='', action='';
+
+ if(mode==='worker'){
+   if(received){
+     const customerState=o.status==='تم التسليم'
+       ? '<br><span class="transfer-date">✓ تم التسليم للزبون</span>'
+       : '';
+     state=`<span class="transfer-state">تم الاستلام</span><br><span class="transfer-date">${htmlEscape(t.receivedLabel||t.receivedAt||'')}</span>${customerState}`;
+     action=`<button class="btn gr" onclick="openOrder('${o.id}')">تفاصيل</button>`;
+   }else{
+     state=`<span class="transfer-state">في انتظار الاستلام</span><br><span class="transfer-date">${htmlEscape(t?.sentLabel||t?.sentAt||'')}</span>`;
+     action=`<button class="receive-btn" onclick="confirmOrderReceipt('${t.id}')">استقبال الطلب</button>`;
+   }
+ }else{
+   if(!t){
+     state=`<span class="transfer-state">${w?'جاهز للإرسال':'بانتظار الإسناد'}</span>`;
+     action=w
+       ? `<button class="send-btn" onclick="sendOrderToWorker('${o.id}')">إرسال للموزع</button>`
+       : `<button class="btn" onclick="openOrder('${o.id}')">إسناد لموزع أولاً</button>`;
+   }else if(received){
+     state=`<span class="transfer-state">تم الاستلام</span><br><span class="transfer-date">${htmlEscape(t.receivedLabel||t.receivedAt||'')}</span>`;
+     action=`<button class="btn gr" onclick="openOrder('${o.id}')">تفاصيل</button>`;
+   }else{
+     state=`<span class="transfer-state">أُرسل للموزع</span><br><span class="transfer-date">${htmlEscape(t.sentLabel||t.sentAt||'')}</span>`;
+     action=`<button class="btn gr" onclick="openOrder('${o.id}')">تفاصيل</button>`;
+   }
+ }
+
+ return `<tr>
+   <td><span class="transfer-code" onclick="openOrder('${o.id}')">${code}</span></td>
+   <td>${recipient}</td>
+   <td>${city}<br><span class="transfer-phone">${phone}</span></td>
+   <td>${amount}</td>
+   <td>${htmlEscape(w?.name||'—')}</td>
+   <td>${state}</td>
+   <td>${action}</td>
+ </tr>`;
+}
+function transferTable(rows,mode){
+ if(!rows.length)return `<div class="transfer-empty">لا توجد طلبات في هذه القائمة.</div>`;
+ return `<div class="transfer-table-wrap">
+   <table class="transfer-table">
+    <thead><tr>
+      <th>رمز الطلب</th>
+      <th>المستلم</th>
+      <th>المدينة / الهاتف</th>
+      <th>القيمة</th>
+      <th>الموزع</th>
+      <th>الحالة</th>
+      <th>${mode==='worker'?'استلام':'إجراء'}</th>
+    </tr></thead>
+    <tbody>${rows.map(x=>transferOrderRow(x.o,x.t,mode)).join('')}</tbody>
+   </table>
+ </div>`;
+}
+
+function historicalReceivedOrdersForWorker(workerId){
+  const wid=String(workerId||'');
+  const seen=new Set();
+  const rows=[];
+
+  for(const t of (db.deliveryTransfers||[])){
+    if(!t || t.deletedAt || t.status!=='received' || String(t.workerId)!==wid) continue;
+    const o=db.orders.find(x=>String(x.id)===String(t.orderId)&&!x.deletedAt);
+    if(!o) continue;
+    seen.add(String(o.id));
+    rows.push({o,t});
+  }
+
+  for(const o of (db.orders||[])){
+    if(!o || o.deletedAt || !orderAssignedToWorker(o,wid)) continue;
+    if(seen.has(String(o.id))) continue;
+    const hadReceipt = !!o.deliveryReceivedAt || !!o.deliveryReceivedLabel;
+    const laterCompleted = o.status==='تم التسليم';
+    if(!hadReceipt && !laterCompleted) continue;
+
+    const pseudo={
+      id:'HIST-'+String(o.id),
+      orderId:String(o.id),
+      workerId:wid,
+      workerName:(db.workers.find(w=>String(w.id)===wid)?.name)||'',
+      status:'received',
+      sentAt:o.deliverySentAt||o.modifiedAt||o.createdAt||'',
+      sentLabel:o.deliverySentLabel||'',
+      receivedAt:o.deliveryReceivedAt||o.modifiedAt||'',
+      receivedLabel:o.deliveryReceivedLabel||'',
+      historical:true
+    };
+    rows.push({o,t:pseudo});
+  }
+
+  return rows.sort((a,b)=>
+    timeValue((b.t&& (b.t.receivedAt||b.t.sentAt)) || b.o.modifiedAt || b.o.createdAt) -
+    timeValue((a.t&& (a.t.receivedAt||a.t.sentAt)) || a.o.modifiedAt || a.o.createdAt)
+  );
+}
+function renderDeliveryTransfers(){
+ ensureDeliveryTransfers();
+ const el=document.getElementById('deliveryTransfersList');if(!el)return;
+ const titleEl=document.getElementById('deliveryTransfersTitle');
+ const helpEl=document.getElementById('deliveryTransfersHelp');
+ const term=(document.getElementById('deliveryTransferSearch')?.value||'').toLowerCase().trim();
+
+ if(session.role==='worker'){
+   if(titleEl)titleEl.textContent='📥 استقبال الطلبات';
+   if(helpEl)helpEl.textContent='هذه هي الطلبات التي أرسلها لك المالك. بعد تأكيد الاستلام يبقى الطلب محفوظاً في «طلبات مستلمة» حتى بعد تسليمه للزبون.';
+   const transfers=(db.deliveryTransfers||[])
+     .filter(t=>!t.deletedAt&&String(t.workerId)===String(session.workerId))
+     .sort((a,b)=>timeValue(b.sentAt||b.modifiedAt)-timeValue(a.sentAt||a.modifiedAt));
+
+   const pending=[];
+   for(const t of transfers){
+     if(t.status==='received') continue;
+     const o=db.orders.find(x=>String(x.id)===String(t.orderId)&&!x.deletedAt);
+     if(!o)continue;
+     const hay=`${formatSeq(o.seq)} ${o.clientNo||''} ${o.recipient||''} ${o.phone||''} ${o.city||''}`.toLowerCase();
+     if(term&&!hay.includes(term))continue;
+     pending.push({o,t});
+   }
+
+   let received=historicalReceivedOrdersForWorker(session.workerId);
+   if(term){
+     received=received.filter(({o})=>{
+       const hay=`${formatSeq(o.seq)} ${o.clientNo||''} ${o.recipient||''} ${o.phone||''} ${o.city||''}`.toLowerCase();
+       return hay.includes(term);
+     });
+   }
+   if(!['pending','received'].includes(deliveryTransferView))deliveryTransferView='pending';
+   const rows=deliveryTransferView==='received'?received:pending;
+   el.innerHTML=`<div class="transfer-shell">
+     <div class="transfer-toolbar">
+       <button type="button" class="transfer-tab ${deliveryTransferView==='pending'?'active':''}" onclick="deliveryTransferTab('pending')">طلبات في الانتظار (${pending.length})</button>
+       <button type="button" class="transfer-tab ${deliveryTransferView==='received'?'active':''}" onclick="deliveryTransferTab('received')">طلبات مستلمة (${received.length})</button>
+     </div>
+     <div class="transfer-summary">${deliveryTransferView==='pending'?'الطلبات المرسلة إليك بانتظار الاستلام':'سجل الطلبات التي أكدت استلامها'}</div>
+     ${transferTable(rows,'worker')}
+   </div>`;
+ }else{
+   if(titleEl)titleEl.textContent='📤 إرسال الطلبات للموزع';
+   if(helpEl)helpEl.textContent='كل طلب جديد يظهر هنا تلقائياً في سطر مستقل، ثم يمكنك إسناده وإرساله للموزع ومتابعة تأكيد استلامه.';
+   const orders=db.orders
+     .filter(o=>!o.deletedAt&&o.status==='قيد التوزيع')
+     .sort((a,b)=>timeValue(b.modifiedAt||b.createdAt)-timeValue(a.modifiedAt||a.createdAt))
+     .filter(o=>{
+       const hay=`${formatSeq(o.seq)} ${o.clientNo||''} ${o.recipient||''} ${o.phone||''} ${o.city||''}`.toLowerCase();
+       return !term||hay.includes(term);
+     });
+
+   const unsent=[], waiting=[], received=[];
+   for(const o of orders){
+     const t=latestDeliveryTransferForOrder(o.id);
+     if(!t)unsent.push({o,t});
+     else if(t.status==='received')received.push({o,t});
+     else waiting.push({o,t});
+   }
+   if(!['ready','waiting','received'].includes(deliveryTransferView))deliveryTransferView='ready';
+   const rows=deliveryTransferView==='waiting'?waiting:(deliveryTransferView==='received'?received:unsent);
+   el.innerHTML=`<div class="transfer-shell">
+     <div class="transfer-toolbar">
+       <button type="button" class="transfer-tab ${deliveryTransferView==='ready'?'active':''}" onclick="deliveryTransferTab('ready')">جاهزة للإرسال (${unsent.length})</button>
+       <button type="button" class="transfer-tab ${deliveryTransferView==='waiting'?'active':''}" onclick="deliveryTransferTab('waiting')">في انتظار الموزع (${waiting.length})</button>
+       <button type="button" class="transfer-tab ${deliveryTransferView==='received'?'active':''}" onclick="deliveryTransferTab('received')">تم استلامها (${received.length})</button>
+     </div>
+     <div class="transfer-summary">${
+       deliveryTransferView==='ready'?'الطلبات الجديدة الجاهزة للإرسال':
+       deliveryTransferView==='waiting'?'الطلبات التي أرسلتها وبانتظار تأكيد الموزع':
+       'سجل الطلبات التي أكد الموزع استلامها'
+     }</div>
+     ${transferTable(rows,'owner')}
+   </div>`;
+ }
+ updateReturnRequestCount();
+}
+async function sendOrderToWorker(orderId){
+ const isOwner=(session&&session.role==='owner')||ownerMode===true;
+ if(!isOwner)return alert('هذه العملية للمالك فقط');
+ ensureDeliveryTransfers();
+
+ const o=db.orders.find(x=>String(x.id)===String(orderId)&&!x.deletedAt);
+ if(!o)return alert('الطلب غير موجود');
+ if(!o.worker)return alert('يجب إسناد الطلب إلى موزع أولاً');
+ const w=db.workers.find(x=>String(x.id)===String(o.worker)&&!x.deletedAt);
+ if(!w)return alert('الموزع غير موجود أو محذوف');
+ const old=latestDeliveryTransferForOrder(o.id);
+ if(old)return alert(old.status==='received'?'هذا الطلب استلمه الموزع بالفعل':'هذا الطلب أُرسل للموزع بالفعل وينتظر التأكيد');
+
+ if(!confirm('إرسال هذا الطلب إلى '+w.name+' لتأكيد استلامه؟'))return;
+ const now=isoNow(), label=tm();
+ const t={
+   id:'DT'+Date.now()+Math.random().toString(36).slice(2,6),
+   orderId:String(o.id),
+   workerId:String(w.id),
+   workerName:w.name,
+   status:'sent',
+   sentAt:now,
+   sentLabel:label,
+   modifiedAt:now,
+   modifiedBy:actorName()
+ };
+ db.deliveryTransfers.push(t);
+ o.deliveryTransferId=t.id;
+ o.deliverySentAt=now;
+ o.deliverySentLabel=label;
+ o.modifiedAt=now;
+ o.modifiedBy=actorName();
+ appendOrderHistory(o,'أرسل المالك الطلب إلى الموزع '+w.name+' لتأكيد الاستلام');
+
+ localStorage.setItem(K,JSON.stringify(db));
+ renderDeliveryTransfers();render();menu();
+ if(navigator.onLine){
+   const ok=await syncNow();
+   if(ok)return alert('تم إرسال الطلب إلى '+w.name+' وحفظه في السحابة ✓');
+ }
+ alert('تم تسجيل إرسال الطلب وسيتم رفعه تلقائياً عند توفر المزامنة.');
+}
+async function confirmOrderReceipt(transferId){
+ if(!(session&&session.role==='worker'))return alert('هذه العملية للموزع فقط');
+ ensureDeliveryTransfers();
+
+ const t=db.deliveryTransfers.find(x=>String(x.id)===String(transferId)&&!x.deletedAt);
+ if(!t)return alert('سجل الإرسال غير موجود');
+ if(String(t.workerId)!==String(session.workerId))return alert('هذا الطلب ليس مخصصاً لحسابك');
+ if(t.status==='received')return alert('تم تأكيد استلام هذا الطلب سابقاً');
+ const o=db.orders.find(x=>String(x.id)===String(t.orderId)&&!x.deletedAt);
+ if(!o)return alert('الطلب غير موجود');
+
+ if(!confirm('تأكيد استلام الطلب '+formatSeq(o.seq)+'؟'))return;
+ const now=isoNow(), label=tm();
+ t.status='received';
+ t.receivedAt=now;
+ t.receivedLabel=label;
+ t.modifiedAt=now;
+ t.modifiedBy=actorName();
+
+ o.deliveryReceivedAt=now;
+ o.deliveryReceivedLabel=label;
+ o.modifiedAt=now;
+ o.modifiedBy=actorName();
+ appendOrderHistory(o,'أكد الموزع استلام الطلب');
+
+ localStorage.setItem(K,JSON.stringify(db));
+ renderDeliveryTransfers();render();menu();
+ if(navigator.onLine){
+   const ok=await syncNow();
+   if(ok)return alert('تم تأكيد استلام الطلب وحفظه في السحابة ✓');
+ }
+ alert('تم تأكيد الاستلام على هذا الجهاز وستتم المزامنة تلقائياً.');
+}
+function renderDeliveryTransferControls(o){
+ const old=document.getElementById('deliveryTransferControls');
+ if(old)old.remove();
+ const host=document.getElementById('ownerAssignBox')?.parentElement || document.querySelector('#overlay .drawer');
+ if(!host)return;
+ const box=document.createElement('div');
+ box.id='deliveryTransferControls';
+ box.className='card';
+ box.style.margin='10px 0';
+
+ const t=latestDeliveryTransferForOrder(o.id);
+ if((session&&session.role==='owner')||ownerMode===true){
+   const w=db.workers.find(x=>String(x.id)===String(o.worker||'')&&!x.deletedAt);
+   box.innerHTML=`<h3 style="margin-top:0">📤 إرسال الطلب للموزع</h3>
+     <div><b>الموزع:</b> ${htmlEscape(w?.name||'غير مسند')}</div>
+     <div style="margin:6px 0"><b>الحالة:</b> ${deliveryTransferStatusText(t)}</div>
+     ${t?`<div><b>تاريخ الإرسال:</b> ${htmlEscape(t.sentLabel||'—')}</div>`:''}
+     ${t&&t.status==='received'?`<div><b>تاريخ الاستلام:</b> ${htmlEscape(t.receivedLabel||'—')}</div>`:''}
+     ${!t&&w?`<button class="btn g" style="margin-top:8px" onclick="sendOrderToWorker('${o.id}')">📤 إرسال هذا الطلب للموزع</button>`:''}`;
+ }else if(session&&session.role==='worker'){
+   if(!t||String(t.workerId)!==String(session.workerId)){box.style.display='none';}
+   else{
+     box.innerHTML=`<h3 style="margin-top:0">📥 استلام الطلب</h3>
+       <div><b>الحالة:</b> ${deliveryTransferStatusText(t)}</div>
+       <div><b>تاريخ الإرسال:</b> ${htmlEscape(t.sentLabel||'—')}</div>
+       ${t.status==='received'?`<div><b>تاريخ التأكيد:</b> ${htmlEscape(t.receivedLabel||'—')}</div>`:
+       `<button class="btn g" style="margin-top:8px" onclick="confirmOrderReceipt('${t.id}')">✓ تأكيد استلام هذا الطلب</button>`}`;
+   }
+ }else box.style.display='none';
+
+ host.appendChild(box);
+}
+
+function ensureDeliveryBatches(){
+ if(!Array.isArray(db.deliveryBatches))db.deliveryBatches=[];
+}
+
+function renderDeliveryBatches(){
+ ensureDeliveryBatches();
+ const el=document.getElementById('deliveryBatchesList');if(!el)return;
+ const tools=document.getElementById('deliveryBatchOwnerTools');
+ if(tools)tools.style.display=((session&&session.role==='owner')||ownerMode===true)?'block':'none';
+
+ let arr=(db.deliveryBatches||[])
+   .filter(b=>!b.deletedAt&&(session.role!=='worker'||String(b.workerId)===String(session.workerId)))
+   .sort((a,b)=>timeValue(b.createdAt||b.modifiedAt)-timeValue(a.createdAt||a.modifiedAt));
+
+ if(!arr.length){
+   el.innerHTML='لا توجد حزم استلام مسجلة بعد.';
+   updateReturnRequestCount();
+   return;
+ }
+
+ el.innerHTML=arr.map(b=>{
+   const received=b.status==='received';
+   const ids=(b.orderIds||[]).map(String);
+   const orders=db.orders.filter(o=>ids.includes(String(o.id)));
+   const lines=orders.map(o=>`<div style="padding:4px 0;border-bottom:1px solid #eee">
+     <b dir="ltr">${formatSeq(o.seq)}</b> — <b>${htmlEscape(o.recipient||'—')}</b> — ${cash(o.amount)}
+   </div>`).join('');
+
+   const action=(session.role==='worker'&&!received)
+     ? `<button class="btn g" style="margin-top:10px" onclick="confirmDeliveryBatchReceived('${b.id}')">✓ تأكيد استلام الحزمة (${ids.length} طلبات)</button>`
+     : '';
+
+   return `<div class="card" style="margin-top:10px">
+     <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap">
+       <div><b>حزمة التوزيع:</b> ${htmlEscape(b.code||b.id)}</div>
+       <span class="badge">${received?'تم الاستلام':'بانتظار تأكيد الموزع'}</span>
+     </div>
+     <p><b>الموزع:</b> ${htmlEscape(b.workerName||'—')}<br>
+     <b>عدد الطلبات:</b> ${ids.length}<br>
+     <b>تاريخ إرسال الحزمة:</b> ${htmlEscape(b.createdLabel||b.createdAt||'—')}
+     ${received?`<br><b>تاريخ تأكيد الاستلام:</b> ${htmlEscape(b.receivedLabel||b.receivedAt||'—')}`:''}</p>
+     <div>${lines}</div>
+     ${action}
+   </div>`;
+ }).join('');
+ updateReturnRequestCount();
+}
+
+async function createDeliveryBatches(){
+ const isOwner=(session&&session.role==='owner')||ownerMode===true;
+ if(!isOwner)return alert('هذه العملية للمالك فقط');
+ ensureDeliveryBatches();
+
+ const eligible=db.orders.filter(o=>
+   !o.deletedAt &&
+   o.status==='قيد التوزيع' &&
+   o.worker &&
+   !o.deliveryBatchId
+ );
+ if(!eligible.length)return alert('لا توجد طلبات جديدة مسندة إلى موزع لإرسالها كحزمة');
+
+ const grouped=new Map();
+ for(const o of eligible){
+   const wid=String(o.worker||'');
+   const w=db.workers.find(x=>String(x.id)===wid&&!x.deletedAt);
+   if(!w)continue;
+   if(!grouped.has(wid))grouped.set(wid,{worker:w,orders:[]});
+   grouped.get(wid).orders.push(o);
+ }
+ if(!grouped.size)return alert('لا توجد طلبات مرتبطة بموزع فعّال');
+
+ const total=[...grouped.values()].reduce((n,g)=>n+g.orders.length,0);
+ if(!confirm('إرسال '+total+' طلباً ضمن حزمة/حزم للموزعين لتأكيد الاستلام؟'))return;
+
+ const now=isoNow(), label=tm();
+ let seqNo=1;
+ for(const [wid,g] of grouped){
+   const bid='DB'+Date.now()+seqNo++;
+   const code='DEL-'+new Date().toISOString().slice(0,10).replace(/-/g,'')+'-'+String(seqNo-1).padStart(2,'0');
+   const batch={
+     id:bid,code,workerId:wid,workerName:g.worker.name,
+     orderIds:g.orders.map(o=>o.id),count:g.orders.length,
+     status:'sent',createdAt:now,createdLabel:label,
+     modifiedAt:now,modifiedBy:actorName()
+   };
+   db.deliveryBatches.push(batch);
+   for(const o of g.orders){
+     o.deliveryBatchId=bid;
+     o.deliveryBatchCode=code;
+     o.deliverySentAt=label;
+     appendOrderHistory(o,'أرسل المالك الطلب ضمن حزمة توزيع '+code+' إلى '+g.worker.name);
+   }
+ }
+
+ localStorage.setItem(K,JSON.stringify(db));
+ renderDeliveryBatches();render();menu();
+ if(navigator.onLine){
+   const ok=await syncNow();
+   if(ok)return alert('تم إرسال حزم الطلبات للموزعين وحفظها في السحابة ✓');
+ }
+ alert('تم إنشاء حزم الطلبات وستتم مزامنتها تلقائياً.');
+}
+
+async function confirmDeliveryBatchReceived(batchId){
+ if(!(session&&session.role==='worker'))return alert('هذه العملية للموزع فقط');
+ ensureDeliveryBatches();
+ const b=db.deliveryBatches.find(x=>String(x.id)===String(batchId));if(!b)return;
+ if(String(b.workerId)!==String(session.workerId))return alert('هذه الحزمة ليست مخصصة لحسابك');
+ if(b.status==='received')return alert('تم تأكيد استلام هذه الحزمة سابقاً');
+
+ const ids=(b.orderIds||[]).map(String);
+ if(!confirm('تأكيد استلام الحزمة كاملة وعددها '+ids.length+' طلبات؟'))return;
+
+ const now=isoNow(), label=tm();
+ b.status='received';
+ b.receivedAt=now;
+ b.receivedLabel=label;
+ b.modifiedAt=now;
+ b.modifiedBy=actorName();
+
+ for(const o of db.orders){
+   if(ids.includes(String(o.id))){
+     o.deliveryReceivedAt=label;
+     appendOrderHistory(o,'أكد الموزع استلام الطلب ضمن الحزمة '+(b.code||b.id));
+   }
+ }
+
+ localStorage.setItem(K,JSON.stringify(db));
+ renderDeliveryBatches();render();menu();
+ if(navigator.onLine){
+   const ok=await syncNow();
+   if(ok)return alert('تم تأكيد استلام الحزمة ('+ids.length+' طلبات) وحفظها في السحابة ✓');
+ }
+ alert('تم تأكيد الاستلام على هذا الجهاز وستتم المزامنة تلقائياً.');
+}
+
+function ensureReturnBatches(){
+ if(!Array.isArray(db.returnBatches))db.returnBatches=[];
+}
+function renderReturnBatches(){
+ ensureReturnBatches();
+ const el=document.getElementById('returnBatchesList');if(!el)return;
+ let arr=(db.returnBatches||[])
+   .filter(b=>!b.deletedAt&&(session.role!=='worker'||String(b.workerId)===String(session.workerId)))
+   .sort((a,b)=>timeValue(b.createdAt||b.modifiedAt)-timeValue(a.createdAt||a.modifiedAt));
+ if(!arr.length){
+   el.innerHTML='لا توجد طلبات إرجاع مرسلة ومسجلة بعد.';
+   updateReturnRequestCount();
+   return;
+ }
+ el.innerHTML=arr.map(b=>{
+   const isDone=b.status==='completed';
+   const ids=(b.orderIds||[]).map(String);
+   const orders=db.orders.filter(o=>ids.includes(String(o.id)));
+   const orderLines=orders.map(o=>`<div style="padding:4px 0;border-bottom:1px solid #eee">
+     <b dir="ltr">${formatSeq(o.seq)}</b> — ${htmlEscape(o.recipient||'—')} — ${cash(o.amount)}
+   </div>`).join('');
+   const action=(session.role==='worker'&&!isDone)
+     ? `<button class="btn g" style="margin-top:10px" onclick="confirmReturnBatch('${b.id}')">✓ تأكيد تنفيذ الإرجاع (${ids.length} طلبات)</button>`
+     : '';
+   return `<div class="card" style="margin-top:10px">
+     <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap">
+       <div><b>طلب الإرجاع:</b> ${htmlEscape(b.code||b.id)}</div>
+       <span class="badge">${isDone?'تم تنفيذ الإرجاع':'بانتظار تنفيذ الموزع'}</span>
+     </div>
+     <p><b>الموزع:</b> ${htmlEscape(b.workerName||'—')}<br>
+     <b>عدد الطلبات:</b> ${ids.length}<br>
+     <b>تاريخ الإرسال:</b> ${htmlEscape(b.createdLabel||b.createdAt||'—')}
+     ${isDone?`<br><b>تاريخ التأكيد:</b> ${htmlEscape(b.confirmedLabel||b.confirmedAt||'—')}`:''}</p>
+     <div>${orderLines}</div>
+     ${action}
+   </div>`;
+ }).join('');
+ updateReturnRequestCount();
+}
+async function sendReturnBatches(){
+ const isOwner=(session&&session.role==='owner')||ownerMode===true;
+ if(!isOwner)return alert('هذه العملية للمالك فقط');
+ ensureReturnBatches();
+
+ const pending=db.orders.filter(o=>!o.deletedAt&&o.status==='طلب رجوع'&&!o.returnBatchId);
+ if(!pending.length)return alert('لا توجد طلبات إرجاع جديدة لإرسالها للموزعين');
+
+ const grouped=new Map();
+ for(const o of pending){
+   const wid=String(o.worker||'');
+   if(!wid)continue;
+   const w=db.workers.find(x=>String(x.id)===wid&&!x.deletedAt);
+   if(!w)continue;
+   if(!grouped.has(wid))grouped.set(wid,{worker:w,orders:[]});
+   grouped.get(wid).orders.push(o);
+ }
+ if(!grouped.size)return alert('طلبات الرجوع الحالية غير مسندة إلى موزعين فعّالين');
+
+ if(!confirm('إرسال طلب إرجاع لـ '+pending.length+' طلب إلى الموزعين المسؤولين عنها؟'))return;
+
+ let seqNo=1;
+ const now=isoNow(), label=tm();
+ for(const [wid,g] of grouped){
+   const bid='RB'+Date.now()+seqNo++;
+   const code='RET-'+new Date().toISOString().slice(0,10).replace(/-/g,'')+'-'+String(seqNo-1).padStart(2,'0');
+   const batch={
+     id:bid,code,workerId:wid,workerName:g.worker.name,
+     orderIds:g.orders.map(o=>o.id),
+     count:g.orders.length,status:'pending',
+     createdAt:now,createdLabel:label,modifiedAt:now,modifiedBy:actorName()
+   };
+   db.returnBatches.push(batch);
+   for(const o of g.orders){
+     o.returnBatchId=bid;
+     o.returnBatchCode=code;
+     appendOrderHistory(o,'أرسل المالك طلب إرجاع '+code+' إلى الموزع '+g.worker.name);
+   }
+ }
+ localStorage.setItem(K,JSON.stringify(db));
+ renderReturnCreate();renderReturnBatches();menu();render();
+ if(navigator.onLine){
+   const ok=await syncNow();
+   if(ok)return alert('تم إرسال طلبات الإرجاع للموزعين وحفظها في السحابة ✓');
+ }
+ alert('تم إرسال طلبات الإرجاع وستتم مزامنتها تلقائياً.');
+}
+async function confirmReturnBatch(batchId){
+ if(!(session&&session.role==='worker'))return alert('هذه العملية للموزع فقط');
+ ensureReturnBatches();
+ const b=db.returnBatches.find(x=>String(x.id)===String(batchId));if(!b)return;
+ if(String(b.workerId)!==String(session.workerId))return alert('هذه الحزمة ليست مخصصة لحسابك');
+ if(b.status==='completed')return alert('تم تأكيد هذه الحزمة سابقاً');
+
+ const ids=(b.orderIds||[]).map(String);
+ if(!confirm('تأكيد أنك أعدت جميع الطلبات المطلوبة للمالك وعددها '+ids.length+' طلبات؟'))return;
+
+ const now=isoNow(), label=tm();
+ for(const o of db.orders){
+   if(ids.includes(String(o.id))){
+     o.status='مرتجع';
+     o.returnCompletedAt=label;
+     appendOrderHistory(o,'أكد الموزع تنفيذ طلب الإرجاع '+(b.code||b.id));
+   }
+ }
+ b.status='completed';
+ b.confirmedAt=now;
+ b.confirmedLabel=label;
+ b.modifiedAt=now;
+ b.modifiedBy=actorName();
+
+ localStorage.setItem(K,JSON.stringify(db));
+ render();menu();renderReturnBatches();
+ if(navigator.onLine){
+   const ok=await syncNow();
+   if(ok)return alert('تم تأكيد تنفيذ الإرجاع ('+ids.length+' طلبات) وحفظه في السحابة ✓');
+ }
+ alert('تم تأكيد تنفيذ الإرجاع على هذا الجهاز وستتم المزامنة تلقائياً.');
+}
+
+function createReturnFromList(id){
+ const isOwner=(session&&session.role==='owner')||ownerMode===true;
+ if(!isOwner)return alert('هذه الصلاحية للمالك فقط');
+ let o=db.orders.find(x=>x.id===id);if(!o)return;
+ if(o.status==='طلب رجوع'||o.status==='مرتجع')return alert('الطلب موجود بالفعل ضمن الرجوع');
+ if(!confirm('إرسال طلب رجوع للطلب '+formatSeq(o.seq)+'؟'))return;
+ let previous=o.status;
+ o.status='طلب رجوع';o.returnRequestedAt=tm();
+ if(!o.history)o.history=[];
+ o.history.push({time:o.returnRequestedAt,text:'طلب المالك رجوع الطلب — الحالة السابقة: '+previous});
+ localStorage.setItem(K,JSON.stringify(db));
+ render();menu();renderReturnCreate();
+ alert('تم إرسال طلب الرجوع إلى الموزع');
+}
+
+function renderReturnControls(o){
+ let box=document.getElementById('returnRequestBox');
+ if(!box)return;
+ const isOwner=(session&&session.role==='owner')||ownerMode===true;
+ const isWorker=(session&&session.role==='worker');
+
+ if(isOwner && o.status!=='طلب رجوع' && o.status!=='مرتجع'){
+   box.innerHTML=`<button class="btn" style="width:100%" onclick="requestReturn()">↩ طلب رجوع الطلب</button>
+   <small style="display:block;margin-top:5px;color:#666">إنشاء طلب الرجوع متاح للمالك فقط.</small>`;
+ }else if(isWorker && o.status==='طلب رجوع'){
+   if(o.returnBatchId){
+     box.innerHTML=`<button class="btn g" style="width:100%" onclick="closeDrawer();go('returnBatches')">↩ فتح طلب الإرجاع وتأكيد التنفيذ</button>
+     <small style="display:block;margin-top:5px;color:#666">هذا الطلب ضمن طلب إرجاع أرسله المالك، ويجب على الموزع تأكيد التنفيذ بعد إعادة الطلبات فعلياً.</small>`;
+   }else{
+     box.innerHTML=`<button class="btn g" style="width:100%" onclick="confirmReturnDone()">✓ تم تنفيذ طلب الرجوع</button>
+     <small style="display:block;margin-top:5px;color:#666">طلب رجوع فردي قديم غير مرتبط بحزمة.</small>`;
+   }
+ }else if(isOwner && o.status==='طلب رجوع'){
+   box.innerHTML=`<span class="badge">طلب الرجوع بانتظار استجابة الموزع</span>`;
+ }else{
+   box.innerHTML='';
+ }
+}
+
+function requestReturn(){
+ const isOwner=(session&&session.role==='owner')||ownerMode===true;
+ if(!isOwner)return alert('إنشاء طلب الرجوع متاح للمالك فقط');
+ let o=db.orders.find(x=>x.id===current);if(!o)return;
+ if(o.status==='طلب رجوع')return alert('يوجد طلب رجوع قائم بالفعل');
+ if(!confirm('إرسال طلب رجوع هذا الطلب إلى الموزع؟'))return;
+ let previous=o.status;
+ o.status='طلب رجوع';
+ o.returnRequestedAt=tm();
+ if(!o.history)o.history=[];
+ o.history.push({time:o.returnRequestedAt,text:'طلب المالك رجوع الطلب — الحالة السابقة: '+previous});
+ localStorage.setItem(K,JSON.stringify(db));
+ render();menu();
+ openOrder(current);
+}
+
+function confirmReturnDone(){
+ if(!(session&&session.role==='worker'))return alert('هذه العملية مخصصة للموزع');
+ let o=db.orders.find(x=>x.id===current);if(!o)return;
+ if(o.status!=='طلب رجوع')return alert('لا يوجد طلب رجوع لهذا الطلب');
+ if(!confirm('تأكيد أنك استجبت لطلب الرجوع وأعدت الطلب؟'))return;
+ o.status='مرتجع';
+ o.returnCompletedAt=tm();
+ if(!o.history)o.history=[];
+ o.history.push({time:o.returnCompletedAt,text:'استجاب الموزع لطلب الرجوع — تم إرجاع الطلب'});
+ localStorage.setItem(K,JSON.stringify(db));
+ render();menu();accountsRender();
+ openOrder(current);
+}
+function renderOwnerRestore(o){
+ let box=document.getElementById('ownerRestoreBox');
+ if(!box)return;
+ const isOwner=(session&&session.role==='owner')||ownerMode===true;
+ if(isOwner && o && o.status!=='قيد التوزيع'){
+   box.innerHTML=`<button class="btn g" style="width:100%;font-size:16px" onclick="restoreToDelivery()">↩ إعادة إلى قيد التوزيع</button>
+   <small style="display:block;margin-top:6px;color:#666">صلاحية المالك فقط — الحالة الحالية: ${o.status}</small>`;
+ }else box.innerHTML='';
+}
+
+function renderOwnerDelete(o){
+ const box=document.getElementById('ownerDeleteBox'); if(!box)return;
+ const isOwner=(session&&session.role==='owner')||ownerMode===true;
+ box.innerHTML=isOwner&&o&&!o.deletedAt?`<button class="btn r" style="width:100%;font-size:16px" onclick="deleteCurrentOrder()">🗑️ حذف الطلب</button>
+ <small style="display:block;margin-top:6px;color:#666">الحذف متاح للمالك فقط، ويُحفظ كسجل حذف آمن للمزامنة.</small>`:'';
+}
+function deleteCurrentOrder(){
+ const isOwner=(session&&session.role==='owner')||ownerMode===true;
+ if(!isOwner)return alert('حذف الطلبات متاح للمالك فقط');
+ const o=db.orders.find(x=>x.id===current); if(!o)return;
+ if(!confirm('هل تريد حذف هذا الطلب؟ سيختفي من القوائم ويُزامن الحذف مع الأجهزة الأخرى.'))return;
+ o.deletedAt=isoNow(); o.deletedBy=actorName();
+ appendOrderHistory(o,'حذف الطلب');
+ save(); closeDrawer(); showToast('تم حذف الطلب');
+}
+function restoreToDelivery(){
+ const isOwner=(session&&session.role==='owner')||ownerMode===true;
+ if(!isOwner)return alert('هذه الصلاحية للمالك فقط');
+ let o=db.orders.find(x=>x.id===current);if(!o)return;
+ let previous=o.status;
+ if(previous==='قيد التوزيع')return;
+ if(!confirm('إعادة هذا الطلب من «'+previous+'» إلى «قيد التوزيع»؟'))return;
+ o.status='قيد التوزيع';
+ o.rejectReason='';
+ o.postponeDate='';
+ if(!o.history)o.history=[];
+ appendOrderHistory(o,'أعاد المالك الطلب من «'+previous+'» إلى «قيد التوزيع»');
+ save();menu();render();accountsRender();openOrder(current);
+}
+
+function rejectOrder(){
+ let o=db.orders.find(x=>x.id===current); if(!o)return;
+ let reason=document.getElementById('rejectReason').value;
+ if(!reason)return alert('اختر سبب الرفض أولاً');
+ o.status='رفض';
+ o.rejectReason=reason;
+ appendOrderHistory(o,'رفض — السبب: '+reason);
+ save(); openOrder(current);
+}
+function postponeOrder(){
+ let o=db.orders.find(x=>x.id===current); if(!o)return;
+ let d=document.getElementById('postponeDate').value;
+ if(!d)return alert('اختر تاريخ التأجيل أولاً');
+ o.status='مؤجل';
+ o.postponeDate=d;
+ appendOrderHistory(o,'مؤجل إلى: '+d);
+ save(); openOrder(current);
+}
+function statusSet(s){let o=db.orders.find(x=>x.id===current);if(!o)return;o.status=s;appendOrderHistory(o,s);save();openOrder(current)}function remarkAdd(){let o=db.orders.find(x=>x.id===current),t=remark.value.trim();if(!o||!t)return;if(!Array.isArray(o.remarks))o.remarks=[];o.remarks.push({time:tm(),text:t+' — بواسطة '+actorName()});markOrderChanged(o,'تعليق');remark.value='';save();openOrder(current)}
+function workerRegister(){
+ let name=regName.value.trim(),pin=regPin.value,pc=regPinConfirm.value;
+ if(name.length<2)return alert('اختر اسماً واضحاً');
+ if(db.workers.some(w=>!w.deletedAt&&String(w.name).trim().toLowerCase()===name.toLowerCase()))return alert('هذا الاسم مستخدم، اختر اسماً آخر');
+ if(!pin||pin.length<4)return alert('اختر رقماً سرياً من 4 أرقام أو أكثر');
+ if(pin!==pc)return alert('تأكيد الرقم السري غير مطابق');
+ let isFirstWorker=db.workers.length===0;
+ db.workers.push({id:Date.now()+'',name:name,rate:0,pin:pin,blocked:false,approved:isFirstWorker,autoApprovedFirst:isFirstWorker,modifiedAt:isoNow(),modifiedBy:actorName()});
+ localStorage.setItem(K,JSON.stringify(db));refreshLoginWorkers();renderWorkers();
+ regName.value='';regPin.value='';regPinConfirm.value='';
+ if(isFirstWorker){
+   alert('تم إنشاء حساب الموزع الأول وتفعيله تلقائياً. يمكنك تسجيل الدخول الآن.');
+ }else{
+   alert('تم إرسال طلب إنشاء الحساب إلى المالك. لن تتمكن من الدخول حتى تتم الموافقة عليه.');
+ }
+}
+function renderWorkers(){
+ refreshLoginWorkers();
+ worker.innerHTML='<option value="">اختر الموزع</option>'+db.workers.filter(w=>!w.deletedAt&&w.approved!==false).map(w=>`<option value="${w.id}">${w.name}</option>`).join('');
+ workerList.innerHTML=db.workers.filter(w=>!w.deletedAt).map(w=>`<div class=card style="margin-top:8px"><b>${w.name}</b><br>
+ <span class=badge>${w.approved===false?'بانتظار الموافقة':(w.blocked?'محظور':'نشط')}</span> ${w.autoApprovedFirst?'<span class=badge>الموزع الأول</span>':''}
+ ${w.approved===false?`<div class=grid style="margin-top:8px"><input id="rate_${w.id}" type="number" step=".01" placeholder="الأجرة لكل طلب"><button class="btn g" onclick="approveWorker('${w.id}')">✓ الموافقة على الحساب</button><button class="btn r" onclick="rejectWorker('${w.id}')">رفض الطلب</button></div>`:`<p><b>${cash(w.rate)}</b> لكل طلب مسلّم</p><button class="${w.blocked?'btn g':'btn r'}" onclick="toggleWorkerBlock('${w.id}')">${w.blocked?'رفع الحظر':'حظر الموزع'}</button> <button class="btn gr" onclick="resetWorkerPin('${w.id}')">إعادة تعيين الرقم السري</button> <button class="btn r" onclick="deleteWorkerAccount('${w.id}')">🗑️ حذف الموزع</button>`}</div>`).join('');
+}
+function approveWorker(id){
+ if(session.role!=='owner')return;
+ let w=db.workers.find(x=>x.id===id);if(!w)return;
+ let el=document.getElementById('rate_'+id);w.rate=+(el?.value||0);w.approved=true;w.blocked=false;save();
+}
+function rejectWorker(id){
+ if(session.role!=='owner')return;
+ let i=db.workers.findIndex(x=>x.id===id);if(i<0)return;
+ if(!confirm('رفض طلب إنشاء هذا الحساب؟'))return;
+ db.workers.splice(i,1);save();
+}
+function toggleWorkerBlock(id){
+ if(session.role!=='owner')return;
+ let w=db.workers.find(x=>x.id===id);if(!w)return;
+ w.blocked=!w.blocked;w.modifiedAt=isoNow();w.modifiedBy=actorName();save();
+}
+
+async function deleteWorkerAccount(id){
+ if(session.role!=='owner')return alert('هذه العملية للمالك فقط');
+ let w=db.workers.find(x=>String(x.id)===String(id)&&!x.deletedAt);if(!w)return;
+ if(String(w.name||'').trim()==='Salah'){
+   if(!confirm('هذا هو حساب Salah الفعّال. هل تريد حذفه فعلاً؟'))return;
+ }else{
+   if(!confirm('حذف حساب الموزع '+w.name+' نهائياً من القوائم؟'))return;
+ }
+ const now=isoNow();
+ w.deletedAt=now;w.modifiedAt=now;w.modifiedBy=actorName();
+ for(const o of db.orders){
+   if(!o.deletedAt&&orderAssignedToWorker(o,id)){
+     o.worker='';
+     appendOrderHistory(o,'تم إلغاء إسناد الطلب بسبب حذف حساب الموزع '+w.name);
+   }
+ }
+ localStorage.setItem(K,JSON.stringify(db));
+ renderWorkers();render();menu();accountsRender();refreshLoginWorkers();
+ if(navigator.onLine){
+   const ok=await syncNow();
+   if(ok)return alert('تم حذف حساب '+w.name+' ومزامنة الحذف مع السحابة ✓');
+ }
+ alert('تم حذف الحساب على هذا الجهاز وستتم المزامنة تلقائياً.');
+}
+
+async function ownerCreateWorker(){
+ if(session.role!=='owner')return alert('هذه العملية للمالك فقط');
+ let name=(document.getElementById('ownerWorkerName')?.value||'').trim();
+ let pin=String(document.getElementById('ownerWorkerPin')?.value||'').trim();
+ let rate=+(document.getElementById('ownerWorkerRate')?.value||0);
+ if(name.length<2)return alert('أدخل اسم الموزع');
+ if(db.workers.some(w=>!w.deletedAt&&String(w.name).trim().toLowerCase()===name.toLowerCase()))return alert('هذا الاسم موجود بالفعل');
+ if(!/^\d{4,}$/.test(pin))return alert('الرقم السري يجب أن يكون 4 أرقام أو أكثر');
+ let now=isoNow();
+ db.workers.push({id:Date.now()+'',name,rate,pin,blocked:false,approved:true,autoApprovedFirst:false,modifiedAt:now,modifiedBy:actorName()});
+ document.getElementById('ownerWorkerName').value='';
+ document.getElementById('ownerWorkerPin').value='';
+ document.getElementById('ownerWorkerRate').value='';
+ save();
+
+ // رفع فوري حتى يستطيع الموزع الدخول من جهاز آخر مباشرة.
+ if(navigator.onLine){
+   const ok=await cloudPush(true);
+   if(ok)return alert('تم إنشاء حساب '+name+' وتفعيله وحفظه في السحابة ✓');
+ }
+ alert('تم إنشاء حساب '+name+' محلياً. ستتم مزامنته تلقائياً عند توفر الاتصال.');
+}
+async function resetWorkerPin(id){
+ if(session.role!=='owner')return;
+ let w=db.workers.find(x=>String(x.id)===String(id));if(!w)return;
+ let np=prompt('أدخل الرقم السري الجديد للموزع '+w.name+':');
+ if(np===null)return;
+ np=String(np).trim();
+ if(!/^\d{4,}$/.test(np))return alert('الرقم السري يجب أن يكون 4 أرقام أو أكثر');
+
+ w.pin=np;
+ w.modifiedAt=isoNow();
+ w.modifiedBy=actorName();
+ localStorage.setItem(K,JSON.stringify(db));
+ menu();render();renderWorkers();accountsRender();
+
+ // النسخة 66: نحفظ الرقم الجديد فوراً في السحابة قبل إظهار رسالة النجاح.
+ if(navigator.onLine){
+   const ok=await cloudPush(true);
+   if(ok){
+     localStorage.removeItem(CLOUD_PENDING_KEY);
+     updateSyncIndicators();
+     return alert('تم حفظ الرقم السري الجديد للموزع '+w.name+' في السحابة ✓');
+   }
+ }
+ localStorage.setItem(CLOUD_PENDING_KEY,'1');
+ scheduleCloudSync();
+ let reason='تعذر الوصول إلى السحابة الآن';
+ try{
+   const test=await cloudRequest('ping',{});
+   if(test&&test.ok)reason='الاتصال بالسحابة موجود لكن حفظ البيانات فشل';
+ }catch(e){reason=e.message||reason;}
+ alert('تم حفظ الرقم على هذا الجهاز، لكن لم يتم رفعه إلى السحابة.\nالسبب: '+reason+'\nسيحاول التطبيق المزامنة تلقائياً.');
+}
+
+function htmlEscape(v){
+ return String(v??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+}
+function exportRows(){
+ return visibleOrders().map(o=>{
+   let w=db.workers.find(x=>x.id===o.worker);
+   let lastRemark=(o.remarks&&o.remarks.length)?o.remarks[o.remarks.length-1].text:'';
+   return {
+     seq:formatSeq(o.seq), code:o.clientNo||'', sender:o.sender||'', recipient:o.recipient||'',
+     address:o.address||'', city:o.city||'', phone:o.phone||'', product:o.product||'',
+     amount:+o.amount||0, worker:w?.name||'', status:o.status||'',
+     reject:o.rejectReason||'', postpone:o.postponeDate||'', created:o.created||'',
+     comment:lastRemark
+   };
+ });
+}
+function exportExcel(){
+ let data=exportRows();
+ if(!data.length)return alert('لا توجد طلبات لتصديرها');
+ let headers=['رقم الترتيب','رمز الطلب','المرسل','المستلم','العنوان','المدينة','الهاتف','المنتج','القيمة','الموزع','الحالة','سبب الرفض','مؤجل إلى','تاريخ الإدخال','آخر تعليق'];
+ let body=data.map(r=>`<tr><td>${htmlEscape(r.seq)}</td><td>${htmlEscape(r.code)}</td><td>${htmlEscape(r.sender)}</td><td>${htmlEscape(r.recipient)}</td><td>${htmlEscape(r.address)}</td><td>${htmlEscape(r.city)}</td><td style="mso-number-format:'\\@'">${htmlEscape(r.phone)}</td><td>${htmlEscape(r.product)}</td><td>${r.amount}</td><td>${htmlEscape(r.worker)}</td><td>${htmlEscape(r.status)}</td><td>${htmlEscape(r.reject)}</td><td>${htmlEscape(r.postpone)}</td><td>${htmlEscape(r.created)}</td><td>${htmlEscape(r.comment)}</td></tr>`).join('');
+ let html=`<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel"><head><meta charset="utf-8"></head><body><table border="1"><tr>${headers.map(h=>`<th>${h}</th>`).join('')}</tr>${body}</table></body></html>`;
+ let blob=new Blob(['\ufeff',html],{type:'application/vnd.ms-excel;charset=utf-8'});
+ let a=document.createElement('a');a.href=URL.createObjectURL(blob);
+ a.download='بيانات_الطلبات_'+String(filter).replace(/\s+/g,'_')+'.xls';
+ document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+}
+function exportPDF(){
+ let data=exportRows();
+ if(!data.length)return alert('لا توجد طلبات لتصديرها');
+ let rowsHtml=data.map(r=>`<tr><td>${htmlEscape(r.seq)}</td><td>${htmlEscape(r.code)}</td><td>${htmlEscape(r.sender)}</td><td>${htmlEscape(r.recipient)}</td><td>${htmlEscape(r.address)} ${htmlEscape(r.city)}</td><td dir="ltr">${htmlEscape(r.phone)}</td><td>${htmlEscape(r.product)}</td><td>${cash(r.amount)}</td><td>${htmlEscape(r.worker)}</td><td>${htmlEscape(r.status)}</td><td>${htmlEscape(r.comment)}</td></tr>`).join('');
+ let w=window.open('','_blank');
+ if(!w)return alert('تعذر فتح نافذة الطباعة. اسمح بالنوافذ المنبثقة ثم حاول مجددًا.');
+ w.document.write(`<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>بيانات الطلبات</title><style>
+ body{font-family:Arial,Tahoma;padding:18px;color:#111}h1{font-size:22px}p{font-size:12px}table{width:100%;border-collapse:collapse;font-size:10px}th,td{border:1px solid #aaa;padding:5px;text-align:right;vertical-align:top}th{background:#eee}@page{size:A4 landscape;margin:10mm}
+ 
+.login-screen{position:fixed;inset:0;background:#eef2f5;z-index:100;display:flex;align-items:center;justify-content:center;padding:20px}
+.login-card{background:#fff;width:min(390px,100%);padding:24px;border-radius:12px;box-shadow:0 8px 30px #0002}
+.login-card h2{text-align:center}.login-card input,.login-card select{margin-bottom:10px}
+.logout{float:left;background:#b42318!important;color:#fff!important;width:auto!important;border-radius:5px;margin:0 8px;padding:7px 10px!important}
+</style></head><body><h1>بيانات الطلبات - ${htmlEscape(filter)}</h1><p>عدد الطلبات: ${data.length}</p><table><tr><th>رقم الترتيب</th><th>رمز الطلب</th><th>المرسل</th><th>المستلم</th><th>العنوان</th><th>الهاتف</th><th>المنتج</th><th>القيمة</th><th>الموزع</th><th>الحالة</th><th>التعليق</th></tr>${rowsHtml}</table><script>window.onload=()=>setTimeout(()=>window.print(),300)<\/script></body></html>`);
+ w.document.close();
+}
+
+
+function invoicesRender(){
+ let delivered=db.orders.filter(o=>o.status==='تم التسليم');
+ invoiceOrder.innerHTML=delivered.length?delivered.map(o=>`<option value="${o.id}">${formatSeq(o.seq)} — ${o.clientNo||'بدون رمز'} — ${o.recipient} — ${cash(o.amount)}</option>`).join(''):'<option value="">لا توجد طلبات مسلّمة</option>';
+ invoiceSummary.innerHTML=`عدد الطلبات المسلّمة القابلة للفوترة: <b>${delivered.length}</b>`;
+}
+function printInvoice(){
+ let id=invoiceOrder.value,o=db.orders.find(x=>x.id===id);
+ if(!o)return alert('اختر طلباً مسلّماً');
+ let wkr=db.workers.find(x=>x.id===o.worker);
+ let fee=wkr?.rate||0;
+ let win=window.open('','_blank');
+ if(!win)return alert('اسمح بالنوافذ المنبثقة ثم حاول مجددًا');
+ win.document.write(`<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>فاتورة ${htmlEscape(formatSeq(o.seq))}</title><style>
+ body{font-family:Arial,Tahoma;padding:28px;color:#111}.head{text-align:center;border-bottom:2px solid #222;padding-bottom:12px}table{width:100%;border-collapse:collapse;margin-top:20px}td,th{border:1px solid #bbb;padding:9px;text-align:right}.total{font-size:20px;font-weight:bold;margin-top:18px}@page{size:A4;margin:15mm}
+ 
+.login-screen{position:fixed;inset:0;background:#eef2f5;z-index:100;display:flex;align-items:center;justify-content:center;padding:20px}
+.login-card{background:#fff;width:min(390px,100%);padding:24px;border-radius:12px;box-shadow:0 8px 30px #0002}
+.login-card h2{text-align:center}.login-card input,.login-card select{margin-bottom:10px}
+.logout{float:left;background:#b42318!important;color:#fff!important;width:auto!important;border-radius:5px;margin:0 8px;padding:7px 10px!important}
+</style></head><body><div class=head><h1>فاتورة / بيان طلبية</h1><p>رقم الترتيب: ${htmlEscape(formatSeq(o.seq))}</p></div>
+ <table><tr><td>رمز الطلب</td><td>${htmlEscape(o.clientNo||'—')}</td></tr><tr><td>الزبون المرسل</td><td>${htmlEscape(o.sender)}</td></tr><tr><td>المستلم</td><td>${htmlEscape(o.recipient)}</td></tr><tr><td>الهاتف</td><td dir=ltr>${htmlEscape(o.phone)}</td></tr><tr><td>العنوان</td><td>${htmlEscape(o.address||'')}، ${htmlEscape(o.city||'')}</td></tr><tr><td>المنتج</td><td>${htmlEscape(o.product||'—')}</td></tr><tr><td>قيمة الطلب</td><td>${cash(o.amount)}</td></tr><tr><td>خدمة التوصيل</td><td>${cash(fee)}</td></tr><tr><td>الموزع</td><td>${htmlEscape(wkr?.name||'—')}</td></tr><tr><td>الحالة</td><td>${htmlEscape(o.status)}</td></tr></table>
+ <div class=total>قيمة الطلب: ${cash(o.amount)}</div><p>تاريخ الطباعة: ${htmlEscape(tm())}</p>
+ <script>window.onload=()=>setTimeout(()=>window.print(),300)<\/script></body></html>`);
+ win.document.close();
+}
+function exportInvoicesExcel(){
+ let data=db.orders.filter(o=>o.status==='تم التسليم');
+ if(!data.length)return alert('لا توجد فواتير لتصديرها');
+ let headers=['رقم الترتيب','رمز الطلب','المرسل','المستلم','الهاتف','العنوان','المدينة','المنتج','قيمة الطلب','خدمة التوصيل','الموزع','الحالة'];
+ let body=data.map(o=>{let wkr=db.workers.find(x=>x.id===o.worker),fee=wkr?.rate||0;return `<tr><td>${htmlEscape(formatSeq(o.seq))}</td><td>${htmlEscape(o.clientNo||'')}</td><td>${htmlEscape(o.sender)}</td><td>${htmlEscape(o.recipient)}</td><td style="mso-number-format:'\\@'">${htmlEscape(o.phone)}</td><td>${htmlEscape(o.address||'')}</td><td>${htmlEscape(o.city||'')}</td><td>${htmlEscape(o.product||'')}</td><td>${+o.amount||0}</td><td>${fee}</td><td>${htmlEscape(wkr?.name||'')}</td><td>${htmlEscape(o.status)}</td></tr>`}).join('');
+ let html=`<html xmlns:x="urn:schemas-microsoft-com:office:excel"><head><meta charset=utf-8></head><body><table border=1><tr>${headers.map(h=>`<th>${h}</th>`).join('')}</tr>${body}</table></body></html>`;
+ let blob=new Blob(['\ufeff',html],{type:'application/vnd.ms-excel;charset=utf-8'}),a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='سجل_الفواتير.xls';document.body.appendChild(a);a.click();a.remove();
+}
+
+function accountsRender(){
+ if(!db.settlements)db.settlements=[];
+
+ let settledIds=new Set(db.settlements.flatMap(v=>v.orderIds||[]));
+ let pending=db.orders.filter(o=>!o.deletedAt&&o.status==='تم التسليم'&&!settledIds.has(o.id));
+
+ let collected=pending.reduce((sum,o)=>sum+(+o.amount||0),0);
+ let fees=pending.reduce((sum,o)=>sum+deliveryFeeForOrder(o),0);
+ let due=collected-fees;
+
+ let workerSearchValue=(document.getElementById('accountWorkerSearch')?.value||'').trim().toLowerCase();
+
+ let perWorker=db.workers
+   .filter(w=>!w.deletedAt&&w.approved!==false)
+   .map(w=>{
+      let orders=pending.filter(o=>orderAssignedToWorker(o,w.id));
+      let total=orders.reduce((sum,o)=>sum+(+o.amount||0),0);
+      let delivery=deliveryRateForWorker(w)*orders.length;
+      let payable=total-delivery;
+      return {w,orders,total,delivery,payable};
+   })
+   .filter(x=>!workerSearchValue || String(x.w.name||'').toLowerCase().includes(workerSearchValue));
+
+ let workerCards=perWorker.length?perWorker.map(x=>`
+   <div class="card" style="margin-top:10px">
+     <h3 style="margin:0 0 10px">${htmlEscape(x.w.name)}</h3>
+     <div class="grid">
+       <div><b>الطلبات المسلّمة</b><h2>${x.orders.length}</h2></div>
+       <div><b>المجموع العام لمبالغ الطلبات</b><h2>${cash(x.total)}</h2></div>
+       <div><b>ثمن التوصيل</b><h2>${cash(x.delivery)}</h2>
+         <small>${cash(deliveryRateForWorker(x.w))} × ${x.orders.length} طلب</small>
+       </div>
+       <div><b>الباقي الواجب دفعه</b><h2>${cash(x.payable)}</h2></div>
+     </div>
+   </div>`).join(''):'<div class="card" style="margin-top:10px">لا توجد نتائج.</div>';
+
+ accounts.innerHTML=`
+ <div class=card>
+   <h2>الحسابات المالية</h2>
+   <p>يتم احتساب المبالغ تلقائيًا من الطلبات التي حالتها <b>تم التسليم</b> ولم تدخل بعد في تسوية سابقة.</p>
+   <div class=grid>
+     <div><b>المجموع العام لمبالغ الطلبات المسلّمة</b><h2>${cash(collected)}</h2></div>
+     <div><b>إجمالي أثمان التوصيل</b><h2>${cash(fees)}</h2></div>
+     <div><b>الباقي الإجمالي الواجب دفعه</b><h2>${cash(due)}</h2></div>
+   </div>
+   <p>عدد الطلبات الداخلة في الحساب: <b>${pending.length}</b></p>
+   <button class="btn g" onclick="finishSettlement()" ${pending.length?'':'disabled'}>✓ تم تسليم المبلغ</button>
+ </div>
+
+ <div class=card>
+   <h2>حساب كل موزع على حدة</h2>
+   <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+     <input id="accountWorkerSearch" style="flex:1;min-width:180px" placeholder="ابحث باسم الموزع" value="${htmlEscape(workerSearchValue)}"
+       onkeydown="if(event.key==='Enter'){event.preventDefault();accountsRender()}">
+     <button class="btn" onclick="accountsRender()">🔎 بحث</button>
+     <button class="btn gr" onclick="document.getElementById('accountWorkerSearch').value='';accountsRender()">مسح</button>
+   </div>
+   <div id="workerFinanceList">${workerCards}</div>
+ </div>
+
+ <div class=card>
+   <h2>سجل التسويات</h2>
+   ${db.settlements.length?`<table><tr><th>المبلغ المسلم</th><th>المبالغ المحصلة</th><th>خدمات التوصيل</th><th>الموزع</th><th>عدد الطلبات</th><th>التاريخ</th></tr>${db.settlements.slice().reverse().map(v=>`<tr><td><b>${cash(v.net)}</b>${v.confirmedByWorker?'<br><small>✓ أكده الموزع</small>':''}</td><td>${cash(v.collected)}</td><td>${cash(v.fees)}</td><td>${htmlEscape(v.workerName||'—')}</td><td>${v.orderIds.length}</td><td>${v.date}</td></tr>`).join('')}</table>`:'لا توجد تسويات سابقة'}
+ </div>`;
+}
+function finishSettlement(){
+ if(!db.settlements)db.settlements=[];
+ let settledIds=new Set(db.settlements.flatMap(v=>v.orderIds||[]));
+ let pending=db.orders.filter(o=>o.status==='تم التسليم'&&!settledIds.has(o.id));
+ if(!pending.length)return alert('لا توجد مبالغ جديدة للتسوية');
+ let collected=pending.reduce((s,o)=>s+(+o.amount||0),0);
+ let fees=pending.reduce((s,o)=>s+deliveryFeeForOrder(o),0);
+ let net=collected-fees;
+ if(!confirm(`تأكيد تسليم ${cash(net)}؟`))return;
+ db.settlements.push({id:Date.now()+'',date:tm(),collected,fees,net,orderIds:pending.map(o=>o.id)});
+ save();
+}
+let ownerMode=false,ownerTapCount=0,ownerTapTimer=null;
+function ownerTap(){
+  ownerTapCount++;
+  clearTimeout(ownerTapTimer);
+  ownerTapTimer=setTimeout(()=>ownerTapCount=0,1800);
+  if(ownerTapCount>=5){
+    ownerTapCount=0;
+    let pin=prompt('رمز المالك:');
+    if(pin===null)return;
+    const saved=localStorage.getItem('owner_pin_v13')||'0534';
+    if(pin===saved){
+      ownerMode=true;session={role:'owner',workerId:null};saveSession();
+      alert('تم تفعيل وضع المالك');
+      if(current) openOrder(current);
+    }else alert('رمز غير صحيح');
+  }
+}
+
+function renderOwnerAssignment(o){
+  const box=document.getElementById('ownerAssignBox');
+  const sel=document.getElementById('assignWorkerSelect');
+  const st=document.getElementById('assignStatus');
+  if(!box||!sel)return;
+
+  const isOwner=((session&&session.role==='owner')||ownerMode===true);
+  box.style.display=isOwner?'block':'none';
+  if(!isOwner)return;
+
+  sel.innerHTML='<option value="">اختر الموزع</option>'+
+    db.workers
+      .filter(w=>!w.deletedAt&&w.approved!==false && !w.blocked)
+      .map(w=>`<option value="${w.id}" ${String(w.id)===String(o.worker||'')?'selected':''}>${w.name}</option>`)
+      .join('');
+
+  const w=db.workers.find(x=>String(x.id)===String(o.worker||''));
+  if(st) st.innerHTML=w
+    ? 'الموزع الحالي: <b>'+htmlEscape(w.name)+'</b>'
+    : '<b>الطلب غير مسند لأي موزع</b>';
+}
+
+async function assignCurrentOrder(){
+  if(!((session&&session.role==='owner')||ownerMode===true) || !current)return;
+  const o=db.orders.find(x=>x.id===current);
+  const sel=document.getElementById('assignWorkerSelect');
+  if(!o||!sel)return;
+  const wid=String(sel.value||'');
+  if(!wid)return alert('اختر الموزع أولاً');
+
+  const w=db.workers.find(x=>String(x.id)===wid);
+  if(!w)return alert('لم يتم العثور على حساب الموزع');
+
+  o.worker=wid;
+  appendOrderHistory(o,'تم إسناد الطلب إلى الموزع '+w.name);
+  save();
+
+  // رفع فوري وآمن حتى يظهر الطلب على هاتف الموزع.
+  if(navigator.onLine){
+    const ok=await syncNow();
+    if(ok){
+      openOrder(current);
+      return alert('تم إسناد الطلب إلى '+w.name+' ومزامنته مع السحابة ✓');
+    }
+  }
+
+  openOrder(current);
+  alert('تم إسناد الطلب إلى '+w.name+' على هذا الجهاز، وستتم المزامنة تلقائياً.');
+}
+
+async function unassignCurrentOrder(){
+  if(!((session&&session.role==='owner')||ownerMode===true) || !current)return;
+  const o=db.orders.find(x=>x.id===current);
+  if(!o)return;
+  if(!o.worker)return alert('الطلب غير مسند حالياً');
+  if(!confirm('إلغاء إسناد هذا الطلب من الموزع؟'))return;
+
+  const old=db.workers.find(x=>String(x.id)===String(o.worker));
+  o.worker='';
+  appendOrderHistory(o,'تم إلغاء إسناد الطلب'+(old?' من '+old.name:''));
+  save();
+
+  if(navigator.onLine) await syncNow();
+  openOrder(current);
+}
+
+function ownerPanelRender(){
+  const box=document.getElementById('ownerActions');
+  if(box){box.style.display=ownerMode?'block':'none'; if(ownerMode && !document.getElementById('pinBtn')){let b=document.createElement('button');b.id='pinBtn';b.className='btn gr';b.style.marginRight='6px';b.textContent='تغيير رمز المالك';b.onclick=changeOwnerPin;box.appendChild(b);}}
+}
+function openEdit(){
+  if(!ownerMode||!current)return;
+  const o=db.orders.find(x=>x.id===current); if(!o)return;
+  eSeq.value=o.seq||''; eSender.value=o.sender||'';
+  eClientNo.value=o.clientNo||'';
+  eRecipient.value=o.recipient||'';
+  ePhone.value=o.phone||'';
+  eAddress.value=o.address||'';
+  eCity.value=o.city||'';
+  eProduct.value=o.product||'';
+  eAmount.value=o.amount||0;
+  eOwnerNote.value=o.ownerNote||'';
+  eWorker.innerHTML='<option value="">اختر الموزع</option>'+db.workers.map(w=>`<option value="${w.id}" ${w.id===o.worker?'selected':''}>${w.name}</option>`).join(''); eStatus.value=o.status||'قيد التوزيع';
+  editBox.style.display='block';
+}
+function closeEdit(){ editBox.style.display='none'; }
+function saveEdit(){
+  if(!ownerMode||!current)return;
+  const o=db.orders.find(x=>x.id===current); if(!o)return;
+  o.seq=formatSeq(eSeq.value.trim()||o.seq); o.sender=eSender.value.trim();
+  o.clientNo=eClientNo.value.trim();
+  o.recipient=eRecipient.value.trim();
+  o.phone=ePhone.value.trim();
+  o.address=eAddress.value.trim();
+  o.city=eCity.value.trim();
+  o.product=eProduct.value.trim();
+  o.amount=+eAmount.value||0;
+  o.worker=eWorker.value; o.status=eStatus.value;
+  o.ownerNote=eOwnerNote.value.trim();
+  // يسجل وقت ومنفذ التعديل للمزامنة دون كشف الملاحظة الداخلية للموزع.
+  markOrderChanged(o,'تعديل إداري');
+  if(!Array.isArray(o.history))o.history=[];
+  o.history.push({time:tm(),text:'تعديل بيانات الطلب — بواسطة '+actorName()});
+  save();
+  closeEdit();
+  render(); menu(); renderWorkers(); accountsRender();
+  openOrder(current);
+}
+function changeOwnerPin(){
+  if(!ownerMode)return;
+  const old=prompt('الرمز الحالي:'); if(old===null)return;
+  const saved=localStorage.getItem('owner_pin_v13')||'0534';
+  if(old!==saved)return alert('الرمز الحالي غير صحيح');
+  const np=prompt('أدخل الرمز الجديد:'); if(!np)return;
+  localStorage.setItem('owner_pin_v13',np);
+  alert('تم تغيير رمز المالك');
+}
+
+db.orders.forEach((o,i)=>{
+ if(!o.modifiedAt)o.modifiedAt='2000-01-01T00:00:00.000Z';
+ if(!o.modifiedBy)o.modifiedBy='بيانات قديمة';
+ let x=String(o.seq??'').trim();
+ if(/^\d+$/.test(x)) o.seq='AK'+String(parseInt(x,10)).padStart(6,'0');
+ else if(!x) o.seq='AK'+String(i+1).padStart(6,'0');
+});
+db.workers.forEach(w=>{if(!w.modifiedAt)w.modifiedAt='2000-01-01T00:00:00.000Z';});
+localStorage.setItem(K,JSON.stringify(db));
+menu();renderWorkers();render();refreshLoginWorkers();applyViewMode();restoreSession();if(!getSnapshots().length)createLocalSnapshot();
+updateSyncIndicators();
+setTimeout(()=>{if(navigator.onLine)syncNow(true)},1800);
+
+window.addEventListener('error',function(ev){
+ try{
+   const login=document.getElementById('login');
+   if(login && getComputedStyle(login).display!=='none'){
+     console.error(ev.error||ev.message);
+   }
+ }catch(_){}
+});
+</script></body></html>
