@@ -1102,24 +1102,8 @@ function go(x){if(session.role==='worker'&&['add','bulk','returnCreate','workers
 
 let bulkParsed=[];
 function parseBulkOrders(txt){
- let text=String(txt||'').replace(/\u00a0/g,' ').trim();
- let rawLines=text.split(/\r?\n/).map(x=>x.trim()).filter(Boolean),out=[];
- // Some Android/Google sources paste one order across two visual lines:
- // line 1 = city/name/code, line 2 = amount/phone. Join continuation lines
- // that have no order code to the preceding coded line.
- let lines=[];
- for(let i=0;i<rawLines.length;i++){
-   let cur=rawLines[i];
-   let curHasCode=/[A-Za-z][A-Za-z0-9_-]{1,40}/.test(cur)&&/[A-Za-z][A-Za-z0-9_-]*\d[A-Za-z0-9_-]*/.test(cur);
-   if(curHasCode && i+1<rawLines.length){
-     let nxt=rawLines[i+1];
-     let nxtHasCode=/[A-Za-z][A-Za-z0-9_-]*\d[A-Za-z0-9_-]*/.test(nxt);
-     if(!nxtHasCode && (/(?:\+?212|0)[\s.-]?[5-7](?:[\s.-]?\d){8}/.test(nxt)||/\d+(?:[.,]\d+)?\s*(?:dh|dhs|mad|د\.?\s?م)/i.test(nxt))){
-       cur += '  '+nxt; i++;
-     }
-   }
-   lines.push(cur);
- }
+ let text=String(txt||'').replace(/\u00a0/g,' ').replace(/\r/g,'\n').trim();
+ if(!text)return [];
 
  function clean(v){
    return String(v||'')
@@ -1127,102 +1111,93 @@ function parseBulkOrders(txt){
      .replace(/\*\*/g,'')
      .replace(/\[([^\]]+)\]\((?:[^()]|\([^)]*\))*\)/g,'$1')
      .replace(/<tel:[^>]+>/gi,'')
+     .replace(/[|\t]+/g,' ')
      .replace(/\s+/g,' ').trim();
  }
- function getCode(v){
-   let x=clean(v);
-   // reject separator/header rows
-   if(/^[-:|\s]+$/.test(x))return '';
-   // sender codes generally contain at least one letter and one digit
-   let candidates=x.match(/[A-Za-z][A-Za-z0-9_-]{1,40}/g)||[];
-   return candidates.find(c=>/[A-Za-z]/.test(c)&&/\d/.test(c))||'';
- }
  function getPhone(v){
-   let m=String(v||'').match(/(?:\+?212|0)[\s.-]?[5-7](?:[\s.-]?\d){8}/);
+   const s=String(v||'');
+   let m=s.match(/(?:\+?212|0)[\s.\/-]?[5-7](?:[\s.\/-]?\d){8}/);
    return m?m[0].replace(/[^\d+]/g,''):'';
  }
  function getAmount(v){
-   let x=clean(v);
-   let m=x.match(/(\d+(?:[.,]\d+)?)\s*(?:dh|dhs|mad|د\.?\s?م)?\s*$/i);
-   return m?parseFloat(m[1].replace(',','.')):0;
+   const s=clean(v);
+   let m=s.match(/\b(?:dh|dhs|mad|د\.?\s?م)\s*[:=-]?\s*(\d+(?:[.,]\d+)?)/i);
+   if(m)return parseFloat(m[1].replace(',','.'))||0;
+   m=s.match(/(\d+(?:[.,]\d+)?)\s*(?:dh|dhs|mad|د\.?\s?م)\b/i);
+   if(m)return parseFloat(m[1].replace(',','.'))||0;
+   return 0;
  }
 
- for(let raw of lines){
-   let line=raw.trim();
-   if(!line || /^\|?\s*[-:]+\s*(\|\s*[-:]+\s*)+\|?$/.test(line))continue;
+ // Detect every order code first, then use the text around it. This works whether
+ // Android pastes the order on one line, two lines, tabs, or irregular spaces.
+ const codeRe=/\b[A-Za-z][A-Za-z0-9_-]{1,40}\b/g;
+ let matches=[],m;
+ while((m=codeRe.exec(text))){
+   const code=m[0];
+   if(/[A-Za-z]/.test(code)&&/\d/.test(code)) matches.push({code,index:m.index,end:m.index+code.length});
+ }
+ if(!matches.length)return [];
 
-   let cells;
-   if(line.includes('|')) cells=line.split('|').map(x=>x.trim()).filter(Boolean);
-   else if(line.includes('\t')) cells=line.split('\t').map(x=>x.trim()).filter(Boolean);
-   else cells=[line];
+ let out=[];
+ for(let i=0;i<matches.length;i++){
+   const hit=matches[i];
+   const prevEnd=i?matches[i-1].end:0;
+   const nextStart=i+1<matches.length?matches[i+1].index:text.length;
 
-   let code=getCode(cells[0]||line);
-   if(!code){
-     // fallback: search the entire line for a code
-     let all=clean(line).match(/[A-Za-z][A-Za-z0-9_-]{1,40}/g)||[];
-     code=all.find(c=>/[A-Za-z]/.test(c)&&/\d/.test(c))||'';
-   }
-   if(!code)continue;
+   // Keep text since the previous code so city/name before the current code are not lost.
+   let before=text.slice(prevEnd,hit.index);
+   // If there are line breaks, the last non-empty line before the code is usually city + recipient.
+   let beforeLines=before.split(/\n+/).map(clean).filter(Boolean);
+   let left=beforeLines.length?beforeLines[beforeLines.length-1]:clean(before);
+   let right=text.slice(hit.end,nextStart);
+   let chunk=clean(left+' '+hit.code+' '+right);
 
-   let name='',address='',city='',phone='',amount=0;
+   const phone=getPhone(chunk);
+   const amount=getAmount(chunk);
 
-   if(cells.length>=4){
-     name=clean(cells[1]);
+   // Remove technical fields, leaving mainly city + recipient.
+   let lead=clean(left)
+     .replace(/\b(?:dh|dhs|mad|د\.?\s?م)\s*[:=-]?\s*\d+(?:[.,]\d+)?/ig,' ')
+     .replace(/\d+(?:[.,]\d+)?\s*(?:dh|dhs|mad|د\.?\s?م)\b/ig,' ')
+     .replace(/(?:\+?212|0)[\s.\/-]?[5-7](?:[\s.\/-]?\d){8}/g,' ')
+     .replace(/\s+/g,' ').trim();
 
-     // Search the whole row for phone and amount, not only fixed columns.
-     phone=getPhone(line);
-     for(let i=cells.length-1;i>=0;i--){
-       let a=getAmount(cells[i]);
-       if(a>0){ amount=a; break; }
+   let city='',name='',address='';
+   if(lead){
+     let parts=lead.split(/\s*[,;،]\s*|\s{2,}/).filter(Boolean);
+     if(parts.length>=2){
+       city=parts[0].trim();
+       name=parts.slice(1).join(' ').trim();
+     }else{
+       let words=lead.split(/\s+/).filter(Boolean);
+       if(words.length>=2){
+         city=words[0];
+         name=words.slice(1).join(' ');
+       }else name=lead;
      }
+     address=city;
+   }
 
-     // Everything between recipient name and amount is treated as location/contact data.
-     let middle=cells.slice(2, Math.max(3,cells.length-1)).map(clean).filter(Boolean);
-     let loc=middle.join(' ')
-       .replace(/(?:\+?212|0)[\s.-]?[5-7](?:[\s.-]?\d){8}/g,' ')
-       .replace(/\b(?:tel|tél|phone|الهاتف)\b\s*:*/ig,' ')
+   // Fallback for sources that put the name after the code.
+   if(!name){
+     let tail=clean(right)
+       .replace(/\b(?:dh|dhs|mad|د\.?\s?م)\s*[:=-]?\s*\d+(?:[.,]\d+)?/ig,' ')
+       .replace(/\d+(?:[.,]\d+)?\s*(?:dh|dhs|mad|د\.?\s?م)\b/ig,' ')
+       .replace(/(?:\+?212|0)[\s.\/-]?[5-7](?:[\s.\/-]?\d){8}/g,' ')
        .replace(/\s+/g,' ').trim();
-
-     // If only one location is supplied (e.g. Oujda), use it as both address and city.
-     // If the source contains address + city, keep the full text as address and infer city from the last segment.
-     address=loc;
-     let parts=loc.split(/\s*[,;،]\s*|\s{2,}/).map(x=>x.trim()).filter(Boolean);
-     city=parts.length>1?parts[parts.length-1]:(loc||'');
-
-     // Extra fallback: amount may be anywhere in the original line.
-     if(!amount){
-       let m=clean(line).match(/(\d+(?:[.,]\d+)?)\s*(?:dh|dhs|mad|د\.?\s?م)\b/i);
-       if(m) amount=parseFloat(m[1].replace(',','.'));
-     }
-   }else{
-     phone=getPhone(line);
-     amount=getAmount(line);
-     let cleaned=clean(line);
-     // remove code, phone and amount; preserve double-space boundaries from pasted tables
-     cleaned=cleaned.replace(code,'  ');
-     if(phone){
-       let phoneLoose=phone.replace(/^212/,'0');
-       cleaned=cleaned.replace(phone,'  ').replace(phoneLoose,'  ');
-     }
-     cleaned=cleaned.replace(/\b(?:dh|dhs|mad)\s*\d+(?:[.,]\d+)?\b/ig,'  ')
-                    .replace(/\d+(?:[.,]\d+)?\s*(?:dh|dhs|mad|د\.?\s?م)\b/ig,'  ');
-     let parts=cleaned.split(/\s{2,}| - | — /).map(x=>x.trim()).filter(Boolean);
-     // Common copied format: CITY NAME CODE / AMOUNT PHONE
-     if(parts.length){
-       let words=parts[0].split(/\s+/).filter(Boolean);
-       if(words.length>=2){ city=words[0]; name=words.slice(1).join(' '); address=city; }
-       else { name=parts[0]||''; }
-       if(parts.length>1 && !city){ address=parts.slice(1).join(' '); city=parts[parts.length-1]; }
-     }
+     name=tail||'بدون اسم';
    }
-   out.push({code:code.toUpperCase(),name,address,city,phone,amount});
+
+   out.push({code:hit.code.toUpperCase(),name,address,city,phone,amount});
  }
 
+ // Keep only truly new codes, but remember duplicates for a clearer message in preview/import.
  let seen=new Set();
  return out.filter(o=>{
-   let k=o.code.toUpperCase();
-   if(seen.has(k)||db.orders.some(x=>String(x.clientNo||'').toUpperCase()===k))return false;
-   seen.add(k);return true;
+   const k=o.code.toUpperCase();
+   if(seen.has(k))return false;
+   seen.add(k);
+   return !db.orders.some(x=>!x.deletedAt&&String(x.clientNo||'').trim().toUpperCase()===k);
  });
 }
 function previewBulk(){
