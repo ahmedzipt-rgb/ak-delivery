@@ -1,4 +1,4 @@
-<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><!-- AK Delivery v85: keep received orders visible after customer delivery -->
+<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><!-- AK Delivery v86: persistent received-order history for distributors and owner -->
 <title>مسيّر التوصيل</title>
 <style>*{box-sizing:border-box}body{margin:0;font-family:Arial;background:#f4f6f8;color:#222}header{background:#175d79;color:#fff;padding:15px;font-size:21px;font-weight:bold}.app{display:flex;min-height:100vh}aside{width:210px;background:#11191d;color:#ccd4d8;padding:15px 0}aside h3{padding:0 15px;color:white}aside button{width:100%;text-align:right;padding:11px 15px;border:0;background:none;color:inherit}aside button:hover{background:#263238}main{flex:1;padding:14px;overflow:auto}.card{background:white;padding:14px;border-radius:9px;margin-bottom:12px;box-shadow:0 1px 5px #0001}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:8px}input,select,textarea{width:100%;padding:9px;border:1px solid #d6dce1;border-radius:6px}button{cursor:pointer}.btn{border:0;border-radius:5px;padding:8px 11px;color:white;background:#1882b3}table{width:100%;border-collapse:collapse}th,td{padding:9px;border-bottom:1px solid #eee;text-align:right;font-size:13px}.code{color:#1769aa;text-decoration:underline;font-weight:bold;cursor:pointer}.page{display:none}.page.on{display:block}.overlay{display:none;position:fixed;inset:0;background:#0008;z-index:10}.drawer{position:absolute;right:0;top:0;width:min(510px,100%);height:100%;background:white;padding:16px;overflow:auto}.close{float:left;font-size:25px;border:0;background:none}.info{display:grid;grid-template-columns:115px 1fr;gap:7px;font-size:13px}.actions{display:flex;gap:6px;flex-wrap:wrap;margin:14px 0;padding:12px 0;border-block:1px solid #ddd}.actions button{border:0;border-radius:5px;padding:8px;color:#fff}.g{background:#168b55}.y{background:#e2ad09;color:#222!important}.r{background:#dc3d4b}.gr{background:#697681}.c{background:#05aeca}.log{font-size:12px;line-height:1.8}.badge{background:#e8eef3;padding:4px 7px;border-radius:12px}@media(max-width:650px){aside{width:135px;font-size:11px}main{padding:7px}.drawer{width:95%}th,td{font-size:11px;padding:6px}}
 .phone-ltr{direction:ltr!important;unicode-bidi:bidi-override;display:inline-block;text-align:left}
@@ -1084,7 +1084,9 @@ function updateReturnRequestCount(){
  let te=document.getElementById('deliveryTransferCount');
  if(te){
    if(session.role==='worker'){
-     te.textContent=(db.deliveryTransfers||[]).filter(t=>!t.deletedAt&&t.status==='sent'&&String(t.workerId)===String(session.workerId)).length;
+     const pending=(db.deliveryTransfers||[]).filter(t=>!t.deletedAt&&t.status==='sent'&&String(t.workerId)===String(session.workerId)).length;
+     const received=typeof historicalReceivedOrdersForWorker==='function'?historicalReceivedOrdersForWorker(session.workerId).length:0;
+     te.textContent=pending+received;
    }else{
      te.textContent=(db.deliveryTransfers||[]).filter(t=>!t.deletedAt&&t.status==='sent').length;
    }
@@ -1101,7 +1103,23 @@ function go(x){if(session.role==='worker'&&['add','bulk','returnCreate','workers
 let bulkParsed=[];
 function parseBulkOrders(txt){
  let text=String(txt||'').replace(/\u00a0/g,' ').trim();
- let lines=text.split(/\r?\n/),out=[];
+ let rawLines=text.split(/\r?\n/).map(x=>x.trim()).filter(Boolean),out=[];
+ // Some Android/Google sources paste one order across two visual lines:
+ // line 1 = city/name/code, line 2 = amount/phone. Join continuation lines
+ // that have no order code to the preceding coded line.
+ let lines=[];
+ for(let i=0;i<rawLines.length;i++){
+   let cur=rawLines[i];
+   let curHasCode=/[A-Za-z][A-Za-z0-9_-]{1,40}/.test(cur)&&/[A-Za-z][A-Za-z0-9_-]*\d[A-Za-z0-9_-]*/.test(cur);
+   if(curHasCode && i+1<rawLines.length){
+     let nxt=rawLines[i+1];
+     let nxtHasCode=/[A-Za-z][A-Za-z0-9_-]*\d[A-Za-z0-9_-]*/.test(nxt);
+     if(!nxtHasCode && (/(?:\+?212|0)[\s.-]?[5-7](?:[\s.-]?\d){8}/.test(nxt)||/\d+(?:[.,]\d+)?\s*(?:dh|dhs|mad|د\.?\s?م)/i.test(nxt))){
+       cur += '  '+nxt; i++;
+     }
+   }
+   lines.push(cur);
+ }
 
  function clean(v){
    return String(v||'')
@@ -1180,14 +1198,22 @@ function parseBulkOrders(txt){
      phone=getPhone(line);
      amount=getAmount(line);
      let cleaned=clean(line);
-     // remove code, phone and trailing amount; keep remaining text as a best-effort name/city
-     cleaned=cleaned.replace(code,' ');
-     if(phone) cleaned=cleaned.replace(phone,' ');
-     cleaned=cleaned.replace(/\d+(?:[.,]\d+)?\s*(?:dh|dhs|mad|د\.?\s?م)\b/ig,' ');
+     // remove code, phone and amount; preserve double-space boundaries from pasted tables
+     cleaned=cleaned.replace(code,'  ');
+     if(phone){
+       let phoneLoose=phone.replace(/^212/,'0');
+       cleaned=cleaned.replace(phone,'  ').replace(phoneLoose,'  ');
+     }
+     cleaned=cleaned.replace(/\b(?:dh|dhs|mad)\s*\d+(?:[.,]\d+)?\b/ig,'  ')
+                    .replace(/\d+(?:[.,]\d+)?\s*(?:dh|dhs|mad|د\.?\s?م)\b/ig,'  ');
      let parts=cleaned.split(/\s{2,}| - | — /).map(x=>x.trim()).filter(Boolean);
-     name=parts[0]||'';
-     address=parts.slice(1).join(' ')||'';
-     city=parts.length>1?parts[parts.length-1]:'';
+     // Common copied format: CITY NAME CODE / AMOUNT PHONE
+     if(parts.length){
+       let words=parts[0].split(/\s+/).filter(Boolean);
+       if(words.length>=2){ city=words[0]; name=words.slice(1).join(' '); address=city; }
+       else { name=parts[0]||''; }
+       if(parts.length>1 && !city){ address=parts.slice(1).join(' '); city=parts[parts.length-1]; }
+     }
    }
    out.push({code:code.toUpperCase(),name,address,city,phone,amount});
  }
@@ -1435,9 +1461,14 @@ function latestDeliveryTransferForOrder(orderId){
    .sort((a,b)=>timeValue(b.modifiedAt||b.sentAt)-timeValue(a.modifiedAt||a.sentAt))[0]||null;
 }
 function workerCanSeeOrder(o,workerId){
- if(!orderAssignedToWorker(o,workerId))return false;
+ if(!o||workerId==null)return false;
+ const wid=String(workerId);
+ const assigned=orderAssignedToWorker(o,wid);
  const t=latestDeliveryTransferForOrder(o.id);
- return !!t && String(t.workerId)===String(workerId) && (t.status==='sent'||t.status==='received');
+ if(t && String(t.workerId)===wid && (t.status==='sent'||t.status==='received'))return true;
+ if(String(o.deliveryReceivedByWorkerId||'')===wid)return true;
+ if(assigned && (o.deliveryReceivedAt||o.deliveryReceivedLabel||o.status==='تم التسليم'))return true;
+ return (db.deliveryTransfers||[]).some(x=>x&&x.status==='received'&&String(x.orderId)===String(o.id)&&String(x.workerId)===wid);
 }
 function deliveryTransferStatusText(t){
  if(!t)return 'لم يُرسل للموزع';
@@ -1520,26 +1551,28 @@ function historicalReceivedOrdersForWorker(workerId){
   const seen=new Set();
   const rows=[];
 
+  // v86: received history remains visible even if an older migration tombstoned the transfer record.
   for(const t of (db.deliveryTransfers||[])){
-    if(!t || t.deletedAt || t.status!=='received' || String(t.workerId)!==wid) continue;
+    if(!t || t.status!=='received' || String(t.workerId)!==wid) continue;
     const o=db.orders.find(x=>String(x.id)===String(t.orderId)&&!x.deletedAt);
     if(!o) continue;
     seen.add(String(o.id));
-    rows.push({o,t});
+    rows.push({o,t:Object.assign({},t,{historicalDeleted:!!t.deletedAt})});
   }
 
   for(const o of (db.orders||[])){
-    if(!o || o.deletedAt || !orderAssignedToWorker(o,wid)) continue;
-    if(seen.has(String(o.id))) continue;
-    const hadReceipt = !!o.deliveryReceivedAt || !!o.deliveryReceivedLabel;
-    const laterCompleted = o.status==='تم التسليم';
-    if(!hadReceipt && !laterCompleted) continue;
+    if(!o || o.deletedAt || seen.has(String(o.id))) continue;
+    const belongsByReceipt=String(o.deliveryReceivedByWorkerId||'')===wid;
+    const belongsByAssignment=orderAssignedToWorker(o,wid);
+    const hadReceipt=!!o.deliveryReceivedAt || !!o.deliveryReceivedLabel;
+    const laterCompleted=o.status==='تم التسليم';
+    if(!belongsByReceipt && !(belongsByAssignment && (hadReceipt||laterCompleted))) continue;
 
     const pseudo={
       id:'HIST-'+String(o.id),
       orderId:String(o.id),
       workerId:wid,
-      workerName:(db.workers.find(w=>String(w.id)===wid)?.name)||'',
+      workerName:o.deliveryReceivedByWorkerName||(db.workers.find(w=>String(w.id)===wid)?.name)||'',
       status:'received',
       sentAt:o.deliverySentAt||o.modifiedAt||o.createdAt||'',
       sentLabel:o.deliverySentLabel||'',
@@ -1555,6 +1588,29 @@ function historicalReceivedOrdersForWorker(workerId){
     timeValue((a.t&& (a.t.receivedAt||a.t.sentAt)) || a.o.modifiedAt || a.o.createdAt)
   );
 }
+
+function historicalReceivedOrdersForOwner(term=''){
+  const rows=[];
+  const seen=new Set();
+  for(const t of (db.deliveryTransfers||[])){
+    if(!t || t.status!=='received') continue;
+    const o=db.orders.find(x=>String(x.id)===String(t.orderId)&&!x.deletedAt);
+    if(!o || seen.has(String(o.id))) continue;
+    const hay=`${formatSeq(o.seq)} ${o.clientNo||''} ${o.recipient||''} ${o.phone||''} ${o.city||''}`.toLowerCase();
+    if(term&&!hay.includes(term))continue;
+    seen.add(String(o.id));
+    rows.push({o,t:Object.assign({},t,{historicalDeleted:!!t.deletedAt})});
+  }
+  for(const o of (db.orders||[])){
+    if(!o||o.deletedAt||seen.has(String(o.id)))continue;
+    if(!(o.deliveryReceivedAt||o.deliveryReceivedLabel))continue;
+    const hay=`${formatSeq(o.seq)} ${o.clientNo||''} ${o.recipient||''} ${o.phone||''} ${o.city||''}`.toLowerCase();
+    if(term&&!hay.includes(term))continue;
+    rows.push({o,t:{id:'HIST-OWNER-'+String(o.id),orderId:String(o.id),workerId:String(o.deliveryReceivedByWorkerId||o.worker||''),workerName:o.deliveryReceivedByWorkerName||'',status:'received',sentAt:o.deliverySentAt||'',sentLabel:o.deliverySentLabel||'',receivedAt:o.deliveryReceivedAt||o.modifiedAt||'',receivedLabel:o.deliveryReceivedLabel||'',historical:true}});
+  }
+  return rows.sort((a,b)=>timeValue((b.t.receivedAt||b.t.sentAt)||b.o.modifiedAt||b.o.createdAt)-timeValue((a.t.receivedAt||a.t.sentAt)||a.o.modifiedAt||a.o.createdAt));
+}
+
 function renderDeliveryTransfers(){
  ensureDeliveryTransfers();
  const el=document.getElementById('deliveryTransfersList');if(!el)return;
@@ -1607,13 +1663,13 @@ function renderDeliveryTransfers(){
        return !term||hay.includes(term);
      });
 
-   const unsent=[], waiting=[], received=[];
+   const unsent=[], waiting=[];
    for(const o of orders){
      const t=latestDeliveryTransferForOrder(o.id);
      if(!t)unsent.push({o,t});
-     else if(t.status==='received')received.push({o,t});
-     else waiting.push({o,t});
+     else if(t.status!=='received')waiting.push({o,t});
    }
+   const received=historicalReceivedOrdersForOwner(term);
    if(!['ready','waiting','received'].includes(deliveryTransferView))deliveryTransferView='ready';
    const rows=deliveryTransferView==='waiting'?waiting:(deliveryTransferView==='received'?received:unsent);
    el.innerHTML=`<div class="transfer-shell">
@@ -1695,6 +1751,8 @@ async function confirmOrderReceipt(transferId){
 
  o.deliveryReceivedAt=now;
  o.deliveryReceivedLabel=label;
+ o.deliveryReceivedByWorkerId=String(session.workerId);
+ o.deliveryReceivedByWorkerName=actorName();
  o.modifiedAt=now;
  o.modifiedBy=actorName();
  appendOrderHistory(o,'أكد الموزع استلام الطلب');
