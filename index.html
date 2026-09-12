@@ -1,6 +1,6 @@
 <!doctype html><!-- AK Delivery v93: fixed navigation bars; scroll content only; reduced explanatory text --><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><!-- AK Delivery v86: persistent received-order history for distributors and owner -->
 <title>مسيّر التوصيل</title>
-<style>*{box-sizing:border-box}body{margin:0;font-family:Arial;background:#f4f6f8;color:#222}header{background:#175d79;color:#fff;padding:15px;font-size:21px;font-weight:bold}.app{display:flex;min-height:100vh}aside{width:210px;background:#11191d;color:#ccd4d8;padding:15px 0}aside h3{padding:0 15px;color:white}aside button{width:100%;text-align:right;padding:11px 15px;border:0;background:none;color:inherit}aside button:hover{background:#263238}main{flex:1;padding:14px;overflow:auto}.card{background:white;padding:14px;border-radius:9px;margin-bottom:12px;box-shadow:0 1px 5px #0001}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:8px}input,select,textarea{width:100%;padding:9px;border:1px solid #d6dce1;border-radius:6px}button{cursor:pointer}.btn{border:0;border-radius:5px;padding:8px 11px;color:white;background:#1882b3}table{width:100%;border-collapse:collapse}th,td{padding:9px;border-bottom:1px solid #eee;text-align:right;font-size:13px}.code{color:#1769aa;text-decoration:underline;font-weight:bold;cursor:pointer}.page{display:none}.page.on{display:block}.overlay{display:none;position:fixed;inset:0;background:#0008;z-index:10}.drawer{position:absolute;right:0;top:0;width:min(510px,100%);height:100%;background:white;padding:16px;overflow:auto}.close{float:left;font-size:25px;border:0;background:none}.info{display:grid;grid-template-columns:115px 1fr;gap:7px;font-size:13px}.actions{display:flex;gap:6px;flex-wrap:wrap;margin:14px 0;padding:12px 0;border-block:1px solid #ddd}.actions button{border:0;border-radius:5px;padding:8px;color:#fff}.g{background:#168b55}.y{background:#e2ad09;color:#222!important}.r{background:#dc3d4b}.gr{background:#697681}.c{background:#05aeca}.log{font-size:12px;line-height:1.8}.badge{background:#e8eef3;padding:4px 7px;border-radius:12px}.transit-badge{background:#ff3b30!important;color:#fff!important;font-weight:800!important;min-width:28px;display:inline-block;text-align:center;box-shadow:0 0 0 2px #ffffff33}aside .badge,aside .menu-count{display:inline-flex;align-items:center;justify-content:center;min-width:28px;height:24px;padding:2px 7px;margin-inline-start:6px;border-radius:999px;background:#ffd54f;color:#111;font-weight:900;font-size:12px;box-shadow:0 0 0 2px #ffffff22}aside .transit-badge{background:#ff3b30!important;color:#fff!important}aside button.menu-active{background:#175d79!important;color:#fff!important;font-weight:800;box-shadow:inset -4px 0 0 #39b8ff}aside button.menu-active .badge,aside button.menu-active .menu-count{box-shadow:0 0 0 2px #fff6}@media(max-width:650px){aside{width:135px;font-size:11px}main{padding:7px}.drawer{width:95%}th,td{font-size:11px;padding:6px}}
+<style>*{box-sizing:border-box}body{margin:0;font-family:Arial;background:#f4f6f8;color:#222}header{background:#175d79;color:#fff;padding:15px;font-size:21px;font-weight:bold}.app{display:flex;min-height:100vh}aside{width:210px;background:#11191d;color:#ccd4d8;padding:15px 0}aside h3{padding:0 15px;color:white}aside button{width:100%;text-align:right;padding:11px 15px;border:0;background:none;color:inherit}aside button:hover{background:#263238}main{flex:1;padding:14px;overflow:auto}.card{background:white;padding:14px;border-radius:9px;margin-bottom:12px;box-shadow:0 1px 5px #0001}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:8px}input,select,textarea{width:100%;padding:9px;border:1px solid #d6dce1;border-radius:6px}button{cursor:pointer}.btn{border:0;border-radius:5px;padding:8px 11px;color:white;background:#1882b3}table{width:100%;border-collapse:collapse}th,td{padding:9px;border-bottom:1px solid #eee;text-align:right;font-size:13px}.code{color:#1769aa;text-decoration:underline;font-weight:bold;cursor:pointer}.page{display:none}.page.on{display:block}.overlay{display:none;position:fixed;inset:0;background:#0008;z-index:10}.drawer{position:absolute;right:0;top:0;width:min(510px,100%);height:100%;background:white;padding:16px;overflow:auto}.close{float:left;font-size:25px;border:0;background:none}.info{display:grid;grid-template-columns:115px 1fr;gap:7px;font-size:13px}.actions{display:flex;gap:6px;flex-wrap:wrap;margin:14px 0;padding:12px 0;border-block:1px solid #ddd}.actions button{border:0;border-radius:5px;padding:8px;color:#fff}.g{background:#168b55}.y{background:#e2ad09;color:#222!important}.r{background:#dc3d4b}.gr{background:#697681}.c{background:#05aeca}.log{font-size:12px;line-height:1.8}.badge{background:#e8eef3;padding:4px 7px;border-radius:12px}.transit-badge{background:#ff3b30!important;color:#fff!important;font-weight:800!important;min-width:28px;display:inline-block;text-align:center;box-shadow:0 0 0 2px #ffffff33}aside .badge,aside .menu-count{display:inline-flex;align-items:center;justify-content:center;min-width:28px;height:24px;padding:2px 7px;margin:0;position:absolute;left:14px;top:50%;transform:translateY(-50%);border-radius:999px;background:#ffd54f;color:#111;font-weight:900;font-size:12px;box-shadow:0 0 0 2px #ffffff22}aside button{position:relative;padding-left:54px!important}aside .transit-badge{background:#ff3b30!important;color:#fff!important}aside button.menu-active{background:#175d79!important;color:#fff!important;font-weight:800;box-shadow:inset -4px 0 0 #39b8ff}aside button.menu-active .badge,aside button.menu-active .menu-count{box-shadow:0 0 0 2px #fff6}@media(max-width:650px){aside{width:135px;font-size:11px}main{padding:7px}.drawer{width:95%}th,td{font-size:11px;padding:6px}}
 .phone-ltr{direction:ltr!important;unicode-bidi:bidi-override;display:inline-block;text-align:left}
 
 .login-screen{position:fixed;inset:0;background:#eef2f5;z-index:100;display:flex;align-items:center;justify-content:center;padding:20px}
@@ -177,7 +177,7 @@ html[data-view-mode="desktop"] .app{height:auto!important;min-height:0!important
 html[data-view-mode="desktop"] main{height:100%!important;min-height:0!important;overflow-y:auto!important;}
 
 
-/* النسخة 94: تثبيت كل ما فوق خط عناوين الطلبات، وتمرير قائمة الطلبات فقط */
+/* النسخة 95: تثبيت كل ما فوق خط عناوين الطلبات، وتمرير قائمة الطلبات فقط */
 #list.page.on{height:100%;min-height:0;display:flex;flex-direction:column;overflow:hidden;}
 #list.page.on>#orderListCard{flex:1 1 auto;min-height:0;overflow:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;margin-bottom:0;}
 #orderListCard table{position:relative;}
@@ -752,6 +752,26 @@ let db=JSON.parse(localStorage.getItem(K)||'null')||{orders:[],workers:[]},filte
 if(!Array.isArray(db.returnBatches))db.returnBatches=[];
 if(!Array.isArray(db.deliveryBatches))db.deliveryBatches=[];
 if(!Array.isArray(db.deliveryTransfers))db.deliveryTransfers=[];
+
+/* النسخة 95: حذف الطلب التجريبي Nada مرة واحدة، مع إبقاء الحذف متزامناً سحابياً. */
+if(localStorage.getItem('ak_remove_test_nada_v95')!=='done'){
+  const now=new Date().toISOString();
+  let changed=false;
+  for(const o of (db.orders||[])){
+    if(!o||o.deletedAt)continue;
+    const names=[o.sender,o.recipient,o.customerName,o.name].map(v=>String(v||'').trim().toLowerCase());
+    if(names.includes('nada')){
+      o.deletedAt=now;
+      o.modifiedAt=now;
+      o.modifiedBy='owner';
+      if(!Array.isArray(o.history))o.history=[];
+      o.history.push({time:tm(),text:'حذف الطلب التجريبي Nada بواسطة المالك'});
+      changed=true;
+    }
+  }
+  localStorage.setItem('ak_remove_test_nada_v95','done');
+  if(changed)localStorage.setItem(K,JSON.stringify(db));
+}
 
 /* النسخة 76: تنظيف الحسابات القديمة المطلوبة من المالك مرة واحدة.
    نستخدم حذفاً منطقياً حتى يتزامن الحذف مع السحابة ولا تعود الحسابات المحذوفة. */
@@ -2395,12 +2415,12 @@ function exportPDF(){
 
 
 function invoicesRender(){
- let delivered=db.orders.filter(o=>o.status==='تم التسليم');
+ let delivered=db.orders.filter(o=>!o.deletedAt&&o.status==='تم التسليم');
  invoiceOrder.innerHTML=delivered.length?delivered.map(o=>`<option value="${o.id}">${formatSeq(o.seq)} — ${o.clientNo||'بدون رمز'} — ${o.recipient} — ${cash(o.amount)}</option>`).join(''):'<option value="">لا توجد طلبات مسلّمة</option>';
  invoiceSummary.innerHTML=`عدد الطلبات المسلّمة القابلة للفوترة: <b>${delivered.length}</b>`;
 }
 function printInvoice(){
- let id=invoiceOrder.value,o=db.orders.find(x=>x.id===id);
+ let id=invoiceOrder.value,o=db.orders.find(x=>x.id===id&&!x.deletedAt);
  if(!o)return alert('اختر طلباً مسلّماً');
  let wkr=db.workers.find(x=>x.id===o.worker);
  let fee=wkr?.rate||0;
@@ -2420,7 +2440,7 @@ function printInvoice(){
  win.document.close();
 }
 function exportInvoicesExcel(){
- let data=db.orders.filter(o=>o.status==='تم التسليم');
+ let data=db.orders.filter(o=>!o.deletedAt&&o.status==='تم التسليم');
  if(!data.length)return alert('لا توجد فواتير لتصديرها');
  let headers=['رقم الترتيب','رمز الطلب','المرسل','المستلم','الهاتف','العنوان','المدينة','المنتج','قيمة الطلب','خدمة التوصيل','الموزع','الحالة'];
  let body=data.map(o=>{let wkr=db.workers.find(x=>x.id===o.worker),fee=wkr?.rate||0;return `<tr><td>${htmlEscape(formatSeq(o.seq))}</td><td>${htmlEscape(o.clientNo||'')}</td><td>${htmlEscape(o.sender)}</td><td>${htmlEscape(o.recipient)}</td><td style="mso-number-format:'\\@'">${htmlEscape(o.phone)}</td><td>${htmlEscape(o.address||'')}</td><td>${htmlEscape(o.city||'')}</td><td>${htmlEscape(o.product||'')}</td><td>${+o.amount||0}</td><td>${fee}</td><td>${htmlEscape(wkr?.name||'')}</td><td>${htmlEscape(o.status)}</td></tr>`}).join('');
