@@ -1,4 +1,4 @@
-<!doctype html><!-- AK Delivery v92: owner confirms returned orders; distributor sees owner confirmation --><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><!-- AK Delivery v86: persistent received-order history for distributors and owner -->
+<!doctype html><!-- AK Delivery v93: fixed navigation bars; scroll content only; reduced explanatory text --><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><!-- AK Delivery v86: persistent received-order history for distributors and owner -->
 <title>مسيّر التوصيل</title>
 <style>*{box-sizing:border-box}body{margin:0;font-family:Arial;background:#f4f6f8;color:#222}header{background:#175d79;color:#fff;padding:15px;font-size:21px;font-weight:bold}.app{display:flex;min-height:100vh}aside{width:210px;background:#11191d;color:#ccd4d8;padding:15px 0}aside h3{padding:0 15px;color:white}aside button{width:100%;text-align:right;padding:11px 15px;border:0;background:none;color:inherit}aside button:hover{background:#263238}main{flex:1;padding:14px;overflow:auto}.card{background:white;padding:14px;border-radius:9px;margin-bottom:12px;box-shadow:0 1px 5px #0001}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:8px}input,select,textarea{width:100%;padding:9px;border:1px solid #d6dce1;border-radius:6px}button{cursor:pointer}.btn{border:0;border-radius:5px;padding:8px 11px;color:white;background:#1882b3}table{width:100%;border-collapse:collapse}th,td{padding:9px;border-bottom:1px solid #eee;text-align:right;font-size:13px}.code{color:#1769aa;text-decoration:underline;font-weight:bold;cursor:pointer}.page{display:none}.page.on{display:block}.overlay{display:none;position:fixed;inset:0;background:#0008;z-index:10}.drawer{position:absolute;right:0;top:0;width:min(510px,100%);height:100%;background:white;padding:16px;overflow:auto}.close{float:left;font-size:25px;border:0;background:none}.info{display:grid;grid-template-columns:115px 1fr;gap:7px;font-size:13px}.actions{display:flex;gap:6px;flex-wrap:wrap;margin:14px 0;padding:12px 0;border-block:1px solid #ddd}.actions button{border:0;border-radius:5px;padding:8px;color:#fff}.g{background:#168b55}.y{background:#e2ad09;color:#222!important}.r{background:#dc3d4b}.gr{background:#697681}.c{background:#05aeca}.log{font-size:12px;line-height:1.8}.badge{background:#e8eef3;padding:4px 7px;border-radius:12px}.transit-badge{background:#ff3b30!important;color:#fff!important;font-weight:800!important;min-width:28px;display:inline-block;text-align:center;box-shadow:0 0 0 2px #ffffff33}aside .badge,aside .menu-count{display:inline-flex;align-items:center;justify-content:center;min-width:28px;height:24px;padding:2px 7px;margin-inline-start:6px;border-radius:999px;background:#ffd54f;color:#111;font-weight:900;font-size:12px;box-shadow:0 0 0 2px #ffffff22}aside .transit-badge{background:#ff3b30!important;color:#fff!important}aside button.menu-active{background:#175d79!important;color:#fff!important;font-weight:800;box-shadow:inset -4px 0 0 #39b8ff}aside button.menu-active .badge,aside button.menu-active .menu-count{box-shadow:0 0 0 2px #fff6}@media(max-width:650px){aside{width:135px;font-size:11px}main{padding:7px}.drawer{width:95%}th,td{font-size:11px;padding:6px}}
 .phone-ltr{direction:ltr!important;unicode-bidi:bidi-override;display:inline-block;text-align:left}
@@ -165,6 +165,17 @@ html[data-view-mode="mobile"] #overlay > .drawer{
  .receive-btn,.send-btn{padding:7px 8px;font-size:11px}
 }
 
+/* النسخة 93: يبقى الشريط العلوي والجانبي ثابتين، والتمرير داخل محتوى الصفحات فقط */
+html,body{height:100%;}
+body{display:flex;flex-direction:column;overflow:hidden;}
+header{flex:0 0 auto;position:relative;z-index:20;}
+.app{flex:1 1 auto;min-height:0;height:auto!important;overflow:hidden;}
+aside{flex:0 0 210px;height:100%;min-height:0;overflow-y:auto;overscroll-behavior:contain;}
+main{flex:1 1 auto;height:100%;min-height:0;overflow-y:auto!important;overflow-x:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;}
+@media(max-width:650px){aside{flex-basis:135px;}}
+html[data-view-mode="desktop"] .app{height:auto!important;min-height:0!important;}
+html[data-view-mode="desktop"] main{height:100%!important;min-height:0!important;overflow-y:auto!important;}
+
 </style></head>
 <body>
 <div id="loginScreen" class="login-screen">
@@ -173,13 +184,13 @@ html[data-view-mode="mobile"] #overlay > .drawer{
 <input id="loginPin" type="password" inputmode="numeric" placeholder="الرمز السري">
 <button class="btn" style="width:100%" onclick="workerLogin()">دخول الموزع</button>
 <hr>
-<h3>إنشاء حساب موزع</h3><p style="font-size:11px;color:#666">أول موزع فقط يُفعّل حسابه تلقائيًا. أي موزع بعده يحتاج موافقة المالك.</p>
+<h3>إنشاء حساب موزع</h3>
 <input id="regName" placeholder="اختر اسمك">
 <input id="regPin" type="password" inputmode="numeric" placeholder="اختر رقمك السري">
 <input id="regPinConfirm" type="password" inputmode="numeric" placeholder="تأكيد الرقم السري">
 <button class="btn g" style="width:100%" onclick="workerRegister()">إنشاء حساب الموزع</button>
  <hr><button class="btn gr" style="width:100%" onclick="ownerLogin()">دخول المالك</button>
- <p style="font-size:11px;color:#666">المالك يستخدم رمز المالك الخاص به.</p>
+ 
  </div>
 </div>
 <header id="appHeader" onclick="ownerTap()">مسيّر التوصيل <button class="logout" onclick="event.stopPropagation();logout()">خروج</button> <span style="display:inline-flex;gap:4px;margin-right:8px">
@@ -204,7 +215,7 @@ html[data-view-mode="mobile"] #overlay > .drawer{
 <div id="workerFinanceSummary" class="card" style="display:none"></div>
 <div class=card><table><tr><th>رقم الترتيب</th><th>رمز الطلب</th><th>المستلم</th><th>العنوان</th><th>الهاتف</th><th>القيمة والحساب</th><th>الحالة</th></tr><tbody id=rows></tbody></table></div></section>
 <section id=bulk class=page><div class=card><h2>إدخال الطلبات بالنسخ واللصق</h2>
-<p>الصق جدول الطلبات كما نسخته من المصدر، ثم اضغط «معاينة». يدعم مختلف رموز الطلبات مهما كانت بدايتها، مثل MP أو BX أو DL أو غيرها، مع الاسم والمدينة والهاتف والمبلغ.</p>
+
 <textarea id=bulkText style="min-height:180px" placeholder="الصق الطلبات هنا..."></textarea>
 <div style="margin-top:8px;display:flex;gap:7px;flex-wrap:wrap">
 <button class=btn onclick="previewBulk()">معاينة</button>
@@ -217,7 +228,7 @@ html[data-view-mode="mobile"] #overlay > .drawer{
 </div></div><textarea id=firstComment placeholder="تعليق"></textarea><br><button class=btn>حفظ الطلب</button></form></div></section>
 <section id=returnCreate class=page><div class=card>
 <h2>طلبات الرجوع</h2>
-<p>هذه هي الطلبات التي يطلب المالك من الموزعين إرجاعها. يرسل المالك طلب الإرجاع، ثم يؤكد الموزع التنفيذ بعد إعادة الطلبات فعلياً.</p>
+
 <div style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:10px">
 <button class="btn g" onclick="sendReturnBatches()">↩ إرسال طلب الإرجاع للموزع</button>
 <button class="btn gr" onclick="go('returnBatches')">فتح سجل طلبات الإرجاع</button>
@@ -227,12 +238,12 @@ html[data-view-mode="mobile"] #overlay > .drawer{
 </div></section>
 <section id=returnBatches class=page><div class=card>
 <h2>📦 سجل طلبات الإرجاع</h2>
-<p>كل مجموعة طلبات إرجاع يرسلها المالك تبقى مسجلة في التطبيق، مع اسم الموزع وعدد الطلبات وتاريخ الإرسال وتاريخ تأكيد التنفيذ.</p>
+
 <div id=returnBatchesList></div>
 </div></section>
 <section id=deliveryBatches class=page><div class=card>
 <h2>📥 حزم استلام الطلبات</h2>
-<p>المالك يرسل الطلبات المسندة للموزع ضمن حزمة. الموزع يؤكد استلام الحزمة كاملة، وتبقى كل حزمة مسجلة بالتاريخ وعدد الطلبات.</p>
+
 <div id="deliveryBatchOwnerTools" style="display:none;margin-bottom:10px">
   <button class="btn g" onclick="createDeliveryBatches()">📦 إنشاء وإرسال حزمة الطلبات للموزع</button>
 </div>
@@ -240,12 +251,11 @@ html[data-view-mode="mobile"] #overlay > .drawer{
 </div></section>
 <section id=deliveryTransfers class=page><div class=card>
 <h2 id="deliveryTransfersTitle">📤📥 إرسال واستلام الطلبات</h2>
-<p id="deliveryTransfersHelp" style="display:none"></p>
 <input id="deliveryTransferSearch" placeholder="بحث برقم الطلب أو المستلم أو الهاتف" oninput="renderDeliveryTransfers()" style="margin-bottom:10px">
 <div id="deliveryTransfersList"></div>
 </div></section>
 <section id=workers class=page><div class=card><h2>الموزعون</h2>
-<p>المالك ينشئ حساب الموزع ويحدد له الرقم السري، ثم يعطيه بيانات الدخول.</p>
+
 <div class=card style="margin-top:10px">
 <h3 style="margin-top:0">إنشاء حساب موزع بواسطة المالك</h3>
 <div class=grid>
@@ -262,7 +272,7 @@ html[data-view-mode="mobile"] #overlay > .drawer{
 <section id="cloudSetup" class="page">
 <div class="card">
 <h2>☁️ AK Delivery Cloud</h2>
-<p>المزامنة التلقائية مفعلة. تُحفظ التغييرات محليًا أولًا، ثم تُدمج مع السحابة تلقائيًا عند توفر الإنترنت.</p>
+
 <div style="display:flex;gap:8px;flex-wrap:wrap">
 <button class="btn gr" onclick="cloudTest()">اختبار الاتصال</button>
 <button class="btn g" onclick="cloudPull()">⬇️ جلب البيانات</button>
@@ -274,7 +284,7 @@ html[data-view-mode="mobile"] #overlay > .drawer{
 <section id=emergencySync class=page>
 <div class=card>
 <h2>🔄 مزامنة المالك والموزع</h2>
-<p>طريقة مستقرة مؤقتة للعمل بين جهازين إلى حين تفعيل المزامنة السحابية المباشرة.</p>
+
 
 <div id=emOwnerBox>
 <h3>للمالك</h3>
@@ -299,7 +309,7 @@ html[data-view-mode="mobile"] #overlay > .drawer{
 <section id=backupSafe class=page>
   <div class=card>
     <h2>🛡️ حماية بيانات التطبيق</h2>
-    <p>احفظ نسخة احتياطية كاملة بانتظام. الملف يشمل الطلبات، الموزعين، الحسابات، التسويات، الإعدادات، وحالة الدخول.</p>
+    
     <div class=grid>
       <button class="btn g" onclick="downloadFullBackup()">⬇️ تنزيل نسخة احتياطية كاملة</button>
       <label class="btn" style="display:block;text-align:center">⬆️ استعادة نسخة احتياطية
@@ -312,7 +322,7 @@ html[data-view-mode="mobile"] #overlay > .drawer{
   </div>
   <div class=card>
     <h3>النسخ التلقائي المحلي</h3>
-    <p>ينشئ التطبيق لقطة محلية تلقائيًا عند التغييرات المهمة ويحفظ آخر 20 لقطة على نفس الجهاز.</p>
+    
     <div id="snapshotsList"></div>
   </div>
 </section>
@@ -2451,7 +2461,6 @@ function accountsRender(){
  accounts.innerHTML=`
  <div class=card>
    <h2>الحسابات المالية</h2>
-   <p>يتم احتساب المبالغ تلقائيًا من الطلبات التي حالتها <b>تم التسليم</b> ولم تدخل بعد في تسوية سابقة.</p>
    <div class=grid>
      <div><b>المجموع العام لمبالغ الطلبات المسلّمة</b><h2>${cash(collected)}</h2></div>
      <div><b>إجمالي أثمان التوصيل</b><h2>${cash(fees)}</h2></div>
