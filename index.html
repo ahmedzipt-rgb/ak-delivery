@@ -240,7 +240,7 @@ html[data-view-mode="mobile"] #overlay > .drawer{
 </div></section>
 <section id=deliveryTransfers class=page><div class=card>
 <h2 id="deliveryTransfersTitle">📤📥 إرسال واستلام الطلبات</h2>
-<p id="deliveryTransfersHelp">كل طلب جديد يدخل هذه القائمة تلقائياً، ثم يرسله المالك للموزع ويبقى الإرسال والاستلام مسجلين بالتاريخ.</p>
+<p id="deliveryTransfersHelp" style="display:none"></p>
 <input id="deliveryTransferSearch" placeholder="بحث برقم الطلب أو المستلم أو الهاتف" oninput="renderDeliveryTransfers()" style="margin-bottom:10px">
 <div id="deliveryTransfersList"></div>
 </div></section>
@@ -1608,7 +1608,7 @@ function renderDeliveryTransfers(){
 
  if(session.role==='worker'){
    if(titleEl)titleEl.textContent='📥 استقبال الطلبات';
-   if(helpEl)helpEl.textContent='هذه هي الطلبات التي أرسلها لك المالك. بعد تأكيد الاستلام يبقى الطلب محفوظاً في «طلبات مستلمة» حتى بعد تسليمه للزبون.';
+   if(helpEl){helpEl.textContent='';helpEl.style.display='none';}
    const transfers=(db.deliveryTransfers||[])
      .filter(t=>!t.deletedAt&&String(t.workerId)===String(session.workerId))
      .sort((a,b)=>timeValue(b.sentAt||b.modifiedAt)-timeValue(a.sentAt||a.modifiedAt));
@@ -1637,12 +1637,11 @@ function renderDeliveryTransfers(){
        <button type="button" class="transfer-tab ${deliveryTransferView==='pending'?'active':''}" onclick="deliveryTransferTab('pending')">طلبات في الانتظار (${pending.length})</button>
        <button type="button" class="transfer-tab ${deliveryTransferView==='received'?'active':''}" onclick="deliveryTransferTab('received')">طلبات مستلمة (${received.length})</button>
      </div>
-     <div class="transfer-summary">${deliveryTransferView==='pending'?'الطلبات المرسلة إليك بانتظار الاستلام':'سجل الطلبات التي أكدت استلامها'}</div>
      ${transferTable(rows,'worker')}
    </div>`;
  }else{
    if(titleEl)titleEl.textContent='📤 إرسال الطلبات للموزع';
-   if(helpEl)helpEl.textContent='كل طلب جديد يظهر هنا تلقائياً في سطر مستقل، ثم يمكنك إسناده وإرساله للموزع ومتابعة تأكيد استلامه.';
+   if(helpEl){helpEl.textContent='';helpEl.style.display='none';}
    const orders=db.orders
      .filter(o=>!o.deletedAt&&o.status==='قيد التوزيع')
      .sort((a,b)=>timeValue(b.modifiedAt||b.createdAt)-timeValue(a.modifiedAt||a.createdAt))
@@ -1666,11 +1665,6 @@ function renderDeliveryTransfers(){
        <button type="button" class="transfer-tab ${deliveryTransferView==='waiting'?'active':''}" onclick="deliveryTransferTab('waiting')">في انتظار الموزع (${waiting.length})</button>
        <button type="button" class="transfer-tab ${deliveryTransferView==='received'?'active':''}" onclick="deliveryTransferTab('received')">تم استلامها (${received.length})</button>
      </div>
-     <div class="transfer-summary">${
-       deliveryTransferView==='ready'?'الطلبات الجديدة الجاهزة للإرسال':
-       deliveryTransferView==='waiting'?'الطلبات التي أرسلتها وبانتظار تأكيد الموزع':
-       'سجل الطلبات التي أكد الموزع استلامها'
-     }</div>
      ${transferTable(rows,'owner')}
    </div>`;
  }
