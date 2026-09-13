@@ -274,6 +274,33 @@ html[data-view-mode="desktop"] aside{height:100%!important;overflow-y:auto!impor
     max-width:calc(100vw - 135px) !important;
   }
 }
+
+/* النسخة 102: فرض تفاصيل الطلب على اليسار حتى مع وضع العرض المحفوظ */
+html[data-view-mode="desktop"] #overlay > .drawer,
+html[data-view-mode="mobile"] #overlay > .drawer,
+body #overlay > .drawer{
+  position:fixed !important;
+  top:0 !important;
+  bottom:0 !important;
+  left:0 !important;
+  right:auto !important;
+  margin:0 !important;
+  transform:none !important;
+  direction:rtl !important;
+  text-align:right !important;
+  width:min(510px,calc(100vw - 210px)) !important;
+  max-width:calc(100vw - 210px) !important;
+}
+@media(max-width:650px){
+  html[data-view-mode="desktop"] #overlay > .drawer,
+  html[data-view-mode="mobile"] #overlay > .drawer,
+  body #overlay > .drawer{
+    left:0 !important;
+    right:auto !important;
+    width:calc(100vw - 135px) !important;
+    max-width:calc(100vw - 135px) !important;
+  }
+}
 </style></head>
 <body>
 <div id="loginScreen" class="login-screen">
@@ -1691,14 +1718,14 @@ function render(){title.textContent=filter;let a=visibleOrders();rows.innerHTML=
 function openOrder(id){
  const _drawer=document.querySelector('#overlay > .drawer');
  if(_drawer){
-   _drawer.style.position='fixed';
-   _drawer.style.left='0';
-   _drawer.style.right='auto';
-   _drawer.style.width=(window.innerWidth<=650?'calc(100vw - 135px)':'min(510px, calc(100vw - 210px))');
-   _drawer.style.maxWidth=(window.innerWidth<=650?'calc(100vw - 135px)':'calc(100vw - 210px)');
-   _drawer.style.margin='0';
-   _drawer.style.transform='none';
-   _drawer.style.direction='rtl';
+   _drawer.style.setProperty('position','fixed','important');
+   _drawer.style.setProperty('left','0','important');
+   _drawer.style.setProperty('right','auto','important');
+   _drawer.style.setProperty('width',(window.innerWidth<=650?'calc(100vw - 135px)':'min(510px, calc(100vw - 210px))'),'important');
+   _drawer.style.setProperty('max-width',(window.innerWidth<=650?'calc(100vw - 135px)':'calc(100vw - 210px)'),'important');
+   _drawer.style.setProperty('margin','0','important');
+   _drawer.style.setProperty('transform','none','important');
+   _drawer.style.setProperty('direction','rtl','important');
  }
 
  current=id;
