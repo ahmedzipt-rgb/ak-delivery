@@ -258,6 +258,22 @@ html[data-view-mode="desktop"] aside{height:100%!important;overflow-y:auto!impor
 .pdf-dup{background:#fff2f2;color:#a31616;font-weight:700}
 .pdf-new{background:#f3fff6}
 .pdf-import-note{font-size:12px;color:#56636a;margin-top:7px}
+
+/* النسخة 101: نقل تفاصيل الطلب إلى الجانب الأيسر بعيداً عن الشريط الجانبي */
+#overlay > .drawer{
+  left:0 !important;
+  right:auto !important;
+  width:min(510px,calc(100vw - 210px)) !important;
+  max-width:calc(100vw - 210px) !important;
+}
+@media(max-width:650px){
+  #overlay > .drawer{
+    left:0 !important;
+    right:auto !important;
+    width:calc(100vw - 135px) !important;
+    max-width:calc(100vw - 135px) !important;
+  }
+}
 </style></head>
 <body>
 <div id="loginScreen" class="login-screen">
@@ -1676,8 +1692,8 @@ function openOrder(id){
  const _drawer=document.querySelector('#overlay > .drawer');
  if(_drawer){
    _drawer.style.position='fixed';
-   _drawer.style.right=(window.innerWidth<=650?'135px':'210px');
-   _drawer.style.left='auto';
+   _drawer.style.left='0';
+   _drawer.style.right='auto';
    _drawer.style.width=(window.innerWidth<=650?'calc(100vw - 135px)':'min(510px, calc(100vw - 210px))');
    _drawer.style.maxWidth=(window.innerWidth<=650?'calc(100vw - 135px)':'calc(100vw - 210px)');
    _drawer.style.margin='0';
