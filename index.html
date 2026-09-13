@@ -2033,8 +2033,8 @@ function renderReturnBatches(){
    const ownerDone=b.status==='owner_confirmed'||!!b.ownerConfirmedAt;
    const ids=(b.orderIds||[]).map(String);
    const orders=db.orders.filter(o=>ids.includes(String(o.id)));
-   const orderLines=orders.map(o=>`<div style="padding:4px 0;border-bottom:1px solid #eee">
-     <b dir="ltr">${formatSeq(o.seq)}</b> — ${htmlEscape(o.recipient||'—')} — ${cash(o.amount)}
+   const orderLines=orders.map(o=>`<div style="padding:6px 0;border-bottom:1px solid #eee">
+     <b>رمز الطلب:</b> <b dir="ltr" style="direction:ltr;display:inline-block">${htmlEscape(o.clientNo||'—')}</b> — ${htmlEscape(o.recipient||'—')} — ${cash(o.amount)}
    </div>`).join('');
 
    let stateText='بانتظار تنفيذ الموزع';
