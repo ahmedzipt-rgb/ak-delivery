@@ -249,6 +249,15 @@ html[data-view-mode="desktop"] aside{height:100%!important;overflow-y:auto!impor
   #detail .info{grid-template-columns:minmax(82px,105px) minmax(0,1fr) !important;}
   #detail, #detail *{overflow-wrap:anywhere;}
 }
+
+/* النسخة 100: استيراد PDF مع اختيار الطلبات */
+.pdf-import-actions{display:flex;gap:7px;flex-wrap:wrap;align-items:center;margin:10px 0}
+.pdf-import-table-wrap{overflow:auto;max-width:100%}
+.pdf-import-table th,.pdf-import-table td{vertical-align:top}
+.pdf-import-table input[type=checkbox]{width:20px;height:20px}
+.pdf-dup{background:#fff2f2;color:#a31616;font-weight:700}
+.pdf-new{background:#f3fff6}
+.pdf-import-note{font-size:12px;color:#56636a;margin-top:7px}
 </style></head>
 <body>
 <div id="loginScreen" class="login-screen">
@@ -274,7 +283,7 @@ html[data-view-mode="desktop"] aside{height:100%!important;overflow-y:auto!impor
 <span id="workerNewBadge" style="display:none;margin-right:8px;font-size:12px;padding:4px 8px;border-radius:12px;background:#ffffff22">🔔 0</span>
 </header>
 <div id="syncToast" style="display:none;position:fixed;top:72px;left:50%;transform:translateX(-50%);z-index:9999;background:#222;color:#fff;padding:9px 14px;border-radius:10px;font-size:13px;max-width:90%;text-align:center"></div>
-<div class=app><aside><h3>القائمة</h3><button data-menu-key="home" onclick="go('list','home')">🏠 الرئيسية</button><button data-menu-key="add" onclick="go('add','add')">➕ طلب جديد</button><button data-menu-key="bulk" onclick="go('bulk','bulk')">📋 لصق طلبات دفعة واحدة</button><div id=stateMenu></div><button id="returnCreateMenu" data-menu-key="returnCreate" onclick="go('returnCreate','returnCreate')">↩ طلبات الرجوع <span id="returnReqCount" class="badge">0</span></button><button id="returnBatchesMenu" data-menu-key="returnBatches" onclick="go('returnBatches','returnBatches')">📦 سجل طلبات الإرجاع <span id="returnBatchCount" class="badge">0</span></button><button id="deliveryTransfersMenu" data-menu-key="deliveryTransfers" onclick="go('deliveryTransfers','deliveryTransfers')">🚚 في الطريق <span id="deliveryTransferCount" class="badge transit-badge">0</span></button><button data-menu-key="workers" onclick="go('workers','workers')">👤 الموزعون</button><button data-menu-key="accounts" onclick="go('accounts','accounts')">💰 الحسابات</button><button data-menu-key="invoices" onclick="go('invoices','invoices')">🧾 الفواتير</button><button data-menu-key="backupSafe" onclick="go('backupSafe','backupSafe')">🛡️ النسخ الاحتياطي</button><button data-menu-key="cloudSetup" onclick="go('cloudSetup','cloudSetup')">☁️ المزامنة السحابية</button><button data-menu-key="emergencySync" onclick="go('emergencySync','emergencySync')">🔄 مزامنة الموزع</button></aside><main>
+<div class=app><aside><h3>القائمة</h3><button data-menu-key="home" onclick="go('list','home')">🏠 الرئيسية</button><button data-menu-key="add" onclick="go('add','add')">➕ طلب جديد</button><button data-menu-key="bulk" onclick="go('bulk','bulk')">📋 لصق طلبات دفعة واحدة</button><button data-menu-key="pdfImport" onclick="go('pdfImport','pdfImport')">📄 استيراد PDF</button><div id=stateMenu></div><button id="returnCreateMenu" data-menu-key="returnCreate" onclick="go('returnCreate','returnCreate')">↩ طلبات الرجوع <span id="returnReqCount" class="badge">0</span></button><button id="returnBatchesMenu" data-menu-key="returnBatches" onclick="go('returnBatches','returnBatches')">📦 سجل طلبات الإرجاع <span id="returnBatchCount" class="badge">0</span></button><button id="deliveryTransfersMenu" data-menu-key="deliveryTransfers" onclick="go('deliveryTransfers','deliveryTransfers')">🚚 في الطريق <span id="deliveryTransferCount" class="badge transit-badge">0</span></button><button data-menu-key="workers" onclick="go('workers','workers')">👤 الموزعون</button><button data-menu-key="accounts" onclick="go('accounts','accounts')">💰 الحسابات</button><button data-menu-key="invoices" onclick="go('invoices','invoices')">🧾 الفواتير</button><button data-menu-key="backupSafe" onclick="go('backupSafe','backupSafe')">🛡️ النسخ الاحتياطي</button><button data-menu-key="cloudSetup" onclick="go('cloudSetup','cloudSetup')">☁️ المزامنة السحابية</button><button data-menu-key="emergencySync" onclick="go('emergencySync','emergencySync')">🔄 مزامنة الموزع</button></aside><main>
 <section id=list class="page on"><div class=card><h2 id=title>قيد التوزيع</h2>
 <div class=grid>
 <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
@@ -294,6 +303,16 @@ html[data-view-mode="desktop"] aside{height:100%!important;overflow-y:auto!impor
 <button class=btn onclick="previewBulk()">معاينة</button>
 <button class="btn g" onclick="importBulk()">إضافة الطلبات</button>
 </div><div id=bulkPreview style="margin-top:12px"></div></div></section>
+<section id=pdfImport class=page><div class=card><h2>📄 استيراد الطلبات من PDF</h2>
+<input id=pdfFileInput type=file accept="application/pdf,.pdf" onchange="readOrdersPdf(event)">
+<div class="pdf-import-actions">
+<button type="button" class="btn" onclick="selectPdfOrders(true)">☑ اختيار الكل</button>
+<button type="button" class="btn gr" onclick="selectPdfOrders(false)">☐ إلغاء الاختيار</button>
+<button type="button" class="btn g" onclick="importSelectedPdfOrders()">نسخ الطلبات المختارة</button>
+</div>
+<div id=pdfImportStatus class="pdf-import-note"></div>
+<div id=pdfImportPreview style="margin-top:12px"></div>
+</div></section>
 <section id=add class=page><div class=card><h2>إضافة طلب جديد</h2><form onsubmit="add(event)"><div class=grid><input id=seq type=text placeholder="رقم الترتيب" readonly><input id=sender placeholder="اسم الزبون المرسل" required><input id=clientNo placeholder="رمز الطلب المرسل من الزبون"><input id=recipient placeholder="اسم المستلم" required><input id=phone placeholder="الهاتف" required><input id=address placeholder="العنوان"><input id=city placeholder="المدينة" value="وجدة"><input id=product placeholder="المنتج"><input id=amount type=number step=.01 placeholder="القيمة">
 <div>
   <label style="display:block;font-weight:700;margin:0 0 5px">إسناد الطلب إلى الموزع</label>
@@ -813,7 +832,7 @@ function applyPermissions(){
  if(isWorker){
    buttons.forEach(b=>{
      let t=b.textContent;
-     if(t.includes('طلب جديد')||t.includes('لصق طلبات')||(t.includes('إنشاء طلب رجوع')||t.includes('طلبات الرجوع'))||t.includes('الموزعون')||t.includes('الحسابات')||t.includes('الفواتير')||t.includes('النسخ الاحتياطي')||t.includes('المزامنة السحابية')||t.includes('مزامنة الموزع')) b.style.display='none';
+     if(t.includes('طلب جديد')||t.includes('لصق طلبات')||t.includes('استيراد PDF')||(t.includes('إنشاء طلب رجوع')||t.includes('طلبات الرجوع'))||t.includes('الموزعون')||t.includes('الحسابات')||t.includes('الفواتير')||t.includes('النسخ الاحتياطي')||t.includes('المزامنة السحابية')||t.includes('مزامنة الموزع')) b.style.display='none';
    });
  }
  const ownerMini=document.getElementById('ownerCloudMini');
@@ -1225,7 +1244,7 @@ function menu(){
  }).join('');
  updateSidebarActive();
 }
-function go(x,menuKey){if(session.role==='worker'&&['add','bulk','returnCreate','workers','accounts','invoices','backupSafe','cloudSetup','emergencySync'].includes(x))return;if(menuKey)sidebarActiveKey=menuKey;document.querySelectorAll('.page').forEach(p=>p.classList.remove('on'));document.getElementById(x).classList.add('on');if(x==='list'){render();if(session.role==='worker')markAssignedSeen();}if(x==='add')seq.value=nextSeq();if(x==='accounts')accountsRender();if(x==='invoices')invoicesRender();if(x==='returnCreate')renderReturnCreate();if(x==='returnBatches')renderReturnBatches();if(x==='deliveryBatches')renderDeliveryBatches();if(x==='deliveryTransfers'){
+function go(x,menuKey){if(session.role==='worker'&&['add','bulk','pdfImport','returnCreate','workers','accounts','invoices','backupSafe','cloudSetup','emergencySync'].includes(x))return;if(menuKey)sidebarActiveKey=menuKey;document.querySelectorAll('.page').forEach(p=>p.classList.remove('on'));document.getElementById(x).classList.add('on');if(x==='list'){render();if(session.role==='worker')markAssignedSeen();}if(x==='add')seq.value=nextSeq();if(x==='accounts')accountsRender();if(x==='invoices')invoicesRender();if(x==='returnCreate')renderReturnCreate();if(x==='returnBatches')renderReturnBatches();if(x==='deliveryBatches')renderDeliveryBatches();if(x==='deliveryTransfers'){
  if(session.role==='worker'&&!['pending','received'].includes(deliveryTransferView))deliveryTransferView='pending';
  if(session.role!=='worker'&&!['ready','waiting','received'].includes(deliveryTransferView))deliveryTransferView='ready';
  renderDeliveryTransfers();
@@ -1351,6 +1370,179 @@ function importBulk(){
    db.orders.push({id:'SYS'+Date.now()+i,seq,clientNo:x.code,sender:'',recipient:x.name,phone:x.phone,address:x.address||x.city||'',city:x.city,product:'',amount:+x.amount||0,worker:'',status:'قيد التوزيع',history:[{time:t,text:'طلب جديد — إدخال جماعي — بواسطة '+actorName()},{time:t,text:'قيد التوزيع — بواسطة '+actorName()}],remarks:[],modifiedAt:isoNow(),modifiedBy:actorName()});
  });
  localStorage.setItem(K,JSON.stringify(db));bulkText.value='';bulkPreview.innerHTML='';filter='قيد التوزيع';save();alert('تمت إضافة '+bulkParsed.length+' طلبات بنجاح');go('list');
+}
+
+
+let pdfParsedOrders=[];
+let pdfImportFileName='';
+
+function pdfNormCode(v){
+ let x=String(v||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
+ let m=x.match(/^(\d{6,})([A-Z]{2,4})$/);
+ if(m)x=m[2]+m[1];
+ return x;
+}
+function pdfExistingCodeSet(){
+ const set=new Set();
+ (db.orders||[]).forEach(o=>{
+   [o.clientNo,o.id,o.orderCode,o.code].forEach(v=>{const k=pdfNormCode(v);if(k)set.add(k)});
+ });
+ return set;
+}
+function pdfCleanLine(v){return String(v||'').replace(/\u00a0/g,' ').replace(/\s+/g,' ').trim()}
+function pdfLooksHeader(v){
+ const t=pdfCleanLine(v).toLowerCase();
+ return !t||/^date\s*:/.test(t)||t==='bon de livraisons'||/^n\s+destinataire/.test(t)||t==='commentaire';
+}
+function pdfFindCode(v){
+ const t=String(v||'').toUpperCase();
+ let m=t.match(/\b[A-Z]{2,4}\d{6,}[A-Z0-9]*\b/);
+ if(m)return pdfNormCode(m[0]);
+ m=t.match(/\b\d{6,}[A-Z]{2,4}\b/);
+ return m?pdfNormCode(m[0]):'';
+}
+function pdfFindAmount(v){
+ const t=String(v||'').replace(',','.');
+ let m=t.match(/(?:DHS?|MAD)\s*(\d+(?:\.\d+)?)/i);
+ if(m)return +(m[1]||0);
+ m=t.match(/(\d+(?:\.\d+)?)\s*(?:DHS?|MAD)/i);
+ return m?+(m[1]||0):0;
+}
+function pdfFindPhone(v,code){
+ let text=String(v||'');
+ const raw=String(code||'');
+ if(raw)text=text.replace(new RegExp(raw.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),'ig'),' ');
+ const chunks=text.match(/(?:\+?212|0)?[5-7]?[\d\s.-]{7,14}\d/g)||[];
+ let best='';
+ for(const c of chunks){
+   const d=c.replace(/\D/g,'');
+   if(d.length>=9&&d.length<=12){
+     let n=d;
+     if(n.startsWith('212')&&n.length===12)n='0'+n.slice(3);
+     if(n.length===9&&/^[5-7]/.test(n))n='0'+n;
+     if(n.length===10&&/^0[5-7]/.test(n)){best=n;break}
+   }
+ }
+ return best;
+}
+function pdfInferName(line,code,phone,amount){
+ let t=' '+pdfCleanLine(line)+' ';
+ const variants=[code, code&&code.replace(/^([A-Z]{2,4})(\d+)$/,'$2$1')].filter(Boolean);
+ variants.forEach(v=>t=t.replace(new RegExp(v,'ig'),' '));
+ if(phone){const d=phone.replace(/\D/g,'');t=t.replace(new RegExp(d.split('').join('[\\s.-]*'),'g'),' ')}
+ t=t.replace(/(?:DHS?|MAD)\s*\d+(?:[.,]\d+)?/ig,' ').replace(/\d+(?:[.,]\d+)?\s*(?:DHS?|MAD)/ig,' ');
+ t=t.replace(/^\s*\d+\s+/,' ').replace(/\s+\d+\s*$/,' ').replace(/^[\s\-–—]+|[\s\-–—]+$/g,' ');
+ let parts=t.split(/\s+-\s+/).map(pdfCleanLine).filter(Boolean);
+ if(parts.length){
+   parts=parts.filter(x=>!/^\d+(?:\.\d+)?$/.test(x)&&!/^dhs?$/i.test(x));
+   if(parts.length)return parts.sort((a,b)=>b.length-a.length)[0];
+ }
+ return pdfCleanLine(t)||'بدون اسم';
+}
+function pdfGuessCity(address){
+ const a=String(address||'');
+ if(/oujda|وجدة/i.test(a))return 'وجدة';
+ if(/berkane|بركان/i.test(a))return 'بركان';
+ return '';
+}
+function parsePdfLines(lines){
+ const rows=[];
+ let cur=null;
+ for(let raw of lines){
+   let line=pdfCleanLine(raw);
+   if(pdfLooksHeader(line))continue;
+   const code=pdfFindCode(line);
+   if(code){
+     if(cur)rows.push(cur);
+     const amount=pdfFindAmount(line);
+     const phone=pdfFindPhone(line,code);
+     cur={code,name:pdfInferName(line,code,phone,amount),phone,amount,address:'',city:'',raw:line};
+   }else if(cur){
+     if(/^\d{1,2}$/.test(line))continue; // عمود التعليق
+     if(!cur.address)cur.address=line; else cur.address+=' '+line;
+   }
+ }
+ if(cur)rows.push(cur);
+ const existing=pdfExistingCodeSet(),seen=new Set();
+ return rows.filter(o=>{
+   o.code=pdfNormCode(o.code);
+   if(!o.code||seen.has(o.code))return false;
+   seen.add(o.code);
+   o.city=pdfGuessCity(o.address)||'وجدة';
+   o.duplicate=existing.has(o.code);
+   o.selected=!o.duplicate;
+   return true;
+ });
+}
+async function ensurePdfJs(){
+ if(window.pdfjsLib)return window.pdfjsLib;
+ pdfImportStatus.textContent='جاري تجهيز قارئ PDF...';
+ await new Promise((resolve,reject)=>{
+   const sc=document.createElement('script');
+   sc.src='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+   sc.onload=resolve;sc.onerror=()=>reject(new Error('تعذر تحميل قارئ PDF'));
+   document.head.appendChild(sc);
+ });
+ window.pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+ return window.pdfjsLib;
+}
+async function readOrdersPdf(e){
+ if(session.role!=='owner')return;
+ const file=e.target.files&&e.target.files[0];
+ if(!file)return;
+ pdfImportFileName=file.name||'PDF';
+ pdfParsedOrders=[];pdfImportPreview.innerHTML='';
+ try{
+   const lib=await ensurePdfJs();
+   pdfImportStatus.textContent='جاري قراءة الملف...';
+   const buf=await file.arrayBuffer();
+   const doc=await lib.getDocument({data:buf}).promise;
+   let lines=[];
+   for(let p=1;p<=doc.numPages;p++){
+     const page=await doc.getPage(p),tc=await page.getTextContent();
+     const groups=[];
+     for(const it of tc.items){
+       const y=Math.round((it.transform&&it.transform[5]||0)*2)/2;
+       let g=groups.find(x=>Math.abs(x.y-y)<=2);
+       if(!g){g={y,items:[]};groups.push(g)}
+       g.items.push({x:it.transform&&it.transform[4]||0,s:it.str||''});
+     }
+     groups.sort((a,b)=>b.y-a.y);
+     groups.forEach(g=>{
+       const normal=g.items.slice().sort((a,b)=>a.x-b.x).map(x=>x.s).join(' ');
+       const reverse=g.items.slice().sort((a,b)=>b.x-a.x).map(x=>x.s).join(' ');
+       const chosen=(pdfFindCode(normal)||normal.length>=reverse.length)?normal:reverse;
+       if(pdfCleanLine(chosen))lines.push(chosen);
+     });
+   }
+   pdfParsedOrders=parsePdfLines(lines);
+   renderPdfImportPreview();
+ }catch(err){
+   console.error(err);pdfImportStatus.textContent='تعذر قراءة الملف. تأكد أن PDF يحتوي على نص قابل للقراءة.';
+ }
+}
+function renderPdfImportPreview(){
+ const total=pdfParsedOrders.length,dup=pdfParsedOrders.filter(x=>x.duplicate).length,sel=pdfParsedOrders.filter(x=>x.selected&&!x.duplicate).length;
+ pdfImportStatus.innerHTML=`الملف: <b>${htmlEscape(pdfImportFileName)}</b> — تم التعرف على <b>${total}</b> طلب — جديد مختار: <b>${sel}</b> — موجود سابقًا: <b>${dup}</b>`;
+ if(!total){pdfImportPreview.innerHTML='<b>لم يتم التعرف على طلبات في هذا الملف.</b>';return}
+ pdfImportPreview.innerHTML=`<div class="pdf-import-table-wrap"><table class="pdf-import-table"><tr><th>اختيار</th><th>رمز الطلب</th><th>المستلم</th><th>الهاتف</th><th>القيمة</th><th>العنوان</th><th>الحالة</th></tr>${pdfParsedOrders.map((o,i)=>`<tr class="${o.duplicate?'pdf-dup':'pdf-new'}"><td><input type="checkbox" ${o.selected&&!o.duplicate?'checked':''} ${o.duplicate?'disabled':''} onchange="togglePdfOrder(${i},this.checked)"></td><td><b>${htmlEscape(o.code)}</b></td><td>${htmlEscape(o.name)}</td><td dir="ltr">${htmlEscape(o.phone||'')}</td><td>${cash(o.amount||0)}</td><td>${htmlEscape(o.address||'')}</td><td>${o.duplicate?'موجود سابقًا':'جديد'}</td></tr>`).join('')}</table></div>`;
+}
+function togglePdfOrder(i,v){if(pdfParsedOrders[i]&&!pdfParsedOrders[i].duplicate){pdfParsedOrders[i].selected=!!v;renderPdfImportPreview()}}
+function selectPdfOrders(v){pdfParsedOrders.forEach(o=>{if(!o.duplicate)o.selected=!!v});renderPdfImportPreview()}
+function importSelectedPdfOrders(){
+ if(session.role!=='owner')return;
+ const existing=pdfExistingCodeSet();
+ const selected=pdfParsedOrders.filter(o=>o.selected&&!o.duplicate&&!existing.has(pdfNormCode(o.code)));
+ if(!selected.length)return alert('لم يتم اختيار أي طلب جديد للنسخ.');
+ if(!confirm('سيتم نسخ '+selected.length+' طلب إلى قائمة الطلبات الجديدة. متابعة؟'))return;
+ let nums=db.orders.map(o=>{let m=String(o.seq||'').match(/^AK(\d+)$/i);return m?+m[1]:(/^\d+$/.test(String(o.seq||''))?+o.seq:0)}),n=(nums.length?Math.max(...nums):0),t=tm(),stamp=Date.now();
+ selected.forEach((x,i)=>{
+   const seq='AK'+String(n+i+1).padStart(6,'0');
+   db.orders.push({id:'PDF'+stamp+i,seq,clientNo:x.code,sender:'',recipient:x.name||'بدون اسم',phone:x.phone||'',address:x.address||'',city:x.city||'وجدة',product:'',amount:+x.amount||0,worker:'',status:'قيد التوزيع',importSource:'PDF',importFile:pdfImportFileName,history:[{time:t,text:'طلب جديد — استيراد PDF — بواسطة '+actorName()},{time:t,text:'قيد التوزيع — بواسطة '+actorName()}],remarks:[],modifiedAt:isoNow(),modifiedBy:actorName()});
+ });
+ localStorage.setItem(K,JSON.stringify(db));save();filter='قيد التوزيع';
+ alert('تم نسخ '+selected.length+' طلب بنجاح.');
+ pdfParsedOrders=[];pdfImportPreview.innerHTML='';pdfImportStatus.textContent='';pdfFileInput.value='';go('list','home');
 }
 
 function nextSeq(){
