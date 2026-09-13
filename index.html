@@ -182,6 +182,55 @@ html[data-view-mode="desktop"] main{height:100%!important;min-height:0!important
 #list.page.on>#orderListCard{flex:1 1 auto;min-height:0;overflow:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;margin-bottom:0;}
 #orderListCard table{position:relative;}
 #orderListCard thead th{position:sticky;top:0;z-index:6;background:#fff;box-shadow:0 2px 0 #e6e9ec;}
+
+/* النسخة 97: تثبيت الشريط العلوي والجانبي في جميع صفحات التطبيق */
+html,body{height:100%!important;max-height:100%!important;overflow:hidden!important;}
+body{display:flex!important;flex-direction:column!important;}
+#appHeader,header{
+  flex:0 0 auto!important;
+  position:relative!important;
+  top:0!important;
+  z-index:50!important;
+  width:100%!important;
+  box-sizing:border-box!important;
+}
+.app{
+  flex:1 1 auto!important;
+  min-height:0!important;
+  height:0!important;
+  overflow:hidden!important;
+  display:flex!important;
+}
+aside{
+  flex:0 0 210px!important;
+  width:210px!important;
+  height:100%!important;
+  min-height:0!important;
+  overflow-y:auto!important;
+  overflow-x:hidden!important;
+  position:relative!important;
+  z-index:40!important;
+  overscroll-behavior:contain!important;
+}
+main{
+  flex:1 1 auto!important;
+  min-width:0!important;
+  min-height:0!important;
+  height:100%!important;
+  overflow:auto!important;
+  -webkit-overflow-scrolling:touch!important;
+  overscroll-behavior:contain!important;
+}
+main>.page.on{min-height:0;}
+@media(max-width:650px){aside{flex-basis:135px!important;width:135px!important;}}
+html[data-view-mode="desktop"] body,
+html[data-view-mode="desktop"] .app,
+html[data-view-mode="desktop"] main{overflow:hidden!important;}
+html[data-view-mode="desktop"] main{overflow:auto!important;height:100%!important;min-height:0!important;}
+html[data-view-mode="desktop"] aside{height:100%!important;overflow-y:auto!important;}
+/* صفحة الطلبات تبقى بتمرير الصفوف فقط كما في النسخة السابقة */
+#list.page.on{height:100%!important;min-height:0!important;display:flex!important;flex-direction:column!important;overflow:hidden!important;}
+#list.page.on>#orderListCard{flex:1 1 auto!important;min-height:0!important;overflow:auto!important;}
 </style></head>
 <body>
 <div id="loginScreen" class="login-screen">
