@@ -530,6 +530,7 @@ body #overlay > .drawer{
 <div id="ownerDeleteBox" style="margin-top:10px"></div>
 <button class=c onclick="statusSet('مبرمج')">برمجة</button><button class=gr onclick="statusSet('طلب رجوع','مرتجع')">مرتجع</button></div><h3>سجل حالة التوصيل</h3><div id=history class=log></div><hr><h3>التعليقات</h3><div id=remarks class=log></div><textarea id=remark placeholder="تعليق جديد"></textarea><button class=btn onclick=remarkAdd()>إضافة تعليق</button></div></div>
 <script>
+// AK Delivery v104: البحث الشامل + عرض تفاصيل الحالة وجميع مراحل الطلب حتى المحذوف
 const K='delivery12';
 /* النسخة 73: اعتماد رمز المالك 0534 مرة واحدة على هذا الجهاز */
 if(localStorage.getItem('ak_owner_pin_migration_v73')!=='done'){
@@ -1704,7 +1705,9 @@ function visibleOrders(){
  const term=String(search?.value||'').trim().toLowerCase();
  return db.orders.filter(o=>{
    if(session.role==='worker'&&!workerCanSeeOrder(o,session.workerId))return false;
-   const haystack=(`${o.seq||''} ${o.id||''} ${o.clientNo||''} ${o.recipient||''} ${o.phone||''} ${o.sender||''} ${o.address||''} ${o.city||''} ${o.product||''} ${o.status||''}`).toLowerCase();
+   const historyText=(o.history||[]).map(h=>`${h.time||''} ${h.text||''}`).join(' ');
+   const remarksText=(o.remarks||[]).map(r=>`${r.time||''} ${r.text||''}`).join(' ');
+   const haystack=(`${o.seq||''} ${o.id||''} ${o.clientNo||''} ${o.recipient||''} ${o.phone||''} ${o.sender||''} ${o.address||''} ${o.city||''} ${o.product||''} ${o.status||''} ${historyText} ${remarksText}`).toLowerCase();
    // عند وجود بحث: ابحث في كل سجل الطلبات بلا استثناء، بما فيها المحذوفة وكل الحالات.
    if(term)return haystack.includes(term);
    // بدون بحث: حافظ على القوائم العادية ولا تعرض المحذوفة.
@@ -1726,6 +1729,58 @@ function render(){
   ${o.worker?`<div style="font-size:11px;margin-top:3px">خصم التوصيل: -${cash(deliveryFeeForOrder(o))}</div>
   <div style="font-size:11px"><b>الصافي: ${cash((+o.amount||0)-deliveryFeeForOrder(o))}</b></div>`:''}
 </td><td><span class=badge>${o.status}</span></td></tr>`).join('');renderWorkerFinanceSummary()}
+function orderLifecycleEntries(o){
+ const items=[];
+ let ix=0;
+ const add=(time,text,kind='')=>{
+   if(!text)return;
+   items.push({time:String(time||'—'),text:String(text),kind,ix:ix++});
+ };
+ (o.history||[]).forEach(h=>add(h.time,h.text,'history'));
+
+ ensureDeliveryTransfers();
+ (db.deliveryTransfers||[])
+   .filter(t=>String(t.orderId)===String(o.id))
+   .forEach(t=>{
+     if(t.sentAt||t.sentLabel) add(t.sentLabel||t.sentAt,`إرسال الطلب إلى الموزع${t.workerName?' '+t.workerName:''}`,'transfer');
+     if(t.receivedAt||t.receivedLabel) add(t.receivedLabel||t.receivedAt,`تأكيد استلام الموزع${t.workerName?' '+t.workerName:''}`,'transfer');
+   });
+
+ (db.returnBatches||[])
+   .filter(b=>(b.orderIds||[]).map(String).includes(String(o.id)))
+   .forEach(b=>{
+     add(b.createdLabel||b.createdAt,`إرسال طلب الإرجاع للموزع${b.code?' — '+b.code:''}`,'return');
+     if(b.confirmedAt||b.confirmedLabel) add(b.confirmedLabel||b.confirmedAt,'تأكيد الموزع إرجاع الطلب','return');
+     if(b.ownerConfirmedAt||b.ownerConfirmedLabel) add(b.ownerConfirmedLabel||b.ownerConfirmedAt,'تأكيد المالك استلام الطلب المرتجع','return');
+   });
+
+ (db.settlements||[])
+   .filter(st=>(st.orderIds||[]).map(String).includes(String(o.id)))
+   .forEach(st=>{
+     add(st.date||st.modifiedAt||st.createdAt,`دخول الطلب في تسوية مالية${st.invoiceNo?' — '+st.invoiceNo:''}`,'settlement');
+     if(st.confirmedByWorker) add(st.workerConfirmedAt||st.confirmedAt||st.date,'تأكيد الموزع التسوية المالية','settlement');
+   });
+
+ if(o.deletedAt) add(o.deletedAt,`حذف الطلب${o.deletedBy?' — بواسطة '+o.deletedBy:''}`,'deleted');
+
+ const seen=new Set();
+ return items.filter(x=>{
+   const k=(x.time+'|'+x.text).toLowerCase();
+   if(seen.has(k))return false;
+   seen.add(k);return true;
+ }).sort((a,b)=>{
+   const ta=timeValue(a.time),tb=timeValue(b.time);
+   if(ta&&tb&&ta!==tb)return tb-ta;
+   return b.ix-a.ix;
+ });
+}
+
+function orderLifecycleSummary(o){
+ const entries=orderLifecycleEntries(o);
+ if(!entries.length)return '<div class="log">لا توجد مراحل مسجلة.</div>';
+ return `<div class="log" style="max-height:260px;overflow:auto">${entries.map(e=>`<div><b>${htmlEscape(e.time)}</b> : ${htmlEscape(e.text)}</div>`).join('')}</div>`;
+}
+
 function openOrder(id){
  const _drawer=document.querySelector('#overlay > .drawer');
  if(_drawer){
@@ -1770,8 +1825,10 @@ function openOrder(id){
  <b>آخر تعديل</b><span>${o.modifiedBy||'—'}${o.modifiedAt?' — '+new Date(o.modifiedAt).toLocaleString('ar-MA'):''}</span>
  ${o.rejectReason?`<b>سبب الرفض</b><span>${o.rejectReason}</span>`:''}
  ${o.postponeDate?`<b>مؤجل إلى</b><span>${o.postponeDate}</span>`:''}
- </div>`;
- history.innerHTML=(o.history||[]).slice().reverse().map(h=>`<div><b>${h.time}</b> : ${h.text}</div>`).join('');
+ </div>
+ <h3 style="margin-top:14px">المراحل التي مر بها الطلب</h3>
+ ${orderLifecycleSummary(o)}`;
+ history.innerHTML=orderLifecycleEntries(o).map(h=>`<div><b>${htmlEscape(h.time)}</b> : ${htmlEscape(h.text)}</div>`).join('')||'لا يوجد سجل';
  remarks.innerHTML=(o.remarks||[]).slice().reverse().map(r=>`<div><b>${r.time}</b> : ${r.text}</div>`).join('')||'لا توجد تعليقات';
  ownerPanelRender();
  if(o.deletedAt){
