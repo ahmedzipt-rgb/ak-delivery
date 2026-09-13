@@ -330,7 +330,7 @@ body #overlay > .drawer{
 <section id=list class="page on"><div class=card><h2 id=title>قيد التوزيع</h2>
 <div class=grid>
 <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
-  <input id=search style="flex:1;min-width:190px" placeholder="بحث برقم الطلب أو الاسم أو الهاتف" oninput="render()" onkeydown="if(event.key==='Enter'){event.preventDefault();runOrderSearch()}">
+  <input id=search style="flex:1;min-width:190px" placeholder="بحث في جميع الطلبات حتى المحذوفة" oninput="render()" onkeydown="if(event.key==='Enter'){event.preventDefault();runOrderSearch()}">
   <button type="button" class="btn" onclick="runOrderSearch()">🔎 بحث</button>
   <button type="button" class="btn gr" onclick="clearOrderSearch()">مسح</button>
 </div>
@@ -1701,10 +1701,21 @@ async function workerConfirmPayment(){
 }
 
 function visibleOrders(){
- let term=(search?.value||'').toLowerCase();
- return db.orders.filter(o=>!o.deletedAt&&(session.role!=='worker'||workerCanSeeOrder(o,session.workerId))&&(filter==='الكل'||o.status===filter)&&(`${o.seq||''} ${o.id} ${o.clientNo} ${o.recipient} ${o.phone} ${o.sender} ${o.address||''} ${o.city||''} ${o.product||''}`).toLowerCase().includes(term));
+ const term=String(search?.value||'').trim().toLowerCase();
+ return db.orders.filter(o=>{
+   if(session.role==='worker'&&!workerCanSeeOrder(o,session.workerId))return false;
+   const haystack=(`${o.seq||''} ${o.id||''} ${o.clientNo||''} ${o.recipient||''} ${o.phone||''} ${o.sender||''} ${o.address||''} ${o.city||''} ${o.product||''} ${o.status||''}`).toLowerCase();
+   // عند وجود بحث: ابحث في كل سجل الطلبات بلا استثناء، بما فيها المحذوفة وكل الحالات.
+   if(term)return haystack.includes(term);
+   // بدون بحث: حافظ على القوائم العادية ولا تعرض المحذوفة.
+   return !o.deletedAt&&(filter==='الكل'||o.status===filter);
+ });
 }
-function render(){title.textContent=filter;let a=visibleOrders();rows.innerHTML=a.map(o=>`<tr><td><b dir="ltr">${formatSeq(o.seq)}</b></td><td class=code onclick="openOrder('${o.id}')">${o.clientNo||'—'}</td><td>${o.recipient}</td><td>${o.address||'—'}${o.city?'، '+o.city:''}</td><td>
+function render(){
+ const searching=!!String(search?.value||'').trim();
+ title.textContent=searching?'نتائج البحث في جميع الطلبات':filter;
+ let a=visibleOrders();
+ rows.innerHTML=a.map(o=>`<tr${o.deletedAt?' style="opacity:.78;background:#fff3f3"':''}><td><b dir="ltr">${formatSeq(o.seq)}</b></td><td class=code onclick="openOrder('${o.id}')">${o.clientNo||'—'}${o.deletedAt?'<div><span class="badge" style="background:#b91c1c;color:white">محذوف</span></div>':''}</td><td>${o.recipient}</td><td>${o.address||'—'}${o.city?'، '+o.city:''}</td><td>
 <div dir="ltr" style="direction:ltr;unicode-bidi:bidi-override;display:inline-block">${o.phone}</div>
 <div style="margin-top:4px;display:flex;gap:4px;flex-wrap:wrap">
 <button class="btn g" style="padding:5px 7px;font-size:11px" onclick="contactPhone('${o.phone}')">📞</button>
@@ -1754,7 +1765,8 @@ function openOrder(id){
  <b>تأكيد استلام الموزع</b><span>${latestDeliveryTransferForOrder(o.id)?.status==='received'?('✓ '+htmlEscape(latestDeliveryTransferForOrder(o.id).receivedLabel||o.deliveryReceivedLabel||'تم التأكيد')):'لم يؤكد بعد'}</span>
  <b>المنتج</b><span>${o.product||'—'}</span>
  <b>الموزع</b><span>${w?.name||'—'}</span>
- <b>الحالة</b><span>${o.status}</span>
+ <b>الحالة</b><span>${o.status}${o.deletedAt?' — <span class="badge" style="background:#b91c1c;color:white">محذوف</span>':''}</span>
+ ${o.deletedAt?`<b>تاريخ الحذف</b><span>${new Date(o.deletedAt).toLocaleString('ar-MA')}${o.deletedBy?' — بواسطة '+htmlEscape(o.deletedBy):''}</span>`:''}
  <b>آخر تعديل</b><span>${o.modifiedBy||'—'}${o.modifiedAt?' — '+new Date(o.modifiedAt).toLocaleString('ar-MA'):''}</span>
  ${o.rejectReason?`<b>سبب الرفض</b><span>${o.rejectReason}</span>`:''}
  ${o.postponeDate?`<b>مؤجل إلى</b><span>${o.postponeDate}</span>`:''}
@@ -1762,11 +1774,20 @@ function openOrder(id){
  history.innerHTML=(o.history||[]).slice().reverse().map(h=>`<div><b>${h.time}</b> : ${h.text}</div>`).join('');
  remarks.innerHTML=(o.remarks||[]).slice().reverse().map(r=>`<div><b>${r.time}</b> : ${r.text}</div>`).join('')||'لا توجد تعليقات';
  ownerPanelRender();
- renderOwnerAssignment(o);
- renderDeliveryTransferControls(o);
- renderOwnerRestore(o);
- renderOwnerDelete(o);
- renderReturnControls(o);
+ if(o.deletedAt){
+   const ownerActionsEl=document.getElementById('ownerActions'); if(ownerActionsEl)ownerActionsEl.style.display='none';
+   const assignBox=document.getElementById('ownerAssignBox'); if(assignBox)assignBox.style.display='none';
+   const oldTransfer=document.getElementById('deliveryTransferControls'); if(oldTransfer)oldTransfer.remove();
+   const restoreBox=document.getElementById('ownerRestoreBox'); if(restoreBox)restoreBox.innerHTML='';
+   const deleteBox=document.getElementById('ownerDeleteBox'); if(deleteBox)deleteBox.innerHTML='';
+   const returnBox=document.getElementById('returnRequestBox'); if(returnBox)returnBox.innerHTML='<span class="badge" style="background:#b91c1c;color:white">سجل طلب محذوف — للعرض فقط</span>';
+ }else{
+   renderOwnerAssignment(o);
+   renderDeliveryTransferControls(o);
+   renderOwnerRestore(o);
+   renderOwnerDelete(o);
+   renderReturnControls(o);
+ }
  if(document.getElementById('editBox'))editBox.style.display='none';
  overlay.style.display='block';
 }
