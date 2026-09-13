@@ -231,6 +231,24 @@ html[data-view-mode="desktop"] aside{height:100%!important;overflow-y:auto!impor
 /* صفحة الطلبات تبقى بتمرير الصفوف فقط كما في النسخة السابقة */
 #list.page.on{height:100%!important;min-height:0!important;display:flex!important;flex-direction:column!important;overflow:hidden!important;}
 #list.page.on>#orderListCard{flex:1 1 auto!important;min-height:0!important;overflow:auto!important;}
+
+/* النسخة 99: إبقاء تفاصيل الطلب كاملة خارج الشريط الجانبي */
+#overlay > .drawer{
+  right:210px !important;
+  left:auto !important;
+  width:min(510px,calc(100vw - 210px)) !important;
+  max-width:calc(100vw - 210px) !important;
+}
+@media(max-width:650px){
+  #overlay > .drawer{
+    right:135px !important;
+    left:auto !important;
+    width:calc(100vw - 135px) !important;
+    max-width:calc(100vw - 135px) !important;
+  }
+  #detail .info{grid-template-columns:minmax(82px,105px) minmax(0,1fr) !important;}
+  #detail, #detail *{overflow-wrap:anywhere;}
+}
 </style></head>
 <body>
 <div id="loginScreen" class="login-screen">
@@ -1169,8 +1187,12 @@ function updateReturnRequestCount(){
      if(!b||b.deletedAt)return false;
      if(session.role==='worker')return String(b.workerId)===String(session.workerId)&&!(b.status==='completed'||b.status==='owner_confirmed'||b.confirmedAt);
      return (b.status==='completed'||b.confirmedAt)&&!(b.status==='owner_confirmed'||b.ownerConfirmedAt);
-   }).length;
-   be.textContent=n;
+   });
+   // للموزع: العداد يعرض عدد الطلبات المطلوب إرجاعها، وليس عدد حزم الإرجاع.
+   const count=session.role==='worker'
+     ? n.reduce((sum,b)=>sum+((b.orderIds||[]).length),0)
+     : n.length;
+   be.textContent=count;
  }
  let de=document.getElementById('deliveryBatchCount');
  if(de){
@@ -1462,8 +1484,10 @@ function openOrder(id){
  const _drawer=document.querySelector('#overlay > .drawer');
  if(_drawer){
    _drawer.style.position='fixed';
-   _drawer.style.right='0';
+   _drawer.style.right=(window.innerWidth<=650?'135px':'210px');
    _drawer.style.left='auto';
+   _drawer.style.width=(window.innerWidth<=650?'calc(100vw - 135px)':'min(510px, calc(100vw - 210px))');
+   _drawer.style.maxWidth=(window.innerWidth<=650?'calc(100vw - 135px)':'calc(100vw - 210px)');
    _drawer.style.margin='0';
    _drawer.style.transform='none';
    _drawer.style.direction='rtl';
