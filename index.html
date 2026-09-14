@@ -907,8 +907,8 @@ if(!Array.isArray(db.deliveryBatches))db.deliveryBatches=[];
 if(!Array.isArray(db.deliveryTransfers))db.deliveryTransfers=[];
 
 
-/* النسخة 110: حماية عامة من التكرار في كل مسارات الطلب.
-   نحتفظ بسجلات التكرار القديمة كتومبستون مخفي حتى لا تعيدها المزامنة السحابية. */
+/* النسخة 111: منع التكرار بدون حذف أو إخفاء أي طلب أصلي.
+   الحماية تتم عند الإدخال وفي السجلات التشغيلية فقط، بينما تبقى كل الطلبات الأصلية محفوظة. */
 function normOrderCode(v){return String(v||'').trim().toUpperCase().replace(/\s+/g,'');}
 function orderUniqueKey(o){
   if(!o)return '';
@@ -919,7 +919,7 @@ function orderUniqueKey(o){
 }
 function uniqueIds(arr){
   const seen=new Set(),out=[];
-  for(const v of (arr||[])){const k=String(v);if(!seen.has(k)){seen.add(k);out.push(v)}}
+  for(const v of (arr||[])){const k=String(v);if(k&&!seen.has(k)){seen.add(k);out.push(v)}}
   return out;
 }
 function dedupeDatabase(){
@@ -929,94 +929,77 @@ function dedupeDatabase(){
   if(!Array.isArray(db.deliveryTransfers))db.deliveryTransfers=[];
   if(!Array.isArray(db.settlements))db.settlements=[];
   let changed=false;
-  const now=isoNow?isoNow():new Date().toISOString();
+  const now=(typeof isoNow==='function'?isoNow():new Date().toISOString());
 
-  // 1) الطلبات الأساسية: لا يسمح لنفس رمز الطلب أن يظهر كسجلين فعالين.
-  const canonical=new Map();
-  const score=o=>timeValue(o?.modifiedAt||o?.createdAt||o?.returnRequestedAt||'');
+  // مهم: لا نحذف ولا نخفي أي سجل من db.orders تلقائياً.
+  // أصلح فقط العلامات التي أضافتها النسخة 110 نفسها إذا لم يعد هناك سجل مطابق فعال.
   for(const o of db.orders){
-    if(!o||o.duplicateHidden)continue;
-    const key=orderUniqueKey(o); if(!key)continue;
-    const prev=canonical.get(key);
-    if(!prev){canonical.set(key,o);continue;}
-    // أبقِ الأحدث، واخفِ الآخر كتومبستون للمزامنة.
-    let keep=prev,dup=o;
-    if(score(o)>score(prev)){keep=o;dup=prev;canonical.set(key,o);}
-    dup.duplicateHidden=true;
-    dup.duplicateOf=String(keep.id||keep.clientNo||'');
-    dup.deletedAt=dup.deletedAt||now;
-    dup.modifiedAt=now;dup.modifiedBy='النظام - منع التكرار';
-    changed=true;
-  }
-
-  const activeOrderIds=new Set(db.orders.filter(o=>o&&!o.duplicateHidden).map(o=>String(o.id)));
-
-  // 2) إرسال الطلب للموزع: سجل فعال واحد فقط لكل طلب.
-  const transferGroups=new Map();
-  for(const t of db.deliveryTransfers){
-    if(!t||t.deletedAt||t.duplicateHidden)continue;
-    const oid=String(t.orderId||''); if(!oid)continue;
-    if(!transferGroups.has(oid))transferGroups.set(oid,[]);
-    transferGroups.get(oid).push(t);
-  }
-  for(const [oid,arr] of transferGroups){
-    if(arr.length<2)continue;
-    arr.sort((a,b)=>{
-      const pa=a.status==='received'?2:1,pb=b.status==='received'?2:1;
-      return (pb-pa)||(timeValue(b.modifiedAt||b.receivedAt||b.sentAt)-timeValue(a.modifiedAt||a.receivedAt||a.sentAt));
-    });
-    const keep=arr[0];
-    for(const t of arr.slice(1)){
-      t.deletedAt=t.deletedAt||now;t.duplicateHidden=true;t.duplicateOf=String(keep.id);t.modifiedAt=now;t.modifiedBy='النظام - منع التكرار';changed=true;
+    if(!o)continue;
+    if(o.duplicateHidden && o.modifiedBy==='النظام - منع التكرار'){
+      const same=db.orders.find(x=>x&&x!==o&&!x.duplicateHidden&&normOrderCode(x.clientNo)&&normOrderCode(x.clientNo)===normOrderCode(o.clientNo));
+      // إذا لا يوجد أصل مطابق فعلياً، أعد الطلب فوراً ولا تتركه يختفي.
+      if(!same){
+        delete o.duplicateHidden; delete o.duplicateOf;
+        if(o.deletedAt===o.modifiedAt)delete o.deletedAt;
+        o.modifiedAt=now;o.modifiedBy='النظام - استرجاع سجل أصلي';changed=true;
+      }
     }
   }
 
-  // 3) حزم الإرجاع: الطلب لا يوجد في أكثر من حزمة فعالة واحدة.
+  // إرسال الطلب للموزع: سجل نشط واحد فقط لكل طلب، من دون المساس بالطلب الأصلي.
+  const transferOwner=new Map();
+  const trs=db.deliveryTransfers.filter(t=>t&&!t.deletedAt&&!t.duplicateHidden).slice().sort((a,b)=>{
+    const pa=a.status==='received'?2:1,pb=b.status==='received'?2:1;
+    return (pb-pa)||(timeValue(b.modifiedAt||b.receivedAt||b.sentAt)-timeValue(a.modifiedAt||a.receivedAt||a.sentAt));
+  });
+  for(const t of trs){
+    const oid=String(t.orderId||'');if(!oid)continue;
+    if(!transferOwner.has(oid)){transferOwner.set(oid,t);continue;}
+    t.deletedAt=t.deletedAt||now;t.duplicateHidden=true;t.duplicateOf=String(transferOwner.get(oid).id||'');t.modifiedAt=now;t.modifiedBy='النظام - منع تكرار سجل الإرسال';changed=true;
+  }
+
+  // حزم الإرجاع: نفس الطلب لا يظهر مرتين، لكن لا نحذف أي معرف طلب من البيانات الأصلية.
+  // نعطي الأولوية للحزمة الأكثر تقدماً ثم الأقدم عند التعادل.
   const rank={owner_confirmed:3,completed:2,pending:1};
-  const batchOrderOwner=new Map();
+  const owner=new Map();
   const batches=db.returnBatches.filter(b=>b&&!b.deletedAt&&!b.duplicateHidden).slice().sort((a,b)=>{
     const ra=rank[a.status]||0,rb=rank[b.status]||0;
-    return (rb-ra)||(timeValue(a.createdAt)-timeValue(b.createdAt));
+    return (rb-ra)||(timeValue(a.createdAt||a.modifiedAt)-timeValue(b.createdAt||b.modifiedAt));
   });
   for(const b of batches){
-    const cleaned=[];
+    const before=(b.orderIds||[]).length;
+    const kept=[];
     for(const raw of uniqueIds(b.orderIds||[])){
-      const oid=String(raw);if(!oid||!activeOrderIds.has(oid))continue;
-      if(batchOrderOwner.has(oid)){changed=true;continue;}
-      batchOrderOwner.set(oid,b);cleaned.push(raw);
+      const oid=String(raw);if(!oid)continue;
+      if(owner.has(oid))continue;
+      owner.set(oid,b);kept.push(raw);
     }
-    if(cleaned.length!==((b.orderIds||[]).length)){b.orderIds=cleaned;b.count=cleaned.length;b.modifiedAt=now;b.modifiedBy='النظام - منع التكرار';changed=true;}
-    if(!cleaned.length){b.deletedAt=b.deletedAt||now;b.duplicateHidden=true;b.modifiedAt=now;b.modifiedBy='النظام - منع التكرار';changed=true;}
+    if(kept.length!==before){b.orderIds=kept;b.count=kept.length;b.modifiedAt=now;b.modifiedBy='النظام - منع تكرار الإرجاع';changed=true;}
+    // لا نحذف الحزمة الفارغة تلقائياً؛ تبقى كسجل تاريخي.
   }
-  // اربط الطلب بالحزمة الوحيدة المتبقية.
+
+  // أصلح ربط كل طلب بحزمته الفعلية إن وُجدت.
   for(const o of db.orders){
-    if(!o||o.duplicateHidden)continue;
-    const b=batchOrderOwner.get(String(o.id));
+    if(!o||o.deletedAt)continue;
+    const b=owner.get(String(o.id));
     if(b){
       if(String(o.returnBatchId||'')!==String(b.id)){o.returnBatchId=b.id;o.returnBatchCode=b.code||'';o.modifiedAt=now;changed=true;}
-    }else if(o.returnBatchId){
-      const exists=db.returnBatches.some(b=>b&&!b.deletedAt&&!b.duplicateHidden&&String(b.id)===String(o.returnBatchId)&&(b.orderIds||[]).map(String).includes(String(o.id)));
-      if(!exists){delete o.returnBatchId;delete o.returnBatchCode;o.modifiedAt=now;changed=true;}
+    }else if(o.status==='طلب رجوع' && o.returnBatchId){
+      // إذا اختفت الحزمة من العرض بسبب إصلاح سابق، لا نخفي الطلب؛ أزل الربط الميت ليظهر كطلب غير مرسل.
+      const exists=db.returnBatches.some(x=>x&&!x.deletedAt&&!x.duplicateHidden&&String(x.id)===String(o.returnBatchId)&&(x.orderIds||[]).map(String).includes(String(o.id)));
+      if(!exists){delete o.returnBatchId;delete o.returnBatchCode;o.modifiedAt=now;o.modifiedBy='النظام - إصلاح ربط الإرجاع';changed=true;}
     }
   }
 
-  // 4) التسويات: كل طلب يدخل حزمة مالية واحدة فقط.
-  const settledOwner=new Set();
-  const settlements=db.settlements.filter(st=>st&&!st.duplicateHidden).slice().sort((a,b)=>timeValue(a.confirmedAt||a.date)-timeValue(b.confirmedAt||b.date));
-  for(const st of settlements){
-    const before=(st.orderIds||[]).length;
-    const kept=[];
+  // التسويات: كل طلب في حزمة مالية فعالة واحدة فقط؛ لا نحذف الطلب الأصلي.
+  const settled=new Set();
+  for(const st of db.settlements.filter(x=>x&&!x.duplicateHidden).slice().sort((a,b)=>timeValue(a.confirmedAt||a.date)-timeValue(b.confirmedAt||b.date))){
+    const before=(st.orderIds||[]).length, kept=[];
     for(const raw of uniqueIds(st.orderIds||[])){
-      const oid=String(raw);if(!oid||!activeOrderIds.has(oid))continue;
-      if(settledOwner.has(oid)){changed=true;continue;}
-      settledOwner.add(oid);kept.push(raw);
+      const oid=String(raw);if(!oid||settled.has(oid))continue;
+      settled.add(oid);kept.push(raw);
     }
-    if(kept.length!==before){
-      st.orderIds=kept;
-      if(Array.isArray(st.orderSnapshot))st.orderSnapshot=st.orderSnapshot.filter(x=>kept.map(String).includes(String(x.id)));
-      changed=true;
-    }
-    if(!kept.length){st.duplicateHidden=true;st.hiddenReason='تسوية مكررة';st.modifiedAt=now;changed=true;}
+    if(kept.length!==before){st.orderIds=kept;if(Array.isArray(st.orderSnapshot))st.orderSnapshot=st.orderSnapshot.filter(x=>kept.map(String).includes(String(x.id)));changed=true;}
   }
   return changed;
 }
@@ -1026,7 +1009,7 @@ function activeSettlements(){
 }
 function hasExistingOrderCode(code,excludeId=''){
   const k=normOrderCode(code);if(!k)return false;
-  return db.orders.some(o=>o&&!o.duplicateHidden&&String(o.id)!==String(excludeId)&&normOrderCode(o.clientNo)===k);
+  return db.orders.some(o=>o&&!o.deletedAt&&String(o.id)!==String(excludeId)&&normOrderCode(o.clientNo)===k);
 }
 
 /* النسخة 95: حذف الطلب التجريبي Nada مرة واحدة، مع إبقاء الحذف متزامناً سحابياً. */
@@ -1394,9 +1377,10 @@ function updateReturnRequestCount(){
      return (b.status==='completed'||b.confirmedAt)&&!(b.status==='owner_confirmed'||b.ownerConfirmedAt);
    });
    // للموزع: العداد يعرض عدد الطلبات المطلوب إرجاعها، وليس عدد حزم الإرجاع.
-   const count=session.role==='worker'
-     ? n.reduce((sum,b)=>sum+((b.orderIds||[]).length),0)
-     : n.length;
+   const visibleBatches=(db.returnBatches||[]).filter(b=>b&&!b.deletedAt&&!b.duplicateHidden&&(session.role!=='worker'||String(b.workerId)===String(session.workerId)));
+   const ids=new Set(visibleBatches.flatMap(b=>b.orderIds||[]).map(String));
+   db.orders.filter(o=>!o.deletedAt&&o.status==='طلب رجوع'&&(session.role!=='worker'||orderAssignedToWorker(o,session.workerId))).forEach(o=>ids.add(String(o.id)));
+   const count=ids.size;
    be.textContent=count;
  }
  let de=document.getElementById('deliveryBatchCount');
@@ -2396,8 +2380,8 @@ function renderDeliveryBatches(){
 
  el.innerHTML=arr.map(b=>{
    const received=b.status==='received';
-   const ids=(b.orderIds||[]).map(String);
-   const orders=db.orders.filter(o=>!o.duplicateHidden&&ids.includes(String(o.id)));
+   const ids=uniqueIds(b.orderIds||[]).map(String);
+   const orders=db.orders.filter(o=>ids.includes(String(o.id)));
    const lines=orders.map(o=>`<div style="padding:4px 0;border-bottom:1px solid #eee">
      <b dir="ltr">${formatSeq(o.seq)}</b> — <b>${htmlEscape(o.recipient||'—')}</b> — ${cash(o.amount)}
    </div>`).join('');
@@ -2419,6 +2403,20 @@ function renderDeliveryBatches(){
      ${action}
    </div>`;
  }).join('');
+ // أظهر أيضاً أي طلب رجوع فعّال لم يعد مرتبطاً بحزمة، حتى لا يختفي من السجل نهائياً.
+ const batchedIds=new Set(arr.flatMap(b=>b.orderIds||[]).map(String));
+ const orphanReturns=db.orders.filter(o=>!o.deletedAt&&o.status==='طلب رجوع'&&!batchedIds.has(String(o.id))&&(session.role!=='worker'||orderAssignedToWorker(o,session.workerId)));
+ if(orphanReturns.length){
+   el.innerHTML += orphanReturns.map(o=>{
+     const w=db.workers.find(x=>String(x.id)===String(o.worker));
+     return `<div class="card" style="margin-top:10px;border:2px solid #f0ad4e">
+       <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap"><div><b>طلب إرجاع غير مرتبط بحزمة</b></div><span class="badge">بانتظار الإرسال للموزع</span></div>
+       <p><b>الموزع:</b> ${htmlEscape(w?.name||'غير مسند')}<br><b>عدد الطلبات:</b> 1<br><b>تاريخ طلب الرجوع:</b> ${htmlEscape(o.returnRequestedAt||'—')}</p>
+       <div style="padding:6px 0;border-bottom:1px solid #eee"><b>رمز الطلب:</b> <b dir="ltr">${htmlEscape(o.clientNo||'—')}</b> — ${htmlEscape(o.recipient||'—')} — ${cash(o.amount)}</div>
+       ${session.role==='owner'?`<button class="btn gr" style="margin-top:10px" onclick="go('returnCreate')">إرسال طلب الإرجاع</button>`:''}
+     </div>`;
+   }).join('');
+ }
  updateReturnRequestCount();
 }
 
@@ -2527,8 +2525,8 @@ function renderReturnBatches(){
  el.innerHTML=arr.map(b=>{
    const workerDone=b.status==='completed'||b.status==='owner_confirmed'||!!b.confirmedAt;
    const ownerDone=b.status==='owner_confirmed'||!!b.ownerConfirmedAt;
-   const ids=(b.orderIds||[]).map(String);
-   const orders=db.orders.filter(o=>!o.duplicateHidden&&ids.includes(String(o.id)));
+   const ids=uniqueIds(b.orderIds||[]).map(String);
+   const orders=db.orders.filter(o=>ids.includes(String(o.id)));
    const orderLines=orders.map(o=>`<div style="padding:6px 0;border-bottom:1px solid #eee">
      <b>رمز الطلب:</b> <b dir="ltr" style="direction:ltr;display:inline-block">${htmlEscape(o.clientNo||'—')}</b> — ${htmlEscape(o.recipient||'—')} — ${cash(o.amount)}
    </div>`).join('');
