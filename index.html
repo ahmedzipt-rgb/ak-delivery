@@ -307,14 +307,14 @@ body #overlay > .drawer{
  <div class="login-card"><h2>تسجيل الدخول</h2>
  <select id="loginWorker"><option value="">اختر حسابك</option></select>
 <input id="loginPin" type="password" inputmode="numeric" placeholder="الرمز السري">
-<button class="btn" style="width:100%" onclick="workerLogin()">دخول الموزع</button>
+<button id="workerLoginBtn" type="button" class="btn" style="width:100%" onclick="workerLogin(event)">دخول الموزع</button>
 <hr>
 <h3>إنشاء حساب موزع</h3>
 <input id="regName" placeholder="اختر اسمك">
 <input id="regPin" type="password" inputmode="numeric" placeholder="اختر رقمك السري">
 <input id="regPinConfirm" type="password" inputmode="numeric" placeholder="تأكيد الرقم السري">
 <button class="btn g" style="width:100%" onclick="workerRegister()">إنشاء حساب الموزع</button>
- <hr><button class="btn gr" style="width:100%" onclick="ownerLogin()">دخول المالك</button>
+ <hr><button id="ownerLoginBtn" type="button" class="btn gr" style="width:100%" onclick="ownerLogin(event)">دخول المالك</button>
  
  </div>
 </div>
@@ -828,76 +828,96 @@ function restoreSession(){
 }
 
 function refreshLoginWorkers(){
- loginWorker.innerHTML='<option value="">اختر الموزع</option>'+db.workers.filter(w=>!w.deletedAt).map(w=>`<option value="${w.id}">${w.name}</option>`).join('');
+ const el=document.getElementById('loginWorker');
+ if(!el)return;
+ el.innerHTML='<option value="">اختر الموزع</option>'+db.workers.filter(w=>!w.deletedAt).map(w=>`<option value="${w.id}">${w.name}</option>`).join('');
 }
-async function workerLogin(){
- const id=String(loginWorker.value||'').trim();
- const pin=String(loginPin.value||'').trim();
- if(!id){ alert('اختر حسابك'); return; }
- if(!pin){ alert('أدخل الرقم السري'); return; }
+async function workerLogin(ev){
+ try{
+   if(ev&&ev.preventDefault)ev.preventDefault();
+   const workerSel=document.getElementById('loginWorker');
+   const pinEl=document.getElementById('loginPin');
+   const loginEl=document.getElementById('loginScreen');
+   const id=String(workerSel&&workerSel.value||'').trim();
+   const pin=String(pinEl&&pinEl.value||'').trim();
+   if(!id){ alert('اختر حساب الموزع'); return; }
+   if(!pin){ alert('أدخل الرقم السري'); return; }
 
- // النسخة 114: الدخول يتم فوراً من البيانات المحلية ولا ينتظر الشبكة.
- // المزامنة تأتي بعد نجاح الدخول حتى لا يتجمد زر الدخول عند ضعف الاتصال.
- let w=(db.workers||[]).find(x=>String(x.id)===id && !x.deletedAt);
- // إذا لم يكن الحساب موجوداً محلياً، نجرب جلب السحابة مرة واحدة ثم نعيد البحث.
- if(!w && navigator.onLine){
-   try{
-     await Promise.race([
-       cloudPull(true,true),
-       new Promise((_,reject)=>setTimeout(()=>reject(new Error('timeout')),4500))
-     ]);
-     refreshLoginWorkers();
-     w=(db.workers||[]).find(x=>String(x.id)===id && !x.deletedAt);
-   }catch(_){}
- }
- if(!w){ alert('لم يتم العثور على الحساب على هذا الجهاز أو في السحابة'); return; }
- if(w.blocked){ alert('هذا الحساب محظور من طرف المالك'); return; }
- if(w.approved===false){ alert('الحساب في انتظار موافقة المالك'); return; }
- if(String(w.pin||'').trim()!==pin){ alert('الرمز السري غير صحيح'); return; }
-
- session={role:'worker',workerId:String(w.id)};
- saveSession();
- loginPin.value='';
- loginScreen.style.display='none';
- applyPermissions();
- filter='قيد التوزيع';
- menu(); render(); renderWorkers(); accountsRender();
- go('list');
-
- // مزامنة غير معطِّلة بعد الدخول، ثم تحديث الشاشة وطلبات الموزع.
- if(navigator.onLine){
-   setTimeout(async()=>{
+   let w=(db.workers||[]).find(x=>String(x.id)===id && !x.deletedAt);
+   if(!w && navigator.onLine){
      try{
-       await cloudPull(true,true);
-       const current=(db.workers||[]).find(x=>String(x.id)===String(session.workerId) && !x.deletedAt);
-       if(current && !current.blocked && current.approved!==false){
-         menu(); render(); renderWorkers(); accountsRender();
-       }
+       await Promise.race([
+         cloudPull(true,true),
+         new Promise((_,reject)=>setTimeout(()=>reject(new Error('timeout')),4500))
+       ]);
+       refreshLoginWorkers();
+       w=(db.workers||[]).find(x=>String(x.id)===id && !x.deletedAt);
      }catch(_){}
-   },250);
+   }
+   if(!w){ alert('لم يتم العثور على حساب الموزع'); return; }
+   if(w.blocked){ alert('هذا الحساب محظور من طرف المالك'); return; }
+   if(w.approved===false){ alert('الحساب في انتظار موافقة المالك'); return; }
+   if(String(w.pin||'').trim()!==pin){ alert('الرمز السري غير صحيح'); return; }
+
+   session={role:'worker',workerId:String(w.id)};
+   saveSession();
+   if(pinEl)pinEl.value='';
+   if(loginEl)loginEl.style.display='none';
+   try{ applyPermissions(); }catch(e){ console.error(e); }
+   try{ filter='قيد التوزيع'; menu(); render(); renderWorkers(); accountsRender(); go('list'); }catch(e){ console.error(e); }
+
+   if(navigator.onLine){
+     setTimeout(async()=>{
+       try{
+         await cloudPull(true,true);
+         const currentWorker=(db.workers||[]).find(x=>String(x.id)===String(session.workerId) && !x.deletedAt);
+         if(currentWorker && !currentWorker.blocked && currentWorker.approved!==false){
+           try{menu();render();renderWorkers();accountsRender();}catch(e){console.error(e);}
+         }
+       }catch(_){}
+     },250);
+   }
+ }catch(err){
+   console.error(err);
+   alert('تعذر تسجيل دخول الموزع. أعد تحميل الصفحة وحاول مرة أخرى.');
  }
 }
-function ownerLogin(){
- // v115: استعمال خانة الرمز الظاهرة بدل prompt لأن بعض المتصفحات تمنع نافذة prompt.
- const pin=String((document.getElementById('loginPin')||{}).value||'').trim();
- if(!pin){ alert('أدخل رمز المالك في خانة الرمز السري'); return; }
- const saved=String(localStorage.getItem('owner_pin_v13')||'0534').trim();
- if(pin!==saved){ alert('رمز المالك غير صحيح'); return; }
- session={role:'owner',workerId:null};
- ownerMode=true;
- saveSession();
- loginPin.value='';
- loginScreen.style.display='none';
- applyPermissions();
- menu(); render(); renderWorkers(); accountsRender();
- go('list');
- // لا نؤخر الدخول بسبب الشبكة؛ المزامنة تتم بعد فتح التطبيق.
- if(navigator.onLine){
-   setTimeout(async()=>{try{await syncNow(); menu(); render();}catch(_){}},250);
+function ownerLogin(ev){
+ try{
+   if(ev&&ev.preventDefault)ev.preventDefault();
+   const pinEl=document.getElementById('loginPin');
+   const loginEl=document.getElementById('loginScreen');
+   const pin=String(pinEl&&pinEl.value||'').trim();
+   if(!pin){ alert('أدخل رمز المالك 0534'); return; }
+
+   // الرمز المتفق عليه للمالك هو 0534. نصحح أي قيمة قديمة بقيت في الجهاز.
+   if(pin!=='0534'){
+     alert('رمز المالك غير صحيح');
+     return;
+   }
+   localStorage.setItem('owner_pin_v13','0534');
+   session={role:'owner',workerId:null};
+   ownerMode=true;
+   saveSession();
+   if(pinEl)pinEl.value='';
+   if(loginEl)loginEl.style.display='none';
+
+   // فتح التطبيق أولاً حتى لو حدث خطأ في جزء ثانوي من الواجهة.
+   try{ applyPermissions(); }catch(e){ console.error(e); }
+   try{ menu();render();renderWorkers();accountsRender();go('list'); }catch(e){ console.error(e); }
+
+   if(navigator.onLine){
+     setTimeout(async()=>{try{await syncNow();try{menu();render();}catch(e){console.error(e);}}catch(_){}},250);
+   }
+ }catch(err){
+   console.error(err);
+   alert('حدث خطأ أثناء تسجيل دخول المالك. أعد تحميل الصفحة وحاول مرة أخرى.');
  }
 }
 function logout(){
- session={role:null,workerId:null};ownerMode=false;clearSession();loginScreen.style.display='flex';refreshLoginWorkers();
+ session={role:null,workerId:null};ownerMode=false;clearSession();
+ const loginEl=document.getElementById('loginScreen');if(loginEl)loginEl.style.display='flex';
+ refreshLoginWorkers();
 }
 function applyPermissions(){
  let buttons=[...document.querySelectorAll('aside > button')];
@@ -3428,6 +3448,14 @@ function changeOwnerPin(){
   localStorage.setItem('owner_pin_v13',np);
   alert('تم تغيير رمز المالك');
 }
+
+// v116: ربط أزرار تسجيل الدخول صراحةً دون الاعتماد على تحويل id إلى متغيرات عامة في المتصفح.
+(function bindLoginButtons(){
+ const ownerBtn=document.getElementById('ownerLoginBtn');
+ const workerBtn=document.getElementById('workerLoginBtn');
+ if(ownerBtn)ownerBtn.addEventListener('click',function(e){ e.preventDefault(); ownerLogin(e); });
+ if(workerBtn)workerBtn.addEventListener('click',function(e){ e.preventDefault(); workerLogin(e); });
+})();
 
 db.orders.forEach((o,i)=>{
  if(!o.modifiedAt)o.modifiedAt='2000-01-01T00:00:00.000Z';
