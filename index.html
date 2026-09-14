@@ -314,7 +314,7 @@ aside button{pointer-events:auto!important;touch-action:manipulation!important;}
  <select id="loginWorker"><option value="">اختر حسابك</option></select>
 <input id="loginPin" type="password" inputmode="numeric" placeholder="الرمز السري">
 <div id="loginStatus" style="margin-top:8px;font-weight:700;min-height:22px"></div>
-<div style="margin-top:6px;font-size:12px;opacity:.7">الإصدار 127</div>
+<div style="margin-top:6px;font-size:12px;opacity:.7">الإصدار 128</div>
 <button id="workerLoginBtn" type="button" onclick="workerLogin(event)" class="btn" style="width:100%">دخول الموزع</button>
 <hr>
 <h3>إنشاء حساب موزع</h3>
@@ -3499,7 +3499,15 @@ function saveEdit(){
   o.city=eCity.value.trim();
   o.product=eProduct.value.trim();
   o.amount=+eAmount.value||0;
-  o.worker=eWorker.value; o.status=eStatus.value;
+  const previousStatus=o.status;
+  o.worker=eWorker.value;
+  // v128: تعديل بيانات الطلب لا يغيّر حالة «في الطريق».
+  // الانتقال إلى «قيد التوزيع» يتم فقط من confirmOrderReceipt بعد تأكيد الموزع الاستلام.
+  if(previousStatus==='في الطريق' && eStatus.value==='قيد التوزيع'){
+    o.status='في الطريق';
+  }else{
+    o.status=eStatus.value;
+  }
   o.ownerNote=eOwnerNote.value.trim();
   // يسجل وقت ومنفذ التعديل للمزامنة دون كشف الملاحظة الداخلية للموزع.
   markOrderChanged(o,'تعديل إداري');
@@ -3510,6 +3518,24 @@ function saveEdit(){
   render(); menu(); renderWorkers(); accountsRender();
   openOrder(current);
 }
+
+// v128: إصلاح الطلب DL10049800 فقط: يبقى في الطريق ما لم يوجد استلام مؤكد من الموزع.
+try{
+  const fixed=(db.orders||[]).find(o=>o&&!o.deletedAt&&normOrderCode(o.clientNo)==='DL10049800');
+  if(fixed){
+    const received=!!fixed.deliveryReceivedAt || !!fixed.deliveryReceivedLabel ||
+      (db.deliveryTransfers||[]).some(t=>t&&!t.deletedAt&&String(t.orderId)===String(fixed.id)&&t.status==='received');
+    if(!received && fixed.status!=='في الطريق'){
+      fixed.status='في الطريق';
+      fixed.modifiedAt=isoNow();
+      fixed.modifiedBy='تصحيح DL10049800 v128';
+      if(!Array.isArray(fixed.history))fixed.history=[];
+      fixed.history.push({time:tm(),text:'تصحيح الحالة إلى «في الطريق» مع الاحتفاظ ببيانات الطلب'});
+      localStorage.setItem(K,JSON.stringify(db));
+    }
+  }
+}catch(e){console.error('DL10049800 repair',e);}
+
 function changeOwnerPin(){
   if(!ownerMode)return;
   const old=prompt('الرمز الحالي:'); if(old===null)return;
