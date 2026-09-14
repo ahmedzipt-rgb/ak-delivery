@@ -304,6 +304,9 @@ body #overlay > .drawer{
     max-width:calc(100vw - 135px) !important;
   }
 }
+
+#loginScreen[style*="display: none"],#loginScreen[style*="display:none"]{pointer-events:none!important;visibility:hidden!important;}
+aside button{pointer-events:auto!important;touch-action:manipulation!important;}
 </style></head>
 <body>
 <div id="loginScreen" class="login-screen">
@@ -311,7 +314,7 @@ body #overlay > .drawer{
  <select id="loginWorker"><option value="">اختر حسابك</option></select>
 <input id="loginPin" type="password" inputmode="numeric" placeholder="الرمز السري">
 <div id="loginStatus" style="margin-top:8px;font-weight:700;min-height:22px"></div>
-<div style="margin-top:6px;font-size:12px;opacity:.7">الإصدار 124</div>
+<div style="margin-top:6px;font-size:12px;opacity:.7">الإصدار 125</div>
 <button id="workerLoginBtn" type="button" onclick="workerLogin(event)" class="btn" style="width:100%">دخول الموزع</button>
 <hr>
 <h3>إنشاء حساب موزع</h3>
@@ -333,6 +336,7 @@ body #overlay > .drawer{
 <span id="ownerCloudMini" style="display:none;margin-right:8px;font-size:12px;padding:4px 8px;border-radius:12px;background:#ffffff22">☁️ جاهز</span>
 <span id="workerNewBadge" style="display:none;margin-right:8px;font-size:12px;padding:4px 8px;border-radius:12px;background:#ffffff22">🔔 0</span>
 </header>
+<div id="runtimeDiag" style="display:none;position:fixed;bottom:8px;left:8px;right:8px;z-index:10000;background:#7f1d1d;color:#fff;padding:9px 12px;border-radius:8px;font-size:12px;direction:ltr;text-align:left;max-height:34vh;overflow:auto"></div>
 <div id="syncToast" style="display:none;position:fixed;top:72px;left:50%;transform:translateX(-50%);z-index:9999;background:#222;color:#fff;padding:9px 14px;border-radius:10px;font-size:13px;max-width:90%;text-align:center"></div>
 <div class=app><aside><h3>القائمة</h3><button data-menu-key="home" onclick="go('list','home')">🏠 الرئيسية</button><button data-menu-key="add" onclick="go('add','add')">➕ طلب جديد</button><button data-menu-key="bulk" onclick="go('bulk','bulk')">📋 لصق طلبات دفعة واحدة</button><button data-menu-key="pdfImport" onclick="go('pdfImport','pdfImport')">📄 استيراد PDF</button><div id=stateMenu></div><button id="returnCreateMenu" data-menu-key="returnCreate" onclick="go('returnCreate','returnCreate')">↩ طلبات الرجوع <span id="returnReqCount" class="badge">0</span></button><button id="returnBatchesMenu" data-menu-key="returnBatches" onclick="go('returnBatches','returnBatches')">📦 سجل طلبات الإرجاع <span id="returnBatchCount" class="badge">0</span></button><button id="deliveryTransfersMenu" data-menu-key="deliveryTransfers" onclick="go('deliveryTransfers','deliveryTransfers')">🚚 في الطريق <span id="deliveryTransferCount" class="badge transit-badge">0</span></button><button data-menu-key="workers" onclick="go('workers','workers')">👤 الموزعون</button><button data-menu-key="accounts" onclick="go('accounts','accounts')">💰 الحسابات</button><button data-menu-key="invoices" onclick="go('invoices','invoices')">🧾 الفواتير</button><button data-menu-key="backupSafe" onclick="go('backupSafe','backupSafe')">🛡️ النسخ الاحتياطي</button><button data-menu-key="cloudSetup" onclick="go('cloudSetup','cloudSetup')">☁️ المزامنة السحابية</button><button data-menu-key="emergencySync" onclick="go('emergencySync','emergencySync')">🔄 مزامنة الموزع</button></aside><main>
 <section id=list class="page on"><div class=card><h2 id=title>قيد التوزيع</h2>
@@ -833,7 +837,7 @@ function restoreSession(){
       if(loginEl)loginEl.style.display='flex';
       return;
     }
-    if(loginEl)loginEl.style.display='none';
+    if(loginEl){loginEl.style.display='none';loginEl.style.pointerEvents='none';loginEl.style.visibility='hidden';}
     applyPermissions();
     filter='قيد التوزيع';
     go('list');
@@ -841,7 +845,7 @@ function restoreSession(){
   }
   if(session.role==='owner'){
     ownerMode=true;
-    if(loginEl)loginEl.style.display='none';
+    if(loginEl){loginEl.style.display='none';loginEl.style.pointerEvents='none';loginEl.style.visibility='hidden';}
     applyPermissions();
     go('list');
     return;
@@ -949,7 +953,7 @@ function ownerLogin(ev){
 }
 function logout(){
  session={role:null,workerId:null};ownerMode=false;clearSession();
- const loginEl=document.getElementById('loginScreen');if(loginEl)loginEl.style.display='flex';
+ const loginEl=document.getElementById('loginScreen');if(loginEl){loginEl.style.display='flex';loginEl.style.pointerEvents='auto';loginEl.style.visibility='visible';}
  refreshLoginWorkers();
 }
 function applyPermissions(){
@@ -3484,6 +3488,56 @@ function changeOwnerPin(){
 
 
 
+
+function runtimeDiag(msg){
+  try{
+    const el=document.getElementById('runtimeDiag');
+    if(!el)return;
+    el.style.display='block';
+    el.textContent=String(msg||'خطأ غير معروف');
+  }catch(_){}
+}
+
+window.addEventListener('error',function(ev){
+  runtimeDiag('JS: '+(ev.message||'خطأ')+(ev.lineno?(' @'+ev.lineno):''));
+});
+window.addEventListener('unhandledrejection',function(ev){
+  runtimeDiag('Promise: '+((ev.reason&&ev.reason.message)||ev.reason||'خطأ'));
+});
+
+function bindMainNavigation(){
+  const aside=document.querySelector('aside');
+  if(!aside || aside.dataset.boundNav==='1')return;
+  aside.dataset.boundNav='1';
+
+  aside.addEventListener('click',function(e){
+    const b=e.target.closest('button[data-menu-key]');
+    if(!b || !aside.contains(b))return;
+    try{
+      e.preventDefault();
+      e.stopPropagation();
+      const key=String(b.dataset.menuKey||'');
+      if(key.startsWith('state:')){
+        filter=key.slice(6);
+        go('list',key);
+      }else{
+        const map={
+          home:'list', add:'add', bulk:'bulk', pdfImport:'pdfImport',
+          returnCreate:'returnCreate', returnBatches:'returnBatches',
+          deliveryTransfers:'deliveryTransfers', workers:'workers',
+          accounts:'accounts', invoices:'invoices', backupSafe:'backupSafe',
+          cloudSetup:'cloudSetup', emergencySync:'emergencySync'
+        };
+        const target=map[key];
+        if(target)go(target,key);
+      }
+    }catch(err){
+      console.error(err);
+      runtimeDiag('زر القائمة: '+(err&&err.message?err.message:String(err)));
+    }
+  },true);
+}
+
 db.orders.forEach((o,i)=>{
  if(!o.modifiedAt)o.modifiedAt='2000-01-01T00:00:00.000Z';
  if(!o.modifiedBy)o.modifiedBy='بيانات قديمة';
@@ -3494,6 +3548,7 @@ db.orders.forEach((o,i)=>{
 db.workers.forEach(w=>{if(!w.modifiedAt)w.modifiedAt='2000-01-01T00:00:00.000Z';});
 localStorage.setItem(K,JSON.stringify(db));
 appBootReady=true;
+try{ bindMainNavigation(); }catch(e){ runtimeDiag('bind: '+e.message); }
 try{ menu(); }catch(e){ console.error('startup menu',e); }
 try{ renderWorkers(); }catch(e){ console.error('startup renderWorkers',e); }
 try{ render(); }catch(e){ console.error('startup render',e); }
