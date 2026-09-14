@@ -311,7 +311,7 @@ body #overlay > .drawer{
  <select id="loginWorker"><option value="">اختر حسابك</option></select>
 <input id="loginPin" type="password" inputmode="numeric" placeholder="الرمز السري">
 <div id="loginStatus" style="margin-top:8px;font-weight:700;min-height:22px"></div>
-<div style="margin-top:6px;font-size:12px;opacity:.7">الإصدار 118</div>
+<div style="margin-top:6px;font-size:12px;opacity:.7">الإصدار 119</div>
 <button id="workerLoginBtn" type="button" class="btn" style="width:100%">دخول الموزع</button>
 <hr>
 <h3>إنشاء حساب موزع</h3>
@@ -851,7 +851,7 @@ async function workerLogin(ev){
  try{
    if(ev&&ev.preventDefault)ev.preventDefault();
    const workerSel=document.getElementById('loginWorker');
-   const pinEl=document.getElementById('ownerLoginPin');
+   const pinEl=document.getElementById('loginPin');
    const loginEl=document.getElementById('loginScreen');
    const id=String(workerSel&&workerSel.value||'').trim();
    const pin=String(pinEl&&pinEl.value||'').trim();
@@ -901,7 +901,7 @@ function ownerLogin(ev){
  try{
    if(ev&&ev.preventDefault)ev.preventDefault();
    setLoginStatus('جاري التحقق...',false);
-   const pinEl=document.getElementById('loginPin');
+   const pinEl=document.getElementById('ownerLoginPin');
    const loginEl=document.getElementById('loginScreen');
    const pin=String(pinEl ? pinEl.value : '').trim();
 
@@ -3475,6 +3475,10 @@ function changeOwnerPin(){
  const workerBtn=document.getElementById('workerLoginBtn');
  if(ownerBtn)ownerBtn.addEventListener('click',ownerLogin);
  if(workerBtn)workerBtn.addEventListener('click',workerLogin);
+ const ownerPin=document.getElementById('ownerLoginPin');
+ const workerPin=document.getElementById('loginPin');
+ if(ownerPin)ownerPin.addEventListener('keydown',e=>{if(e.key==='Enter')ownerLogin(e)});
+ if(workerPin)workerPin.addEventListener('keydown',e=>{if(e.key==='Enter')workerLogin(e)});
 })();
 
 db.orders.forEach((o,i)=>{
