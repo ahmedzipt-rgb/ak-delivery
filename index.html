@@ -1657,19 +1657,21 @@ function renderWorkerFinanceSummary(){
   const fees=arr.reduce((sum,o)=>sum+deliveryFeeForOrder(o),0);
   const due=total-fees;
 
+  const mySettlements=(db.settlements||[]).filter(st=>settlementBelongsToWorker(st,session.workerId)).slice().reverse();
   box.style.display='block';
   box.innerHTML=`
     <h2 style="margin-top:0">💰 حسابي</h2>
     <div class="grid">
-      <div><b>المجموع العام للطلبات المسلّمة</b><h2>${cash(total)}</h2></div>
-      <div><b>خصم ثمن التوصيل</b><h2>- ${cash(fees)}</h2></div>
-      <div><b>المبلغ الواجب دفعه للمالك</b><h2>${cash(due)}</h2></div>
-      <div><b>عدد الطلبات</b><h2>${arr.length}</h2></div>
+      <div><b>المبالغ المحصلة</b><h2>${cash(total)}</h2></div>
+      <div><b>خصم التوزيع</b><h2>- ${cash(fees)}</h2></div>
+      <div><b>المبلغ المطلوب دفعه</b><h2>${cash(due)}</h2></div>
+      <div><b>الطلبات</b><h2>${arr.length}</h2></div>
     </div>
-    <small>أجرة التوصيل لكل طلب: ${cash(deliveryRateForWorker(w))}</small><br>
-    <button class="btn g" style="margin-top:10px" onclick="workerConfirmPayment()" ${arr.length?'':'disabled'}>
-      ✓ تأكيد دفع ${cash(due)}
-    </button>
+    <button class="btn g" style="margin-top:10px" onclick="workerConfirmPayment()" ${arr.length?'':'disabled'}>✓ تأكيد دفع ${cash(due)}</button>
+    <div style="margin-top:16px;border-top:1px solid #e5e7eb;padding-top:12px">
+      <h2 style="margin:0 0 8px">📦 حزم التسويات المدفوعة</h2>
+      ${mySettlements.length?mySettlements.map((v,i)=>settlementBundleHtml(v,i,true)).join(''):'لا توجد حزم مدفوعة بعد'}
+    </div>
   `;
 }
 async function workerConfirmPayment(){
@@ -2928,7 +2930,14 @@ function settlementBundleOrders(st){
     id:o.id,seq:o.seq,clientNo:o.clientNo,recipient:o.recipient,amount:+o.amount||0,worker:o.worker,settlementFee:deliveryFeeForOrder(o)
   }));
 }
-function settlementBundleHtml(st,index){
+function settlementBelongsToWorker(st,workerId){
+  const wid=String(workerId||'');
+  if(!wid||!st)return false;
+  if(String(st.workerId||'')===wid)return true;
+  const snaps=settlementBundleOrders(st);
+  return snaps.some(o=>String(o.worker||'')===wid);
+}
+function settlementBundleHtml(st,index,workerView=false){
   const sid=String(st.id||'');
   const orders=settlementBundleOrders(st);
   const opened=String(openSettlementBundleId)===sid;
@@ -2936,27 +2945,26 @@ function settlementBundleHtml(st,index){
   const inv=settlementInvoiceNumber(st);
   return `<div class="card" style="margin:10px 0;border:1px solid #d7dee7">
     <div style="display:flex;gap:8px;justify-content:space-between;align-items:center;flex-wrap:wrap">
-      <div><b>📦 حزمة تسوية ${htmlEscape(inv)}</b><br><small>${htmlEscape(st.date||'—')} — ${htmlEscape(worker)}</small></div>
-      <button class="btn" onclick="toggleSettlementBundle('${sid.replace(/'/g,'')}')">${opened?'إغلاق':'فتح ومراجعة'}</button>
+      <div><b>📦 ${htmlEscape(inv)}</b><br><small>${htmlEscape(st.date||'—')}${workerView?'':' — '+htmlEscape(worker)}</small></div>
+      <button class="btn" onclick="toggleSettlementBundle('${sid.replace(/'/g,'')}')">${opened?'إغلاق':'فتح'}</button>
     </div>
     <div class="grid" style="margin-top:10px">
-      <div><small>عدد الطلبات</small><h3>${orders.length}</h3></div>
-      <div><small>المبالغ المحصلة</small><h3>${cash(+st.collected||0)}</h3></div>
-      <div><small>خصم ثمن التوزيع</small><h3>- ${cash(+st.fees||0)}</h3></div>
-      <div><small>المبلغ المدفوع</small><h3>${cash(+st.net||0)}</h3></div>
+      <div><small>الطلبات</small><h3>${orders.length}</h3></div>
+      <div><small>المبلغ</small><h3>${cash(+st.collected||0)}</h3></div>
+      <div><small>خصم التوزيع</small><h3>- ${cash(+st.fees||0)}</h3></div>
+      <div><small>المدفوع</small><h3>${cash(+st.net||0)}</h3></div>
     </div>
-    ${st.confirmedByWorker?'<small>✓ تم تأكيد الدفع من الموزع</small>':''}
     ${opened?`<div style="margin-top:12px;overflow:auto">
-      <table><tr><th>#</th><th>رمز الطلب</th><th>المستلم</th><th>المبلغ</th><th>خصم التوزيع</th><th>الصافي</th></tr>
+      <table><tr><th>#</th><th>رمز الطلب</th><th>المستلم</th><th>المبلغ</th><th>خصم</th><th>الصافي</th></tr>
       ${orders.map((o,i)=>{const fee=Number.isFinite(+o.settlementFee)?+o.settlementFee:deliveryFeeForOrder(o);return `<tr><td>${i+1}</td><td>${htmlEscape(o.clientNo||o.seq||'—')}</td><td>${htmlEscape(o.recipient||'—')}</td><td>${cash(+o.amount||0)}</td><td>${cash(fee)}</td><td>${cash((+o.amount||0)-fee)}</td></tr>`}).join('')}
       </table>
-      <div style="margin-top:10px"><button class="btn g" onclick="openSettlementInvoiceById('${sid.replace(/'/g,'')}')">🧾 فتح فاتورة الحزمة PDF</button></div>
+      ${workerView?'':`<div style="margin-top:10px"><button class="btn g" onclick="openSettlementInvoiceById('${sid.replace(/'/g,'')}')">🧾 فاتورة PDF</button></div>`}
     </div>`:''}
   </div>`;
 }
 function toggleSettlementBundle(id){
   openSettlementBundleId=String(openSettlementBundleId)===String(id)?'':String(id);
-  accountsRender();
+  if(session.role==='worker')renderWorkerFinanceSummary(); else accountsRender();
 }
 
 function accountsRender(){
@@ -3020,7 +3028,6 @@ function accountsRender(){
 
  <div class=card>
    <h2>📦 حزم التسويات المدفوعة</h2>
-   <p style="margin-top:0">كل دفعة مالية محفوظة كحزمة مستقلة. افتح أي حزمة لمراجعة الطلبات والمبلغ المدفوع وخصم التوزيع والتاريخ.</p>
    ${db.settlements.length?db.settlements.slice().reverse().map((v,i)=>settlementBundleHtml(v,i)).join(''):'لا توجد حزم تسوية سابقة'}
  </div>`;
 }
