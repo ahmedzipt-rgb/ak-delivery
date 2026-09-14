@@ -1,4 +1,4 @@
-<!doctype html><!-- AK Delivery v93: fixed navigation bars; scroll content only; reduced explanatory text --><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><!-- AK Delivery v86: persistent received-order history for distributors and owner -->
+<!doctype html><!-- AK Delivery v115: fixed navigation bars; scroll content only; reduced explanatory text --><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><!-- AK Delivery v86: persistent received-order history for distributors and owner -->
 <title>مسيّر التوصيل</title>
 <style>*{box-sizing:border-box}body{margin:0;font-family:Arial;background:#f4f6f8;color:#222}header{background:#175d79;color:#fff;padding:15px;font-size:21px;font-weight:bold}.app{display:flex;min-height:100vh}aside{width:210px;background:#11191d;color:#ccd4d8;padding:15px 0}aside h3{padding:0 15px;color:white}aside button{width:100%;text-align:right;padding:11px 15px;border:0;background:none;color:inherit}aside button:hover{background:#263238}main{flex:1;padding:14px;overflow:auto}.card{background:white;padding:14px;border-radius:9px;margin-bottom:12px;box-shadow:0 1px 5px #0001}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:8px}input,select,textarea{width:100%;padding:9px;border:1px solid #d6dce1;border-radius:6px}button{cursor:pointer}.btn{border:0;border-radius:5px;padding:8px 11px;color:white;background:#1882b3}table{width:100%;border-collapse:collapse}th,td{padding:9px;border-bottom:1px solid #eee;text-align:right;font-size:13px}.code{color:#1769aa;text-decoration:underline;font-weight:bold;cursor:pointer}.page{display:none}.page.on{display:block}.overlay{display:none;position:fixed;inset:0;background:#0008;z-index:10}.drawer{position:absolute;right:0;top:0;width:min(510px,100%);height:100%;background:white;padding:16px;overflow:auto}.close{float:left;font-size:25px;border:0;background:none}.info{display:grid;grid-template-columns:115px 1fr;gap:7px;font-size:13px}.actions{display:flex;gap:6px;flex-wrap:wrap;margin:14px 0;padding:12px 0;border-block:1px solid #ddd}.actions button{border:0;border-radius:5px;padding:8px;color:#fff}.g{background:#168b55}.y{background:#e2ad09;color:#222!important}.r{background:#dc3d4b}.gr{background:#697681}.c{background:#05aeca}.log{font-size:12px;line-height:1.8}.badge{background:#e8eef3;padding:4px 7px;border-radius:12px}.transit-badge{background:#ff3b30!important;color:#fff!important;font-weight:800!important;min-width:28px;display:inline-block;text-align:center;box-shadow:0 0 0 2px #ffffff33}aside .badge,aside .menu-count{display:inline-flex;align-items:center;justify-content:center;min-width:28px;height:24px;padding:2px 7px;margin:0;position:absolute;left:14px;top:50%;transform:translateY(-50%);border-radius:999px;background:#ffd54f;color:#111;font-weight:900;font-size:12px;box-shadow:0 0 0 2px #ffffff22}aside button{position:relative;padding-left:54px!important}aside .transit-badge{background:#ff3b30!important;color:#fff!important}aside button.menu-active{background:#175d79!important;color:#fff!important;font-weight:800;box-shadow:inset -4px 0 0 #39b8ff}aside button.menu-active .badge,aside button.menu-active .menu-count{box-shadow:0 0 0 2px #fff6}@media(max-width:650px){aside{width:135px;font-size:11px}main{padding:7px}.drawer{width:95%}th,td{font-size:11px;padding:6px}}
 .phone-ltr{direction:ltr!important;unicode-bidi:bidi-override;display:inline-block;text-align:left}
@@ -839,7 +839,18 @@ async function workerLogin(){
  // النسخة 114: الدخول يتم فوراً من البيانات المحلية ولا ينتظر الشبكة.
  // المزامنة تأتي بعد نجاح الدخول حتى لا يتجمد زر الدخول عند ضعف الاتصال.
  let w=(db.workers||[]).find(x=>String(x.id)===id && !x.deletedAt);
- if(!w){ alert('لم يتم العثور على الحساب. حدّث الصفحة ثم حاول من جديد'); return; }
+ // إذا لم يكن الحساب موجوداً محلياً، نجرب جلب السحابة مرة واحدة ثم نعيد البحث.
+ if(!w && navigator.onLine){
+   try{
+     await Promise.race([
+       cloudPull(true,true),
+       new Promise((_,reject)=>setTimeout(()=>reject(new Error('timeout')),4500))
+     ]);
+     refreshLoginWorkers();
+     w=(db.workers||[]).find(x=>String(x.id)===id && !x.deletedAt);
+   }catch(_){}
+ }
+ if(!w){ alert('لم يتم العثور على الحساب على هذا الجهاز أو في السحابة'); return; }
  if(w.blocked){ alert('هذا الحساب محظور من طرف المالك'); return; }
  if(w.approved===false){ alert('الحساب في انتظار موافقة المالك'); return; }
  if(String(w.pin||'').trim()!==pin){ alert('الرمز السري غير صحيح'); return; }
@@ -867,13 +878,15 @@ async function workerLogin(){
  }
 }
 function ownerLogin(){
- const pin=prompt('رمز المالك:');
- if(pin===null)return;
+ // v115: استعمال خانة الرمز الظاهرة بدل prompt لأن بعض المتصفحات تمنع نافذة prompt.
+ const pin=String((document.getElementById('loginPin')||{}).value||'').trim();
+ if(!pin){ alert('أدخل رمز المالك في خانة الرمز السري'); return; }
  const saved=String(localStorage.getItem('owner_pin_v13')||'0534').trim();
- if(String(pin).trim()!==saved){ alert('رمز المالك غير صحيح'); return; }
+ if(pin!==saved){ alert('رمز المالك غير صحيح'); return; }
  session={role:'owner',workerId:null};
  ownerMode=true;
  saveSession();
+ loginPin.value='';
  loginScreen.style.display='none';
  applyPermissions();
  menu(); render(); renderWorkers(); accountsRender();
@@ -3427,7 +3440,19 @@ db.workers.forEach(w=>{if(!w.modifiedAt)w.modifiedAt='2000-01-01T00:00:00.000Z';
 localStorage.setItem(K,JSON.stringify(db));
 menu();renderWorkers();render();refreshLoginWorkers();applyViewMode();restoreSession();if(!getSnapshots().length)createLocalSnapshot();
 updateSyncIndicators();
-setTimeout(()=>{if(navigator.onLine)syncNow(true)},1800);
+
+// v115: عند شاشة الدخول نجلب حسابات الموزعين من السحابة في الخلفية.
+// هذا لا يمنع دخول المالك ولا يجمّد الواجهة.
+if(!session || !session.role){
+  setTimeout(async()=>{
+    if(!navigator.onLine)return;
+    try{
+      await cloudPull(true,true);
+      refreshLoginWorkers();
+    }catch(_){}
+  },250);
+}
+setTimeout(()=>{if(navigator.onLine && session && session.role)syncNow(true)},1800);
 
 window.addEventListener('error',function(ev){
  try{
