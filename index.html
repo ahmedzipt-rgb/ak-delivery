@@ -906,6 +906,129 @@ if(!Array.isArray(db.returnBatches))db.returnBatches=[];
 if(!Array.isArray(db.deliveryBatches))db.deliveryBatches=[];
 if(!Array.isArray(db.deliveryTransfers))db.deliveryTransfers=[];
 
+
+/* النسخة 110: حماية عامة من التكرار في كل مسارات الطلب.
+   نحتفظ بسجلات التكرار القديمة كتومبستون مخفي حتى لا تعيدها المزامنة السحابية. */
+function normOrderCode(v){return String(v||'').trim().toUpperCase().replace(/\s+/g,'');}
+function orderUniqueKey(o){
+  if(!o)return '';
+  const c=normOrderCode(o.clientNo);
+  if(c)return 'C:'+c;
+  const id=String(o.id||'').trim();
+  return id?'I:'+id:'';
+}
+function uniqueIds(arr){
+  const seen=new Set(),out=[];
+  for(const v of (arr||[])){const k=String(v);if(!seen.has(k)){seen.add(k);out.push(v)}}
+  return out;
+}
+function dedupeDatabase(){
+  if(!db||typeof db!=='object')return false;
+  if(!Array.isArray(db.orders))db.orders=[];
+  if(!Array.isArray(db.returnBatches))db.returnBatches=[];
+  if(!Array.isArray(db.deliveryTransfers))db.deliveryTransfers=[];
+  if(!Array.isArray(db.settlements))db.settlements=[];
+  let changed=false;
+  const now=isoNow?isoNow():new Date().toISOString();
+
+  // 1) الطلبات الأساسية: لا يسمح لنفس رمز الطلب أن يظهر كسجلين فعالين.
+  const canonical=new Map();
+  const score=o=>timeValue(o?.modifiedAt||o?.createdAt||o?.returnRequestedAt||'');
+  for(const o of db.orders){
+    if(!o||o.duplicateHidden)continue;
+    const key=orderUniqueKey(o); if(!key)continue;
+    const prev=canonical.get(key);
+    if(!prev){canonical.set(key,o);continue;}
+    // أبقِ الأحدث، واخفِ الآخر كتومبستون للمزامنة.
+    let keep=prev,dup=o;
+    if(score(o)>score(prev)){keep=o;dup=prev;canonical.set(key,o);}
+    dup.duplicateHidden=true;
+    dup.duplicateOf=String(keep.id||keep.clientNo||'');
+    dup.deletedAt=dup.deletedAt||now;
+    dup.modifiedAt=now;dup.modifiedBy='النظام - منع التكرار';
+    changed=true;
+  }
+
+  const activeOrderIds=new Set(db.orders.filter(o=>o&&!o.duplicateHidden).map(o=>String(o.id)));
+
+  // 2) إرسال الطلب للموزع: سجل فعال واحد فقط لكل طلب.
+  const transferGroups=new Map();
+  for(const t of db.deliveryTransfers){
+    if(!t||t.deletedAt||t.duplicateHidden)continue;
+    const oid=String(t.orderId||''); if(!oid)continue;
+    if(!transferGroups.has(oid))transferGroups.set(oid,[]);
+    transferGroups.get(oid).push(t);
+  }
+  for(const [oid,arr] of transferGroups){
+    if(arr.length<2)continue;
+    arr.sort((a,b)=>{
+      const pa=a.status==='received'?2:1,pb=b.status==='received'?2:1;
+      return (pb-pa)||(timeValue(b.modifiedAt||b.receivedAt||b.sentAt)-timeValue(a.modifiedAt||a.receivedAt||a.sentAt));
+    });
+    const keep=arr[0];
+    for(const t of arr.slice(1)){
+      t.deletedAt=t.deletedAt||now;t.duplicateHidden=true;t.duplicateOf=String(keep.id);t.modifiedAt=now;t.modifiedBy='النظام - منع التكرار';changed=true;
+    }
+  }
+
+  // 3) حزم الإرجاع: الطلب لا يوجد في أكثر من حزمة فعالة واحدة.
+  const rank={owner_confirmed:3,completed:2,pending:1};
+  const batchOrderOwner=new Map();
+  const batches=db.returnBatches.filter(b=>b&&!b.deletedAt&&!b.duplicateHidden).slice().sort((a,b)=>{
+    const ra=rank[a.status]||0,rb=rank[b.status]||0;
+    return (rb-ra)||(timeValue(a.createdAt)-timeValue(b.createdAt));
+  });
+  for(const b of batches){
+    const cleaned=[];
+    for(const raw of uniqueIds(b.orderIds||[])){
+      const oid=String(raw);if(!oid||!activeOrderIds.has(oid))continue;
+      if(batchOrderOwner.has(oid)){changed=true;continue;}
+      batchOrderOwner.set(oid,b);cleaned.push(raw);
+    }
+    if(cleaned.length!==((b.orderIds||[]).length)){b.orderIds=cleaned;b.count=cleaned.length;b.modifiedAt=now;b.modifiedBy='النظام - منع التكرار';changed=true;}
+    if(!cleaned.length){b.deletedAt=b.deletedAt||now;b.duplicateHidden=true;b.modifiedAt=now;b.modifiedBy='النظام - منع التكرار';changed=true;}
+  }
+  // اربط الطلب بالحزمة الوحيدة المتبقية.
+  for(const o of db.orders){
+    if(!o||o.duplicateHidden)continue;
+    const b=batchOrderOwner.get(String(o.id));
+    if(b){
+      if(String(o.returnBatchId||'')!==String(b.id)){o.returnBatchId=b.id;o.returnBatchCode=b.code||'';o.modifiedAt=now;changed=true;}
+    }else if(o.returnBatchId){
+      const exists=db.returnBatches.some(b=>b&&!b.deletedAt&&!b.duplicateHidden&&String(b.id)===String(o.returnBatchId)&&(b.orderIds||[]).map(String).includes(String(o.id)));
+      if(!exists){delete o.returnBatchId;delete o.returnBatchCode;o.modifiedAt=now;changed=true;}
+    }
+  }
+
+  // 4) التسويات: كل طلب يدخل حزمة مالية واحدة فقط.
+  const settledOwner=new Set();
+  const settlements=db.settlements.filter(st=>st&&!st.duplicateHidden).slice().sort((a,b)=>timeValue(a.confirmedAt||a.date)-timeValue(b.confirmedAt||b.date));
+  for(const st of settlements){
+    const before=(st.orderIds||[]).length;
+    const kept=[];
+    for(const raw of uniqueIds(st.orderIds||[])){
+      const oid=String(raw);if(!oid||!activeOrderIds.has(oid))continue;
+      if(settledOwner.has(oid)){changed=true;continue;}
+      settledOwner.add(oid);kept.push(raw);
+    }
+    if(kept.length!==before){
+      st.orderIds=kept;
+      if(Array.isArray(st.orderSnapshot))st.orderSnapshot=st.orderSnapshot.filter(x=>kept.map(String).includes(String(x.id)));
+      changed=true;
+    }
+    if(!kept.length){st.duplicateHidden=true;st.hiddenReason='تسوية مكررة';st.modifiedAt=now;changed=true;}
+  }
+  return changed;
+}
+function activeSettlements(){
+  if(!Array.isArray(db.settlements))db.settlements=[];
+  return db.settlements.filter(st=>st&&!st.duplicateHidden&&Array.isArray(st.orderIds)&&st.orderIds.length);
+}
+function hasExistingOrderCode(code,excludeId=''){
+  const k=normOrderCode(code);if(!k)return false;
+  return db.orders.some(o=>o&&!o.duplicateHidden&&String(o.id)!==String(excludeId)&&normOrderCode(o.clientNo)===k);
+}
+
 /* النسخة 95: حذف الطلب التجريبي Nada مرة واحدة، مع إبقاء الحذف متزامناً سحابياً. */
 if(localStorage.getItem('ak_remove_test_nada_v95')!=='done'){
   const now=new Date().toISOString();
@@ -1045,13 +1168,13 @@ function updateSyncIndicators(msg){
 function updateWorkerNewBadge(){
  const el=document.getElementById('workerNewBadge'); if(!el||session.role!=='worker')return;
  const seen=JSON.parse(localStorage.getItem(CLOUD_SEEN_ASSIGNED_KEY)||'[]');
- const assigned=db.orders.filter(o=>!o.deletedAt&&orderAssignedToWorker(o,session.workerId)).map(o=>String(o.id));
+ const assigned=db.orders.filter(o=>!o.duplicateHidden&&!o.deletedAt&&orderAssignedToWorker(o,session.workerId)).map(o=>String(o.id));
  const n=assigned.filter(id=>!seen.includes(id)).length;
  el.textContent='🔔 '+n;
 }
 function markAssignedSeen(){
  if(session.role!=='worker')return;
- const assigned=db.orders.filter(o=>!o.deletedAt&&orderAssignedToWorker(o,session.workerId)).map(o=>String(o.id));
+ const assigned=db.orders.filter(o=>!o.duplicateHidden&&!o.deletedAt&&orderAssignedToWorker(o,session.workerId)).map(o=>String(o.id));
  localStorage.setItem(CLOUD_SEEN_ASSIGNED_KEY,JSON.stringify(assigned));
  updateWorkerNewBadge();
 }
@@ -1122,6 +1245,7 @@ function parseCloudDb(j){
   return (pack&&pack.db)?pack.db:(j.db||null);
 }
 function timeValue(v){const t=Date.parse(v||'');return Number.isFinite(t)?t:0;}
+if(dedupeDatabase())localStorage.setItem(K,JSON.stringify(db));
 function mergeById(localArr=[],cloudArr=[]){
   const m=new Map();
   for(const x of (cloudArr||[])) if(x&&x.id!=null)m.set(String(x.id),JSON.parse(JSON.stringify(x)));
@@ -1157,7 +1281,8 @@ function mergeDatabases(localDb,cloudDb){
   out.returnBatches=mergeById(localDb.returnBatches||[],cloudDb.returnBatches||[]);
   out.deliveryBatches=mergeById(localDb.deliveryBatches||[],cloudDb.deliveryBatches||[]);
   out.deliveryTransfers=mergeById(localDb.deliveryTransfers||[],cloudDb.deliveryTransfers||[]);
-  return out;
+  const prevDb=db; db=out; dedupeDatabase(); const cleaned=db; db=prevDb;
+  return cleaned;
 }
 async function cloudTest(){
  try{
@@ -1206,7 +1331,7 @@ async function cloudPull(silent=false,merge=true){
    const cloudDb=parseCloudDb(j);
    if(!cloudDb)throw new Error('لا توجد بيانات في السحابة بعد');
    if(typeof createLocalSnapshot==='function'&&!silent)createLocalSnapshot();
-   const beforeAssigned=session.role==='worker'?new Set(db.orders.filter(o=>!o.deletedAt&&orderAssignedToWorker(o,session.workerId)).map(o=>String(o.id))):null;
+   const beforeAssigned=session.role==='worker'?new Set(db.orders.filter(o=>!o.duplicateHidden&&!o.deletedAt&&orderAssignedToWorker(o,session.workerId)).map(o=>String(o.id))):null;
    db=merge?mergeDatabases(db,cloudDb):cloudDb;
    localStorage.setItem(K,JSON.stringify(db));
    localStorage.setItem('ak_delivery_last_cloud_pull',isoNow());
@@ -1249,6 +1374,7 @@ window.addEventListener('online',()=>{showToast('عاد الاتصال بالإ�
 window.addEventListener('offline',()=>{updateSyncIndicators();showToast('لا يوجد إنترنت — سيتم حفظ التغييرات وإرسالها عند عودة الاتصال');});
 setInterval(()=>{if(navigator.onLine)syncNow(true)},45000);
 function save(){
+  dedupeDatabase();
   localStorage.setItem(K,JSON.stringify(db));
   scheduleAutoSnapshot();scheduleCloudSync();
   menu();render();renderWorkers();accountsRender();
@@ -1257,7 +1383,7 @@ function save(){
 function updateReturnRequestCount(){
  let el=document.getElementById('returnReqCount');
  if(el){
-   let n=db.orders.filter(o=>!o.deletedAt&&o.status==='طلب رجوع').length;
+   let n=db.orders.filter(o=>!o.duplicateHidden&&!o.deletedAt&&o.status==='طلب رجوع').length;
    el.textContent=n;
  }
  let be=document.getElementById('returnBatchCount');
@@ -1292,7 +1418,7 @@ function updateReturnRequestCount(){
 
 function settledOrderIdSet(){
   if(!Array.isArray(db.settlements)) db.settlements=[];
-  return new Set(db.settlements.flatMap(v=>Array.isArray(v.orderIds)?v.orderIds:[]).map(String));
+  return new Set(activeSettlements().flatMap(v=>Array.isArray(v.orderIds)?v.orderIds:[]).map(String));
 }
 function isOrderSettled(o){
   return !!(o && settledOrderIdSet().has(String(o.id)));
@@ -1308,7 +1434,7 @@ function menu(){
  updateReturnRequestCount();
  const settledIds=settledOrderIdSet();
  stateMenu.innerHTML=states.map(s=>{
-   const activeOrders=db.orders.filter(o=>!o.deletedAt&&!settledIds.has(String(o.id))&&(session.role!=='worker'||workerCanSeeOrder(o,session.workerId)));
+   const activeOrders=db.orders.filter(o=>!o.duplicateHidden&&!o.deletedAt&&!settledIds.has(String(o.id))&&(session.role!=='worker'||workerCanSeeOrder(o,session.workerId)));
    const n=s==='الكل'?activeOrders.length:activeOrders.filter(o=>o.status===s).length;
    return `<button data-menu-key="state:${htmlEscape(s)}" onclick="filter='${s}';go('list','state:${s}')">${s} <span class="menu-count">${n}</span></button>`;
  }).join('');
@@ -1417,7 +1543,7 @@ function parseBulkOrders(txt){
    const k=o.code.toUpperCase();
    if(seen.has(k))return false;
    seen.add(k);
-   return !db.orders.some(x=>!x.deletedAt&&String(x.clientNo||'').trim().toUpperCase()===k);
+   return !db.orders.some(x=>!x.duplicateHidden&&normOrderCode(x.clientNo)===normOrderCode(k));
  });
 }
 function previewBulk(){
@@ -1626,7 +1752,7 @@ function nextSeq(){
  let n=(nums.length?Math.max(...nums):0)+1;
  return 'AK'+String(n).padStart(6,'0');
 }
-function add(e){e.preventDefault();let t=tm(),code='MP'+String(Date.now()).slice(-9);seq.value=nextSeq();db.orders.push({id:code,seq:seq.value,sender:sender.value,clientNo:clientNo.value,recipient:recipient.value,phone:phone.value,address:address.value,city:city.value,product:product.value,amount:+amount.value,worker:worker.value,status:'قيد التوزيع',history:[{time:t,text:'طلب جديد — بواسطة '+actorName()},{time:t,text:'قيد التوزيع — بواسطة '+actorName()}],remarks:firstComment.value?[{time:t,text:firstComment.value+' — بواسطة '+actorName()}]:[],modifiedAt:isoNow(),modifiedBy:actorName()});e.target.reset();city.value='وجدة';save();filter='قيد التوزيع';go('list')}
+function add(e){e.preventDefault();if(hasExistingOrderCode(clientNo.value))return alert('هذا الطلب موجود بالفعل ولن يتم تكراره: '+clientNo.value);let t=tm(),code='MP'+String(Date.now()).slice(-9);seq.value=nextSeq();db.orders.push({id:code,seq:seq.value,sender:sender.value,clientNo:clientNo.value,recipient:recipient.value,phone:phone.value,address:address.value,city:city.value,product:product.value,amount:+amount.value,worker:worker.value,status:'قيد التوزيع',history:[{time:t,text:'طلب جديد — بواسطة '+actorName()},{time:t,text:'قيد التوزيع — بواسطة '+actorName()}],remarks:firstComment.value?[{time:t,text:firstComment.value+' — بواسطة '+actorName()}]:[],modifiedAt:isoNow(),modifiedBy:actorName()});e.target.reset();city.value='وجدة';save();filter='قيد التوزيع';go('list')}
 
 function runOrderSearch(){
   render();
@@ -1651,7 +1777,7 @@ function deliveryRateForWorker(w){
 }
 function unsettledDeliveredForWorker(workerId){
   if(!db.settlements)db.settlements=[];
-  let settledIds=new Set(db.settlements.flatMap(v=>v.orderIds||[]).map(String));
+  let settledIds=new Set(activeSettlements().flatMap(v=>v.orderIds||[]).map(String));
   return db.orders.filter(o=>
     !o.deletedAt &&
     o.status==='تم التسليم' &&
@@ -1673,7 +1799,7 @@ function renderWorkerFinanceSummary(){
   const fees=arr.reduce((sum,o)=>sum+deliveryFeeForOrder(o),0);
   const due=total-fees;
 
-  const mySettlements=(db.settlements||[]).filter(st=>settlementBelongsToWorker(st,session.workerId)).slice().reverse();
+  const mySettlements=activeSettlements().filter(st=>settlementBelongsToWorker(st,session.workerId)).slice().reverse();
   box.style.display='block';
   box.innerHTML=`
     <h2 style="margin-top:0">💰 حسابي</h2>
@@ -1732,6 +1858,7 @@ async function workerConfirmPayment(){
 function visibleOrders(){
  const term=String(search?.value||'').trim().toLowerCase();
  return db.orders.filter(o=>{
+   if(o.duplicateHidden)return false;
    if(session.role==='worker'&&!workerCanSeeOrder(o,session.workerId))return false;
    const historyText=(o.history||[]).map(h=>`${h.time||''} ${h.text||''}`).join(' ');
    const remarksText=(o.remarks||[]).map(r=>`${r.time||''} ${r.text||''}`).join(' ');
@@ -1784,7 +1911,7 @@ function orderLifecycleEntries(o){
      if(b.ownerConfirmedAt||b.ownerConfirmedLabel) add(b.ownerConfirmedLabel||b.ownerConfirmedAt,'تأكيد المالك استلام الطلب المرتجع','return');
    });
 
- (db.settlements||[])
+ activeSettlements()
    .filter(st=>(st.orderIds||[]).map(String).includes(String(o.id)))
    .forEach(st=>{
      add(st.date||st.modifiedAt||st.createdAt,`دخول الطلب في تسوية مالية${st.invoiceNo?' — '+st.invoiceNo:''}`,'settlement');
@@ -1887,7 +2014,7 @@ function renderReturnCreate(){
  if(!((session&&session.role==='owner')||ownerMode===true))return;
  let el=document.getElementById('returnCreateList');if(!el)return;
  let term=(document.getElementById('returnSearch')?.value||'').toLowerCase().trim();
- let arr=db.orders.filter(o=>o.status==='طلب رجوع'&&
+ let arr=db.orders.filter(o=>!o.duplicateHidden&&!o.deletedAt&&o.status==='طلب رجوع'&&
    (`${formatSeq(o.seq)} ${o.clientNo||''} ${o.recipient||''} ${o.phone||''} ${o.address||''} ${o.city||''}`).toLowerCase().includes(term));
  el.innerHTML=arr.length?arr.map(o=>{
    let w=db.workers.find(x=>x.id===o.worker);
@@ -2270,7 +2397,7 @@ function renderDeliveryBatches(){
  el.innerHTML=arr.map(b=>{
    const received=b.status==='received';
    const ids=(b.orderIds||[]).map(String);
-   const orders=db.orders.filter(o=>ids.includes(String(o.id)));
+   const orders=db.orders.filter(o=>!o.duplicateHidden&&ids.includes(String(o.id)));
    const lines=orders.map(o=>`<div style="padding:4px 0;border-bottom:1px solid #eee">
      <b dir="ltr">${formatSeq(o.seq)}</b> — <b>${htmlEscape(o.recipient||'—')}</b> — ${cash(o.amount)}
    </div>`).join('');
@@ -2389,7 +2516,7 @@ function ensureReturnBatches(){
 function renderReturnBatches(){
  ensureReturnBatches();
  const el=document.getElementById('returnBatchesList');if(!el)return;
- let arr=(db.returnBatches||[])
+ let arr=(db.returnBatches||[]).filter(b=>!b.duplicateHidden&&!b.deletedAt)
    .filter(b=>!b.deletedAt&&(session.role!=='worker'||String(b.workerId)===String(session.workerId)))
    .sort((a,b)=>timeValue(b.createdAt||b.modifiedAt)-timeValue(a.createdAt||a.modifiedAt));
  if(!arr.length){
@@ -2401,7 +2528,7 @@ function renderReturnBatches(){
    const workerDone=b.status==='completed'||b.status==='owner_confirmed'||!!b.confirmedAt;
    const ownerDone=b.status==='owner_confirmed'||!!b.ownerConfirmedAt;
    const ids=(b.orderIds||[]).map(String);
-   const orders=db.orders.filter(o=>ids.includes(String(o.id)));
+   const orders=db.orders.filter(o=>!o.duplicateHidden&&ids.includes(String(o.id)));
    const orderLines=orders.map(o=>`<div style="padding:6px 0;border-bottom:1px solid #eee">
      <b>رمز الطلب:</b> <b dir="ltr" style="direction:ltr;display:inline-block">${htmlEscape(o.clientNo||'—')}</b> — ${htmlEscape(o.recipient||'—')} — ${cash(o.amount)}
    </div>`).join('');
@@ -2441,7 +2568,8 @@ async function sendReturnBatches(){
  if(!isOwner)return alert('هذه العملية للمالك فقط');
  ensureReturnBatches();
 
- const pending=db.orders.filter(o=>!o.deletedAt&&o.status==='طلب رجوع'&&!o.returnBatchId);
+ const inActiveBatch=new Set((db.returnBatches||[]).filter(b=>!b.deletedAt&&!b.duplicateHidden).flatMap(b=>b.orderIds||[]).map(String));
+ const pending=db.orders.filter(o=>!o.duplicateHidden&&!o.deletedAt&&o.status==='طلب رجوع'&&!o.returnBatchId&&!inActiveBatch.has(String(o.id)));
  if(!pending.length)return alert('لا توجد طلبات إرجاع جديدة لإرسالها للموزعين');
 
  const grouped=new Map();
@@ -2553,7 +2681,7 @@ function createReturnFromList(id){
  const isOwner=(session&&session.role==='owner')||ownerMode===true;
  if(!isOwner)return alert('هذه الصلاحية للمالك فقط');
  let o=db.orders.find(x=>x.id===id);if(!o)return;
- if(o.status==='طلب رجوع'||o.status==='مرتجع')return alert('الطلب موجود بالفعل ضمن الرجوع');
+ if(o.status==='طلب رجوع'||o.status==='مرتجع'||(db.returnBatches||[]).some(b=>!b.deletedAt&&!b.duplicateHidden&&(b.orderIds||[]).map(String).includes(String(o.id))))return alert('الطلب موجود بالفعل ضمن الرجوع ولن يتم تكراره');
  if(!confirm('إرسال طلب رجوع للطلب '+formatSeq(o.seq)+'؟'))return;
  let previous=o.status;
  o.status='طلب رجوع';o.returnRequestedAt=tm();
@@ -2592,7 +2720,7 @@ function requestReturn(){
  const isOwner=(session&&session.role==='owner')||ownerMode===true;
  if(!isOwner)return alert('إنشاء طلب الرجوع متاح للمالك فقط');
  let o=db.orders.find(x=>x.id===current);if(!o)return;
- if(o.status==='طلب رجوع')return alert('يوجد طلب رجوع قائم بالفعل');
+ if(o.status==='طلب رجوع'||(db.returnBatches||[]).some(b=>!b.deletedAt&&!b.duplicateHidden&&(b.orderIds||[]).map(String).includes(String(o.id))))return alert('يوجد طلب رجوع قائم بالفعل ولن يتم تكراره');
  if(!confirm('إرسال طلب رجوع هذا الطلب إلى الموزع؟'))return;
  let previous=o.status;
  o.status='طلب رجوع';
@@ -2886,12 +3014,12 @@ function settlementInvoiceEligible(s){
  return !!(s&&!s.deletedAt&&Array.isArray(s.orderIds)&&s.orderIds.length);
 }
 function invoicesRender(){
- let delivered=db.orders.filter(o=>!o.deletedAt&&o.status==='تم التسليم');
+ let delivered=db.orders.filter(o=>!o.duplicateHidden&&!o.deletedAt&&o.status==='تم التسليم');
  invoiceOrder.innerHTML=delivered.length?delivered.map(o=>`<option value="${o.id}">${formatSeq(o.seq)} — ${o.clientNo||'بدون رمز'} — ${o.recipient} — ${cash(o.amount)}</option>`).join(''):'<option value="">لا توجد طلبات مسلّمة</option>';
  invoiceSummary.innerHTML=`عدد الطلبات المسلّمة القابلة للفوترة: <b>${delivered.length}</b>`;
 
  if(!Array.isArray(db.settlements))db.settlements=[];
- const sels=db.settlements.filter(settlementInvoiceEligible).slice().reverse();
+ const sels=activeSettlements().filter(settlementInvoiceEligible).slice().reverse();
  const si=document.getElementById('settlementInvoice');
  const ss=document.getElementById('settlementInvoiceSummary');
  if(si){
@@ -2926,7 +3054,7 @@ function printSettlementInvoice(){
  if(!Array.isArray(db.settlements))db.settlements=[];
  const sel=document.getElementById('settlementInvoice');
  const sid=sel?String(sel.value||''):'';
- const st=db.settlements.find(v=>String(v.id)===sid&&settlementInvoiceEligible(v));
+ const st=activeSettlements().find(v=>String(v.id)===sid&&settlementInvoiceEligible(v));
  if(!st)return alert('اختر حزمة تسوية مسجلة');
  const orders=settlementOrdersForInvoice(st);
  if(!orders.length)return alert('لا توجد طلبات داخل هذه التسوية');
@@ -2954,7 +3082,7 @@ function printSettlementInvoice(){
 }
 
 function exportInvoicesExcel(){
- let data=db.orders.filter(o=>!o.deletedAt&&o.status==='تم التسليم');
+ let data=db.orders.filter(o=>!o.duplicateHidden&&!o.deletedAt&&o.status==='تم التسليم');
  if(!data.length)return alert('لا توجد فواتير لتصديرها');
  let headers=['رقم الترتيب','رمز الطلب','المرسل','المستلم','الهاتف','العنوان','المدينة','المنتج','قيمة الطلب','خدمة التوصيل','الموزع','الحالة'];
  let body=data.map(o=>{let wkr=db.workers.find(x=>x.id===o.worker),fee=wkr?.rate||0;return `<tr><td>${htmlEscape(formatSeq(o.seq))}</td><td>${htmlEscape(o.clientNo||'')}</td><td>${htmlEscape(o.sender)}</td><td>${htmlEscape(o.recipient)}</td><td style="mso-number-format:'\\@'">${htmlEscape(o.phone)}</td><td>${htmlEscape(o.address||'')}</td><td>${htmlEscape(o.city||'')}</td><td>${htmlEscape(o.product||'')}</td><td>${+o.amount||0}</td><td>${fee}</td><td>${htmlEscape(wkr?.name||'')}</td><td>${htmlEscape(o.status)}</td></tr>`}).join('');
@@ -3011,8 +3139,8 @@ function toggleSettlementBundle(id){
 function accountsRender(){
  if(!db.settlements)db.settlements=[];
 
- let settledIds=new Set(db.settlements.flatMap(v=>v.orderIds||[]).map(String));
- let pending=db.orders.filter(o=>!o.deletedAt&&o.status==='تم التسليم'&&!settledIds.has(String(o.id)));
+ let settledIds=new Set(activeSettlements().flatMap(v=>v.orderIds||[]).map(String));
+ let pending=db.orders.filter(o=>!o.duplicateHidden&&!o.deletedAt&&o.status==='تم التسليم'&&!settledIds.has(String(o.id)));
 
  let collected=pending.reduce((sum,o)=>sum+(+o.amount||0),0);
  let fees=pending.reduce((sum,o)=>sum+deliveryFeeForOrder(o),0);
@@ -3069,7 +3197,7 @@ function accountsRender(){
 
  <div class=card>
    <h2>📦 حزم التسويات المدفوعة</h2>
-   ${db.settlements.length?db.settlements.slice().reverse().map((v,i)=>settlementBundleHtml(v,i)).join(''):'لا توجد حزم تسوية سابقة'}
+   ${activeSettlements().length?activeSettlements().slice().reverse().map((v,i)=>settlementBundleHtml(v,i)).join(''):'لا توجد حزم تسوية سابقة'}
  </div>`;
 }
 function openSettlementInvoiceById(id){
@@ -3080,8 +3208,8 @@ function openSettlementInvoiceById(id){
 }
 function finishSettlement(){
  if(!db.settlements)db.settlements=[];
- let settledIds=new Set(db.settlements.flatMap(v=>v.orderIds||[]).map(String));
- let pending=db.orders.filter(o=>!o.deletedAt&&o.status==='تم التسليم'&&!settledIds.has(String(o.id)));
+ let settledIds=new Set(activeSettlements().flatMap(v=>v.orderIds||[]).map(String));
+ let pending=db.orders.filter(o=>!o.duplicateHidden&&!o.deletedAt&&o.status==='تم التسليم'&&!settledIds.has(String(o.id)));
  if(!pending.length)return alert('لا توجد مبالغ جديدة للتسوية');
  let collected=pending.reduce((s,o)=>s+(+o.amount||0),0);
  let fees=pending.reduce((s,o)=>s+deliveryFeeForOrder(o),0);
