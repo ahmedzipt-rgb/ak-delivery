@@ -1274,6 +1274,14 @@ function updateReturnRequestCount(){
  }
 }
 
+function settledOrderIdSet(){
+  if(!Array.isArray(db.settlements)) db.settlements=[];
+  return new Set(db.settlements.flatMap(v=>Array.isArray(v.orderIds)?v.orderIds:[]).map(String));
+}
+function isOrderSettled(o){
+  return !!(o && settledOrderIdSet().has(String(o.id)));
+}
+
 let sidebarActiveKey='home';
 function updateSidebarActive(){
  document.querySelectorAll('aside button').forEach(b=>b.classList.remove('menu-active'));
@@ -1282,8 +1290,10 @@ function updateSidebarActive(){
 }
 function menu(){
  updateReturnRequestCount();
+ const settledIds=settledOrderIdSet();
  stateMenu.innerHTML=states.map(s=>{
-   const n=s==='الكل'?db.orders.filter(o=>!o.deletedAt&&(session.role!=='worker'||workerCanSeeOrder(o,session.workerId))).length:db.orders.filter(o=>!o.deletedAt&&o.status===s&&(session.role!=='worker'||workerCanSeeOrder(o,session.workerId))).length;
+   const activeOrders=db.orders.filter(o=>!o.deletedAt&&!settledIds.has(String(o.id))&&(session.role!=='worker'||workerCanSeeOrder(o,session.workerId)));
+   const n=s==='الكل'?activeOrders.length:activeOrders.filter(o=>o.status===s).length;
    return `<button data-menu-key="state:${htmlEscape(s)}" onclick="filter='${s}';go('list','state:${s}')">${s} <span class="menu-count">${n}</span></button>`;
  }).join('');
  updateSidebarActive();
@@ -1710,8 +1720,10 @@ function visibleOrders(){
    const haystack=(`${o.seq||''} ${o.id||''} ${o.clientNo||''} ${o.recipient||''} ${o.phone||''} ${o.sender||''} ${o.address||''} ${o.city||''} ${o.product||''} ${o.status||''} ${historyText} ${remarksText}`).toLowerCase();
    // عند وجود بحث: ابحث في كل سجل الطلبات بلا استثناء، بما فيها المحذوفة وكل الحالات.
    if(term)return haystack.includes(term);
-   // بدون بحث: حافظ على القوائم العادية ولا تعرض المحذوفة.
-   return !o.deletedAt&&(filter==='الكل'||o.status===filter);
+   // بدون بحث: لا تعرض الطلبات المحذوفة ولا الطلبات التي أغلقت داخل حزمة تسوية مالية.
+   // تبقى الطلبات المسواة محفوظة ويمكن العثور عليها بالبحث الشامل وفتح تفاصيلها كاملة.
+   if(o.deletedAt||isOrderSettled(o))return false;
+   return filter==='الكل'||o.status===filter;
  });
 }
 function render(){
@@ -2907,6 +2919,46 @@ function exportInvoicesExcel(){
  let blob=new Blob(['\ufeff',html],{type:'application/vnd.ms-excel;charset=utf-8'}),a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='سجل_الفواتير.xls';document.body.appendChild(a);a.click();a.remove();
 }
 
+let openSettlementBundleId='';
+function settlementBundleOrders(st){
+  const snaps=Array.isArray(st?.orderSnapshot)?st.orderSnapshot:[];
+  if(snaps.length)return snaps;
+  const ids=new Set((st?.orderIds||[]).map(String));
+  return db.orders.filter(o=>ids.has(String(o.id))).map(o=>({
+    id:o.id,seq:o.seq,clientNo:o.clientNo,recipient:o.recipient,amount:+o.amount||0,worker:o.worker,settlementFee:deliveryFeeForOrder(o)
+  }));
+}
+function settlementBundleHtml(st,index){
+  const sid=String(st.id||'');
+  const orders=settlementBundleOrders(st);
+  const opened=String(openSettlementBundleId)===sid;
+  const worker=st.workerName||settlementWorkerForInvoice(st,orders)?.name||'—';
+  const inv=settlementInvoiceNumber(st);
+  return `<div class="card" style="margin:10px 0;border:1px solid #d7dee7">
+    <div style="display:flex;gap:8px;justify-content:space-between;align-items:center;flex-wrap:wrap">
+      <div><b>📦 حزمة تسوية ${htmlEscape(inv)}</b><br><small>${htmlEscape(st.date||'—')} — ${htmlEscape(worker)}</small></div>
+      <button class="btn" onclick="toggleSettlementBundle('${sid.replace(/'/g,'')}')">${opened?'إغلاق':'فتح ومراجعة'}</button>
+    </div>
+    <div class="grid" style="margin-top:10px">
+      <div><small>عدد الطلبات</small><h3>${orders.length}</h3></div>
+      <div><small>المبالغ المحصلة</small><h3>${cash(+st.collected||0)}</h3></div>
+      <div><small>خصم ثمن التوزيع</small><h3>- ${cash(+st.fees||0)}</h3></div>
+      <div><small>المبلغ المدفوع</small><h3>${cash(+st.net||0)}</h3></div>
+    </div>
+    ${st.confirmedByWorker?'<small>✓ تم تأكيد الدفع من الموزع</small>':''}
+    ${opened?`<div style="margin-top:12px;overflow:auto">
+      <table><tr><th>#</th><th>رمز الطلب</th><th>المستلم</th><th>المبلغ</th><th>خصم التوزيع</th><th>الصافي</th></tr>
+      ${orders.map((o,i)=>{const fee=Number.isFinite(+o.settlementFee)?+o.settlementFee:deliveryFeeForOrder(o);return `<tr><td>${i+1}</td><td>${htmlEscape(o.clientNo||o.seq||'—')}</td><td>${htmlEscape(o.recipient||'—')}</td><td>${cash(+o.amount||0)}</td><td>${cash(fee)}</td><td>${cash((+o.amount||0)-fee)}</td></tr>`}).join('')}
+      </table>
+      <div style="margin-top:10px"><button class="btn g" onclick="openSettlementInvoiceById('${sid.replace(/'/g,'')}')">🧾 فتح فاتورة الحزمة PDF</button></div>
+    </div>`:''}
+  </div>`;
+}
+function toggleSettlementBundle(id){
+  openSettlementBundleId=String(openSettlementBundleId)===String(id)?'':String(id);
+  accountsRender();
+}
+
 function accountsRender(){
  if(!db.settlements)db.settlements=[];
 
@@ -2967,8 +3019,9 @@ function accountsRender(){
  </div>
 
  <div class=card>
-   <h2>سجل التسويات</h2>
-   ${db.settlements.length?`<table><tr><th>المبلغ المسلم</th><th>المبالغ المحصلة</th><th>خدمات التوصيل</th><th>الموزع</th><th>عدد الطلبات</th><th>التاريخ</th><th>فاتورة الحزمة</th></tr>${db.settlements.slice().reverse().map(v=>`<tr><td><b>${cash(v.net)}</b>${v.confirmedByWorker?'<br><small>✓ أكده الموزع</small>':''}</td><td>${cash(v.collected)}</td><td>${cash(v.fees)}</td><td>${htmlEscape(v.workerName||'—')}</td><td>${(v.orderIds||[]).length}</td><td>${v.date}</td><td><button class=btn onclick="openSettlementInvoiceById('${String(v.id).replace(/'/g,'')}')">🧾 PDF</button></td></tr>`).join('')}</table>`:'لا توجد تسويات سابقة'}
+   <h2>📦 حزم التسويات المدفوعة</h2>
+   <p style="margin-top:0">كل دفعة مالية محفوظة كحزمة مستقلة. افتح أي حزمة لمراجعة الطلبات والمبلغ المدفوع وخصم التوزيع والتاريخ.</p>
+   ${db.settlements.length?db.settlements.slice().reverse().map((v,i)=>settlementBundleHtml(v,i)).join(''):'لا توجد حزم تسوية سابقة'}
  </div>`;
 }
 function openSettlementInvoiceById(id){
@@ -2988,6 +3041,8 @@ function finishSettlement(){
  if(!confirm(`تأكيد تسليم ${cash(net)}؟`))return;
  db.settlements.push({id:Date.now()+'',date:tm(),collected,fees,net,orderIds:pending.map(o=>o.id),invoiceNo:'SET-'+new Date().toISOString().slice(0,10).replace(/-/g,'')+'-'+String(Date.now()).slice(-6),orderSnapshot:pending.map(o=>({id:o.id,seq:o.seq,clientNo:o.clientNo,recipient:o.recipient,amount:+o.amount||0,worker:o.worker,settlementFee:deliveryFeeForOrder(o)}))});
  save();
+ menu();
+ accountsRender();
 }
 let ownerMode=false,ownerTapCount=0,ownerTapTimer=null;
 function ownerTap(){
