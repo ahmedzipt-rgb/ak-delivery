@@ -831,56 +831,57 @@ function refreshLoginWorkers(){
  loginWorker.innerHTML='<option value="">اختر الموزع</option>'+db.workers.filter(w=>!w.deletedAt).map(w=>`<option value="${w.id}">${w.name}</option>`).join('');
 }
 async function workerLogin(){
- let id=loginWorker.value,pin=String(loginPin.value||'').trim();
- if(!id)return alert('اختر حسابك');
- if(!pin)return alert('أدخل الرقم السري');
+ const id=String(loginWorker.value||'').trim();
+ const pin=String(loginPin.value||'').trim();
+ if(!id){ alert('اختر حسابك'); return; }
+ if(!pin){ alert('أدخل الرقم السري'); return; }
 
- // النسخة 66: قبل فحص الرقم السري نجلب أحدث حسابات الموزعين من السحابة.
- // هذا يمنع جهاز الموزع من استعمال رقم قديم محفوظ لديه.
- if(navigator.onLine){
-   try{
-     await cloudPull(true,true);
-     // لا نرفع شيئاً من جهاز الموزع قبل نجاح الدخول؛ يكفي الجلب هنا.
-   }catch(_){}
- }
-
- let w=db.workers.find(x=>String(x.id)===String(id));
- if(!w)return alert('لم يتم العثور على الحساب. أعد فتح التطبيق وحاول من جديد');
- if(w.blocked)return alert('هذا الحساب محظور من طرف المالك');
- if(w.approved===false)return alert('الحساب في انتظار موافقة المالك');
- if(String(w.pin||'').trim()!==pin)return alert('الرمز السري غير صحيح');
+ // النسخة 114: الدخول يتم فوراً من البيانات المحلية ولا ينتظر الشبكة.
+ // المزامنة تأتي بعد نجاح الدخول حتى لا يتجمد زر الدخول عند ضعف الاتصال.
+ let w=(db.workers||[]).find(x=>String(x.id)===id && !x.deletedAt);
+ if(!w){ alert('لم يتم العثور على الحساب. حدّث الصفحة ثم حاول من جديد'); return; }
+ if(w.blocked){ alert('هذا الحساب محظور من طرف المالك'); return; }
+ if(w.approved===false){ alert('الحساب في انتظار موافقة المالك'); return; }
+ if(String(w.pin||'').trim()!==pin){ alert('الرمز السري غير صحيح'); return; }
 
  session={role:'worker',workerId:String(w.id)};
- // ترحيل آمن للطلبات القديمة التي خُزّن فيها اسم الموزع بدلاً من المعرّف.
- let assignmentChanged=false;
- for(const o of (db.orders||[])){
-   if(!o||o.deletedAt)continue;
-   const raw=(o.worker&&typeof o.worker==='object')?(o.worker.id??o.worker.name):o.worker;
-   if(String(raw??'').trim().toLowerCase()===String(w.name||'').trim().toLowerCase() && String(raw??'').trim()!==String(w.id)){
-     o.worker=String(w.id);
-     o.modifiedAt=o.modifiedAt||isoNow();
-     assignmentChanged=true;
-   }
- }
- if(assignmentChanged)localStorage.setItem(K,JSON.stringify(db));
  saveSession();
  loginPin.value='';
  loginScreen.style.display='none';
  applyPermissions();
-
- // جلب نهائي بعد تحديد هوية الموزع حتى تظهر طلباته والعدادات فوراً.
- if(navigator.onLine){
-   try{await cloudPull(true,true);}catch(_){}
- }
  filter='قيد التوزيع';
- menu();render();renderWorkers();accountsRender();
+ menu(); render(); renderWorkers(); accountsRender();
  go('list');
+
+ // مزامنة غير معطِّلة بعد الدخول، ثم تحديث الشاشة وطلبات الموزع.
+ if(navigator.onLine){
+   setTimeout(async()=>{
+     try{
+       await cloudPull(true,true);
+       const current=(db.workers||[]).find(x=>String(x.id)===String(session.workerId) && !x.deletedAt);
+       if(current && !current.blocked && current.approved!==false){
+         menu(); render(); renderWorkers(); accountsRender();
+       }
+     }catch(_){}
+   },250);
+ }
 }
 function ownerLogin(){
- let pin=prompt('رمز المالك:'); if(pin===null)return;
- let saved=localStorage.getItem('owner_pin_v13')||'0534';
- if(pin!==saved)return alert('رمز المالك غير صحيح');
- session={role:'owner',workerId:null};ownerMode=true;saveSession();loginScreen.style.display='none';applyPermissions();go('list');
+ const pin=prompt('رمز المالك:');
+ if(pin===null)return;
+ const saved=String(localStorage.getItem('owner_pin_v13')||'0534').trim();
+ if(String(pin).trim()!==saved){ alert('رمز المالك غير صحيح'); return; }
+ session={role:'owner',workerId:null};
+ ownerMode=true;
+ saveSession();
+ loginScreen.style.display='none';
+ applyPermissions();
+ menu(); render(); renderWorkers(); accountsRender();
+ go('list');
+ // لا نؤخر الدخول بسبب الشبكة؛ المزامنة تتم بعد فتح التطبيق.
+ if(navigator.onLine){
+   setTimeout(async()=>{try{await syncNow(); menu(); render();}catch(_){}},250);
+ }
 }
 function logout(){
  session={role:null,workerId:null};ownerMode=false;clearSession();loginScreen.style.display='flex';refreshLoginWorkers();
