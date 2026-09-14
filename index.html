@@ -314,7 +314,7 @@ aside button{pointer-events:auto!important;touch-action:manipulation!important;}
  <select id="loginWorker"><option value="">اختر حسابك</option></select>
 <input id="loginPin" type="password" inputmode="numeric" placeholder="الرمز السري">
 <div id="loginStatus" style="margin-top:8px;font-weight:700;min-height:22px"></div>
-<div style="margin-top:6px;font-size:12px;opacity:.7">الإصدار 125</div>
+<div style="margin-top:6px;font-size:12px;opacity:.7">الإصدار 126</div>
 <button id="workerLoginBtn" type="button" onclick="workerLogin(event)" class="btn" style="width:100%">دخول الموزع</button>
 <hr>
 <h3>إنشاء حساب موزع</h3>
@@ -1192,7 +1192,8 @@ const formatSeq=v=>{
  if(/^\d+$/.test(x)) return 'AK'+String(parseInt(x,10)).padStart(6,'0');
  return x||'—';
 };
-const tm=()=>new Date().toLocaleString('ar-MA'),cash=n=>Number(n||0).toFixed(2)+' د.م';
+function tm(){return new Date().toLocaleString('ar-MA');}
+function cash(n){return Number(n||0).toFixed(2)+' د.م';}
 
 const CLOUD_URL='https://script.google.com/macros/s/AKfycbyx_Ux59er_GZ3xO_qhgdFoBdizpJsBUuxSH4Qo2r7Qb6yeqdSS7F2akzWxC9_w-WtV/exec';
 const CLOUD_KEY='AKD-0534-CLOUD';
@@ -1528,7 +1529,7 @@ function isOrderSettled(o){
   return !!(o && settledOrderIdSet().has(String(o.id)));
 }
 
-let sidebarActiveKey='home';
+var sidebarActiveKey='home';
 function updateSidebarActive(){
  document.querySelectorAll('aside button').forEach(b=>b.classList.remove('menu-active'));
  const btn=document.querySelector(`aside button[data-menu-key="${sidebarActiveKey}"]`);
@@ -1550,7 +1551,7 @@ function go(x,menuKey){if(session.role==='worker'&&['add','bulk','pdfImport','re
  renderDeliveryTransfers();
 }if(x==='backupSafe'){updateBackupStatus();showLocalSnapshots()}if(x==='emergencySync'){renderEmergencySync()}if(x==='cloudSetup'){updateCloudStatus('جاهز')}updateSidebarActive()}
 
-let bulkParsed=[];
+var bulkParsed=[];
 function parseBulkOrders(txt){
  let text=String(txt||'').replace(/\u00a0/g,' ').replace(/\r/g,'\n').trim();
  if(!text)return [];
@@ -1673,8 +1674,8 @@ function importBulk(){
 }
 
 
-let pdfParsedOrders=[];
-let pdfImportFileName='';
+var pdfParsedOrders=[];
+var pdfImportFileName='';
 
 function pdfNormCode(v){
  let x=String(v||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
@@ -2187,7 +2188,7 @@ function deliveryTransferStatusText(t){
  return 'بانتظار تأكيد الاستلام';
 }
 
-let deliveryTransferView='pending';
+var deliveryTransferView='pending';
 
 function deliveryTransferTab(view){
  deliveryTransferView=view;
@@ -3217,7 +3218,7 @@ function exportInvoicesExcel(){
  let blob=new Blob(['\ufeff',html],{type:'application/vnd.ms-excel;charset=utf-8'}),a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='سجل_الفواتير.xls';document.body.appendChild(a);a.click();a.remove();
 }
 
-let openSettlementBundleId='';
+var openSettlementBundleId='';
 function settlementBundleOrders(st){
   const snaps=Array.isArray(st?.orderSnapshot)?st.orderSnapshot:[];
   if(snaps.length)return snaps;
@@ -3499,7 +3500,7 @@ function runtimeDiag(msg){
 }
 
 window.addEventListener('error',function(ev){
-  runtimeDiag('JS: '+(ev.message||'خطأ')+(ev.lineno?(' @'+ev.lineno):''));
+  runtimeDiag('خطأ برمجي: '+(ev.message||'خطأ')+(ev.lineno?(' — السطر '+ev.lineno):''));
 });
 window.addEventListener('unhandledrejection',function(ev){
   runtimeDiag('Promise: '+((ev.reason&&ev.reason.message)||ev.reason||'خطأ'));
