@@ -311,8 +311,8 @@ body #overlay > .drawer{
  <select id="loginWorker"><option value="">اختر حسابك</option></select>
 <input id="loginPin" type="password" inputmode="numeric" placeholder="الرمز السري">
 <div id="loginStatus" style="margin-top:8px;font-weight:700;min-height:22px"></div>
-<div style="margin-top:6px;font-size:12px;opacity:.7">الإصدار 123</div>
-<button id="workerLoginBtn" type="button" disabled onclick="workerLogin(event)" class="btn" style="width:100%">دخول الموزع</button>
+<div style="margin-top:6px;font-size:12px;opacity:.7">الإصدار 124</div>
+<button id="workerLoginBtn" type="button" onclick="workerLogin(event)" class="btn" style="width:100%">دخول الموزع</button>
 <hr>
 <h3>إنشاء حساب موزع</h3>
 <input id="regName" placeholder="اختر اسمك">
@@ -322,7 +322,7 @@ body #overlay > .drawer{
  <hr>
 <div style="font-weight:800;font-size:20px;margin:12px 0 10px">دخول المالك</div>
 <input id="ownerLoginPin" type="password" inputmode="numeric" autocomplete="off" placeholder="أدخل رمز المالك 0534" style="width:100%;box-sizing:border-box;margin-bottom:10px">
-<button id="ownerLoginBtn" type="button" disabled onclick="ownerLogin(event)" class="btn gr" style="width:100%">دخول المالك</button>
+<button id="ownerLoginBtn" type="button" onclick="ownerLogin(event)" class="btn gr" style="width:100%">دخول المالك</button>
  
  </div>
 </div>
@@ -809,6 +809,16 @@ function applyViewMode(){
   document.documentElement.setAttribute('data-view-mode',mode);
 }
 
+
+function safeUIRefresh(){
+  try{ applyPermissions(); }catch(e){ console.error('applyPermissions',e); }
+  try{ menu(); }catch(e){ console.error('menu',e); }
+  try{ render(); }catch(e){ console.error('render',e); }
+  try{ renderWorkers(); }catch(e){ console.error('renderWorkers',e); }
+  try{ accountsRender(); }catch(e){ console.error('accountsRender',e); }
+  try{ updateSyncIndicators(); }catch(e){ console.error('updateSyncIndicators',e); }
+}
+
 function restoreSession(){
   const loginEl=document.getElementById('loginScreen');
   if(!session||!session.role){
@@ -852,7 +862,6 @@ function refreshLoginWorkers(){
 }
 async function workerLogin(ev){
  try{
-    if(!appBootReady){ setLoginStatus('انتظر لحظة حتى يكتمل تحميل التطبيق...',false); return; }
    if(ev&&ev.preventDefault)ev.preventDefault();
    const workerSel=document.getElementById('loginWorker');
    const pinEl=document.getElementById('loginPin');
@@ -903,7 +912,6 @@ async function workerLogin(ev){
 }
 function ownerLogin(ev){
   try{
-    if(!appBootReady){ setLoginStatus('انتظر لحظة حتى يكتمل تحميل التطبيق...',false); return false; }
     if(ev&&ev.preventDefault)ev.preventDefault();
     const pinEl=document.getElementById('ownerLoginPin');
     const loginEl=document.getElementById('loginScreen');
@@ -919,25 +927,18 @@ function ownerLogin(ev){
     if(pinEl)pinEl.value='';
     if(loginEl)loginEl.style.display='none';
 
-    try{ applyPermissions(); }catch(e){ console.error(e); }
-    try{
-      filter='قيد التوزيع';
-      menu();
-      render();
-      renderWorkers();
-      accountsRender();
-      go('list');
-    }catch(e){ console.error(e); }
-
+    try{ filter='قيد التوزيع'; }catch(_){}
+    try{ go('list','home'); }catch(e){ console.error('go',e); }
+    safeUIRefresh();
     setLoginStatus('',false);
 
     if(navigator.onLine){
       setTimeout(async()=>{
         try{
           await cloudPull(true,true);
-          try{ menu();render();renderWorkers();accountsRender(); }catch(e){console.error(e);}
-        }catch(_){}
-      },250);
+          safeUIRefresh();
+        }catch(e){ console.error('cloudPull',e); }
+      },500);
     }
     return false;
   }catch(err){
@@ -3492,8 +3493,15 @@ db.orders.forEach((o,i)=>{
 });
 db.workers.forEach(w=>{if(!w.modifiedAt)w.modifiedAt='2000-01-01T00:00:00.000Z';});
 localStorage.setItem(K,JSON.stringify(db));
-menu();renderWorkers();render();refreshLoginWorkers();applyViewMode();restoreSession();if(!getSnapshots().length)createLocalSnapshot();
-updateSyncIndicators();
+appBootReady=true;
+try{ menu(); }catch(e){ console.error('startup menu',e); }
+try{ renderWorkers(); }catch(e){ console.error('startup renderWorkers',e); }
+try{ render(); }catch(e){ console.error('startup render',e); }
+try{ refreshLoginWorkers(); }catch(e){ console.error('startup refreshLoginWorkers',e); }
+try{ applyViewMode(); }catch(e){ console.error('startup applyViewMode',e); }
+try{ restoreSession(); }catch(e){ console.error('startup restoreSession',e); }
+try{ if(!getSnapshots().length)createLocalSnapshot(); }catch(e){ console.error('startup snapshot',e); }
+try{ updateSyncIndicators(); }catch(e){ console.error('startup sync indicators',e); }
 
 // v115: عند شاشة الدخول نجلب حسابات الموزعين من السحابة في الخلفية.
 // هذا لا يمنع دخول المالك ولا يجمّد الواجهة.
@@ -3525,14 +3533,5 @@ document.addEventListener('DOMContentLoaded',function(){
 });
 
 
-// v123: لا نسمح بتسجيل الدخول قبل اكتمال تهيئة جميع المتغيرات والوظائف.
-appBootReady=true;
-try{
-  const wb=document.getElementById('workerLoginBtn');
-  const ob=document.getElementById('ownerLoginBtn');
-  if(wb)wb.disabled=false;
-  if(ob)ob.disabled=false;
-  setLoginStatus('',false);
-}catch(_){}
 
 </script></body></html>
