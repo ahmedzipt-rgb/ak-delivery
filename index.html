@@ -311,8 +311,8 @@ body #overlay > .drawer{
  <select id="loginWorker"><option value="">اختر حسابك</option></select>
 <input id="loginPin" type="password" inputmode="numeric" placeholder="الرمز السري">
 <div id="loginStatus" style="margin-top:8px;font-weight:700;min-height:22px"></div>
-<div style="margin-top:6px;font-size:12px;opacity:.7">الإصدار 119</div>
-<button id="workerLoginBtn" type="button" class="btn" style="width:100%">دخول الموزع</button>
+<div style="margin-top:6px;font-size:12px;opacity:.7">الإصدار 120</div>
+<button id="workerLoginBtn" type="button" onclick="workerLogin(event)" class="btn" style="width:100%">دخول الموزع</button>
 <hr>
 <h3>إنشاء حساب موزع</h3>
 <input id="regName" placeholder="اختر اسمك">
@@ -322,7 +322,7 @@ body #overlay > .drawer{
  <hr>
 <div style="font-weight:800;font-size:20px;margin:12px 0 10px">دخول المالك</div>
 <input id="ownerLoginPin" type="password" inputmode="numeric" autocomplete="off" placeholder="أدخل رمز المالك 0534" style="width:100%;box-sizing:border-box;margin-bottom:10px">
-<button id="ownerLoginBtn" type="button" class="btn gr" style="width:100%">دخول المالك</button>
+<button id="ownerLoginBtn" type="button" onclick="ownerLogin(event)" class="btn gr" style="width:100%">دخول المالك</button>
  
  </div>
 </div>
@@ -899,39 +899,33 @@ async function workerLogin(ev){
 }
 function ownerLogin(ev){
  try{
-   if(ev&&ev.preventDefault)ev.preventDefault();
-   setLoginStatus('جاري التحقق...',false);
+   if(ev&&ev.preventDefault) ev.preventDefault();
    const pinEl=document.getElementById('ownerLoginPin');
-   const loginEl=document.getElementById('loginScreen');
-   const pin=String(pinEl ? pinEl.value : '').trim();
-
-   if(!pin){ setLoginStatus('أدخل رمز المالك 0534',true); return; }
-   if(pin!=='0534'){ setLoginStatus('رمز المالك غير صحيح',true); return; }
-
-   localStorage.setItem('owner_pin_v13','0534');
-   session={role:'owner',workerId:null};
-   ownerMode=true;
-   saveSession();
-   if(pinEl)pinEl.value='';
-
-   // نعتبر الدخول ناجحاً قبل تشغيل أي أجزاء ثانوية من الواجهة.
-   if(loginEl)loginEl.style.display='none';
-
-   try{ applyPermissions(); }catch(e){ console.error('applyPermissions',e); }
-   try{ menu(); }catch(e){ console.error('menu',e); }
-   try{ renderWorkers(); }catch(e){ console.error('renderWorkers',e); }
-   try{ render(); }catch(e){ console.error('render',e); }
-   try{ accountsRender(); }catch(e){ console.error('accountsRender',e); }
-   try{ go('list'); }catch(e){ console.error('go',e); }
-
-   if(navigator.onLine){
-     setTimeout(async()=>{
-       try{ await syncNow(); }catch(e){ console.error('sync',e); }
-     },500);
+   const pin=String(pinEl&&pinEl.value||'').trim();
+   const status=document.getElementById('loginStatus');
+   if(!pin){
+     if(status){status.textContent='أدخل رمز المالك 0534';status.style.color='#b00020';}
+     return false;
    }
+   if(pin!=='0534'){
+     if(status){status.textContent='رمز المالك غير صحيح';status.style.color='#b00020';}
+     return false;
+   }
+   role='owner';
+   workerId='';
+   try{ localStorage.setItem('ak_role','owner'); }catch(_){}
+   const login=document.getElementById('loginScreen');
+   const app=document.getElementById('app');
+   if(login) login.style.display='none';
+   if(app) app.style.display='';
+   try{ if(pinEl) pinEl.value=''; }catch(_){}
+   try{ render(); }catch(_){}
+   try{ cloudPullMerge && cloudPullMerge(); }catch(_){}
+   return false;
  }catch(err){
-   console.error(err);
-   setLoginStatus('تعذر الدخول: '+(err&&err.message?err.message:'خطأ غير معروف'),true);
+   const status=document.getElementById('loginStatus');
+   if(status){status.textContent='تعذر الدخول: '+(err&&err.message?err.message:'خطأ غير معروف');status.style.color='#b00020';}
+   return false;
  }
 }
 function logout(){
@@ -3469,17 +3463,7 @@ function changeOwnerPin(){
   alert('تم تغيير رمز المالك');
 }
 
-// v117: مسار واحد فقط لأزرار الدخول مع رسالة تشخيص ظاهرة.
-(function bindLoginButtons(){
- const ownerBtn=document.getElementById('ownerLoginBtn');
- const workerBtn=document.getElementById('workerLoginBtn');
- if(ownerBtn)ownerBtn.addEventListener('click',ownerLogin);
- if(workerBtn)workerBtn.addEventListener('click',workerLogin);
- const ownerPin=document.getElementById('ownerLoginPin');
- const workerPin=document.getElementById('loginPin');
- if(ownerPin)ownerPin.addEventListener('keydown',e=>{if(e.key==='Enter')ownerLogin(e)});
- if(workerPin)workerPin.addEventListener('keydown',e=>{if(e.key==='Enter')workerLogin(e)});
-})();
+
 
 db.orders.forEach((o,i)=>{
  if(!o.modifiedAt)o.modifiedAt='2000-01-01T00:00:00.000Z';
@@ -3514,4 +3498,12 @@ window.addEventListener('error',function(ev){
    }
  }catch(_){}
 });
+
+document.addEventListener('DOMContentLoaded',function(){
+  const op=document.getElementById('ownerLoginPin');
+  const wp=document.getElementById('loginPin');
+  if(op) op.addEventListener('keydown',function(e){ if(e.key==='Enter'){ ownerLogin(e); }});
+  if(wp) wp.addEventListener('keydown',function(e){ if(e.key==='Enter'){ workerLogin(e); }});
+});
+
 </script></body></html>
