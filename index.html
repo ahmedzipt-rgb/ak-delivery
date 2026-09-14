@@ -499,7 +499,7 @@ body #overlay > .drawer{
 <select id=eWorker></select>
 <select id=eStatus>
 <option>قيد التوزيع</option><option>تعذر الاتصال</option><option>مؤجل</option>
-<option>مبرمج</option><option>تم التسليم</option><option>رفض</option><option>مرتجع</option>
+<option>مبرمج</option><option>تم التسليم</option><option>رفض</option><option>ملغى</option><option>مرتجع</option>
 </select>
 </div>
 <textarea id=eOwnerNote placeholder="ملاحظة داخلية للمالك (لا تظهر للموزع)"></textarea>
@@ -522,6 +522,10 @@ body #overlay > .drawer{
 <button class=r onclick="rejectOrder()">رفض</button>
 </div>
 <div style="display:flex;gap:4px;align-items:center">
+<input id="cancelReason" type="text" placeholder="سبب الإلغاء" style="width:auto;min-width:130px">
+<button class=r onclick="cancelOrder()">إلغاء الطلب</button>
+</div>
+<div style="display:flex;gap:4px;align-items:center">
 <input id="postponeDate" type="date" style="width:auto">
 <button class=gr onclick="postponeOrder()">تأجيل</button>
 </div>
@@ -530,7 +534,7 @@ body #overlay > .drawer{
 <div id="ownerDeleteBox" style="margin-top:10px"></div>
 <button class=c onclick="statusSet('مبرمج')">برمجة</button><button class=gr onclick="statusSet('طلب رجوع','مرتجع')">مرتجع</button></div><h3>سجل حالة التوصيل</h3><div id=history class=log></div><hr><h3>التعليقات</h3><div id=remarks class=log></div><textarea id=remark placeholder="تعليق جديد"></textarea><button class=btn onclick=remarkAdd()>إضافة تعليق</button></div></div>
 <script>
-// AK Delivery v104: البحث الشامل + عرض تفاصيل الحالة وجميع مراحل الطلب حتى المحذوف
+// AK Delivery v108: إلغاء الطلب مع سبب الإلغاء + الحفاظ على حزم التسويات
 const K='delivery12';
 /* النسخة 73: اعتماد رمز المالك 0534 مرة واحدة على هذا الجهاز */
 if(localStorage.getItem('ak_owner_pin_migration_v73')!=='done'){
@@ -885,7 +889,7 @@ function applyPermissions(){
  if(wb) wb.style.display=isWorker?'inline-block':'none';
  render();menu();updateSyncIndicators();
 }
-let db=JSON.parse(localStorage.getItem(K)||'null')||{orders:[],workers:[]},filter='قيد التوزيع',current=null,states=['الكل','قيد التوزيع','تعذر الاتصال','مؤجل','مبرمج','تم التسليم','رفض','مرتجع'];
+let db=JSON.parse(localStorage.getItem(K)||'null')||{orders:[],workers:[]},filter='قيد التوزيع',current=null,states=['الكل','قيد التوزيع','تعذر الاتصال','مؤجل','مبرمج','تم التسليم','رفض','ملغى','مرتجع'];
 if(!Array.isArray(db.returnBatches))db.returnBatches=[];
 if(!Array.isArray(db.deliveryBatches))db.deliveryBatches=[];
 if(!Array.isArray(db.deliveryTransfers))db.deliveryTransfers=[];
@@ -1838,6 +1842,8 @@ function openOrder(id){
  ${o.deletedAt?`<b>تاريخ الحذف</b><span>${new Date(o.deletedAt).toLocaleString('ar-MA')}${o.deletedBy?' — بواسطة '+htmlEscape(o.deletedBy):''}</span>`:''}
  <b>آخر تعديل</b><span>${o.modifiedBy||'—'}${o.modifiedAt?' — '+new Date(o.modifiedAt).toLocaleString('ar-MA'):''}</span>
  ${o.rejectReason?`<b>سبب الرفض</b><span>${o.rejectReason}</span>`:''}
+ ${o.cancelReason?`<b>سبب الإلغاء</b><span>${htmlEscape(o.cancelReason)}</span>`:''}
+ ${o.cancelledAt?`<b>تاريخ الإلغاء</b><span>${htmlEscape(o.cancelledAt)}</span>`:''}
  ${o.postponeDate?`<b>مؤجل إلى</b><span>${o.postponeDate}</span>`:''}
  </div>
  <h3 style="margin-top:14px">المراحل التي مر بها الطلب</h3>
@@ -2647,6 +2653,19 @@ function rejectOrder(){
  o.rejectReason=reason;
  appendOrderHistory(o,'رفض — السبب: '+reason);
  save(); openOrder(current);
+}
+function cancelOrder(){
+ let o=db.orders.find(x=>x.id===current); if(!o)return;
+ if(o.deletedAt)return alert('الطلب محذوف ولا يمكن تغيير حالته');
+ let el=document.getElementById('cancelReason');
+ let reason=(el?.value||'').trim();
+ if(!reason)return alert('اكتب سبب إلغاء الطلب أولاً');
+ if(!confirm('تأكيد إلغاء هذا الطلب؟'))return;
+ o.status='ملغى';
+ o.cancelReason=reason;
+ o.cancelledAt=tm();
+ appendOrderHistory(o,'تم إلغاء الطلب — السبب: '+reason);
+ save(); menu(); render(); accountsRender(); openOrder(current);
 }
 function postponeOrder(){
  let o=db.orders.find(x=>x.id===current); if(!o)return;
