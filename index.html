@@ -311,7 +311,7 @@ body #overlay > .drawer{
  <select id="loginWorker"><option value="">اختر حسابك</option></select>
 <input id="loginPin" type="password" inputmode="numeric" placeholder="الرمز السري">
 <div id="loginStatus" style="margin-top:8px;font-weight:700;min-height:22px"></div>
-<div style="margin-top:6px;font-size:12px;opacity:.7">الإصدار 120</div>
+<div style="margin-top:6px;font-size:12px;opacity:.7">الإصدار 121</div>
 <button id="workerLoginBtn" type="button" onclick="workerLogin(event)" class="btn" style="width:100%">دخول الموزع</button>
 <hr>
 <h3>إنشاء حساب موزع</h3>
@@ -898,35 +898,48 @@ async function workerLogin(ev){
  }
 }
 function ownerLogin(ev){
- try{
-   if(ev&&ev.preventDefault) ev.preventDefault();
-   const pinEl=document.getElementById('ownerLoginPin');
-   const pin=String(pinEl&&pinEl.value||'').trim();
-   const status=document.getElementById('loginStatus');
-   if(!pin){
-     if(status){status.textContent='أدخل رمز المالك 0534';status.style.color='#b00020';}
-     return false;
-   }
-   if(pin!=='0534'){
-     if(status){status.textContent='رمز المالك غير صحيح';status.style.color='#b00020';}
-     return false;
-   }
-   role='owner';
-   workerId='';
-   try{ localStorage.setItem('ak_role','owner'); }catch(_){}
-   const login=document.getElementById('loginScreen');
-   const app=document.getElementById('app');
-   if(login) login.style.display='none';
-   if(app) app.style.display='';
-   try{ if(pinEl) pinEl.value=''; }catch(_){}
-   try{ render(); }catch(_){}
-   try{ cloudPullMerge && cloudPullMerge(); }catch(_){}
-   return false;
- }catch(err){
-   const status=document.getElementById('loginStatus');
-   if(status){status.textContent='تعذر الدخول: '+(err&&err.message?err.message:'خطأ غير معروف');status.style.color='#b00020';}
-   return false;
- }
+  try{
+    if(ev&&ev.preventDefault)ev.preventDefault();
+    const pinEl=document.getElementById('ownerLoginPin');
+    const loginEl=document.getElementById('loginScreen');
+    const pin=String(pinEl&&pinEl.value||'').trim();
+
+    if(!pin){ setLoginStatus('أدخل رمز المالك 0534',true); return false; }
+    if(pin!=='0534'){ setLoginStatus('رمز المالك غير صحيح',true); return false; }
+
+    session={role:'owner',workerId:null};
+    ownerMode=true;
+    saveSession();
+
+    if(pinEl)pinEl.value='';
+    if(loginEl)loginEl.style.display='none';
+
+    try{ applyPermissions(); }catch(e){ console.error(e); }
+    try{
+      filter='قيد التوزيع';
+      menu();
+      render();
+      renderWorkers();
+      accountsRender();
+      go('list');
+    }catch(e){ console.error(e); }
+
+    setLoginStatus('',false);
+
+    if(navigator.onLine){
+      setTimeout(async()=>{
+        try{
+          await cloudPull(true,true);
+          try{ menu();render();renderWorkers();accountsRender(); }catch(e){console.error(e);}
+        }catch(_){}
+      },250);
+    }
+    return false;
+  }catch(err){
+    console.error(err);
+    setLoginStatus('تعذر تسجيل دخول المالك: '+(err&&err.message?err.message:'خطأ غير معروف'),true);
+    return false;
+  }
 }
 function logout(){
  session={role:null,workerId:null};ownerMode=false;clearSession();
