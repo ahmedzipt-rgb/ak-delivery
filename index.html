@@ -311,7 +311,7 @@ body #overlay > .drawer{
  <select id="loginWorker"><option value="">اختر حسابك</option></select>
 <input id="loginPin" type="password" inputmode="numeric" placeholder="الرمز السري">
 <div id="loginStatus" style="margin-top:8px;font-weight:700;min-height:22px"></div>
-<div style="margin-top:6px;font-size:12px;opacity:.7">الإصدار 117</div>
+<div style="margin-top:6px;font-size:12px;opacity:.7">الإصدار 118</div>
 <button id="workerLoginBtn" type="button" class="btn" style="width:100%">دخول الموزع</button>
 <hr>
 <h3>إنشاء حساب موزع</h3>
@@ -319,7 +319,10 @@ body #overlay > .drawer{
 <input id="regPin" type="password" inputmode="numeric" placeholder="اختر رقمك السري">
 <input id="regPinConfirm" type="password" inputmode="numeric" placeholder="تأكيد الرقم السري">
 <button class="btn g" style="width:100%" onclick="workerRegister()">إنشاء حساب الموزع</button>
- <hr><button id="ownerLoginBtn" type="button" class="btn gr" style="width:100%">دخول المالك</button>
+ <hr>
+<div style="font-weight:800;font-size:20px;margin:12px 0 10px">دخول المالك</div>
+<input id="ownerLoginPin" type="password" inputmode="numeric" autocomplete="off" placeholder="أدخل رمز المالك 0534" style="width:100%;box-sizing:border-box;margin-bottom:10px">
+<button id="ownerLoginBtn" type="button" class="btn gr" style="width:100%">دخول المالك</button>
  
  </div>
 </div>
@@ -848,7 +851,7 @@ async function workerLogin(ev){
  try{
    if(ev&&ev.preventDefault)ev.preventDefault();
    const workerSel=document.getElementById('loginWorker');
-   const pinEl=document.getElementById('loginPin');
+   const pinEl=document.getElementById('ownerLoginPin');
    const loginEl=document.getElementById('loginScreen');
    const id=String(workerSel&&workerSel.value||'').trim();
    const pin=String(pinEl&&pinEl.value||'').trim();
