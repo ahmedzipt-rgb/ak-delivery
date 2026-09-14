@@ -905,6 +905,29 @@ let db=JSON.parse(localStorage.getItem(K)||'null')||{orders:[],workers:[]},filte
 if(!Array.isArray(db.returnBatches))db.returnBatches=[];
 if(!Array.isArray(db.deliveryBatches))db.deliveryBatches=[];
 if(!Array.isArray(db.deliveryTransfers))db.deliveryTransfers=[];
+// v113: الطلب لا يصبح قيد التوزيع إلا بعد تأكيد الموزع استلامه.
+if(localStorage.getItem('ak_transit_flow_v113')!=='done'){
+  let changed=false;
+  for(const o of (db.orders||[])){
+    if(!o||o.deletedAt||o.duplicateHidden||o.status!=='قيد التوزيع')continue;
+    const received=(db.deliveryTransfers||[]).some(t=>t&&!t.deletedAt&&String(t.orderId)===String(o.id)&&t.status==='received') || !!o.deliveryReceivedAt;
+    if(received)continue;
+    o.status='في الطريق';
+    o.modifiedAt=isoNow();o.modifiedBy='ترحيل النظام v113';
+    if(!Array.isArray(o.history))o.history=[];
+    o.history.push({time:tm(),text:'تصحيح المسار: في الطريق حتى يؤكد الموزع الاستلام'});
+    const w=(db.workers||[]).find(x=>!x.deletedAt&&String(x.id)===String(o.worker||''));
+    if(w && !(db.deliveryTransfers||[]).some(t=>!t.deletedAt&&String(t.orderId)===String(o.id))){
+      const now=isoNow(),label=tm();
+      db.deliveryTransfers.push({id:'DTMIG'+Date.now()+Math.random().toString(36).slice(2,6),orderId:String(o.id),workerId:String(w.id),workerName:w.name,status:'sent',sentAt:now,sentLabel:label,modifiedAt:now,modifiedBy:'ترحيل النظام v113'});
+      o.deliverySentAt=now;o.deliverySentLabel=label;
+      o.history.push({time:label,text:'تم إرسال الطلب للموزع '+w.name+' — في الطريق'});
+    }
+    changed=true;
+  }
+  if(changed)localStorage.setItem(K,JSON.stringify(db));
+  localStorage.setItem('ak_transit_flow_v113','done');
+}
 
 
 /* النسخة 112: مرجع موحد برمز الطلب + عدادات مطابقة للعرض + منع تكرار غير هدّام.
@@ -1420,8 +1443,8 @@ function updateReturnRequestCount(){
      // يعرض فقط الطلبات التي أرسلها المالك لهذا الموزع ولم يؤكد استلامها بعد.
      te.textContent=(db.deliveryTransfers||[]).filter(t=>!t.deletedAt&&t.status==='sent'&&String(t.workerId)===String(session.workerId)).length;
    }else{
-     // لدى المالك: مجموع الطلبات الموجودة فعلياً في الطريق إلى الموزعين ولم تُستلم بعد.
-     te.textContent=(db.deliveryTransfers||[]).filter(t=>!t.deletedAt&&t.status==='sent').length;
+     // لدى المالك: جميع الطلبات الموجودة في مرحلة في الطريق، سواء أُسندت للموزع أم ما زالت جاهزة للإرسال.
+     te.textContent=db.orders.filter(o=>!o.deletedAt&&!o.duplicateHidden&&o.status==='في الطريق').length;
    }
  }
 }
@@ -1444,7 +1467,7 @@ function menu(){
  updateReturnRequestCount();
  const settledIds=settledOrderIdSet();
  stateMenu.innerHTML=states.map(s=>{
-   const activeOrders=db.orders.filter(o=>!o.duplicateHidden&&!o.deletedAt&&!settledIds.has(String(o.id))&&(session.role!=='worker'||workerCanSeeOrder(o,session.workerId)));
+   const activeOrders=db.orders.filter(o=>!o.duplicateHidden&&!o.deletedAt&&o.status!=='في الطريق'&&!settledIds.has(String(o.id))&&(session.role!=='worker'||workerCanSeeOrder(o,session.workerId)));
    const n=s==='الكل'?activeOrders.length:activeOrders.filter(o=>o.status===s).length;
    return `<button data-menu-key="state:${htmlEscape(s)}" onclick="filter='${s}';go('list','state:${s}')">${s} <span class="menu-count">${n}</span></button>`;
  }).join('');
@@ -1573,9 +1596,9 @@ function importBulk(){
  let t=tm();
  bulkParsed.forEach((x,i)=>{
    let seq='AK'+String(n+i+1).padStart(6,'0');
-   db.orders.push({id:'SYS'+Date.now()+i,seq,clientNo:x.code,sender:'',recipient:x.name,phone:x.phone,address:x.address||x.city||'',city:x.city,product:'',amount:+x.amount||0,worker:'',status:'قيد التوزيع',history:[{time:t,text:'طلب جديد — إدخال جماعي — بواسطة '+actorName()},{time:t,text:'قيد التوزيع — بواسطة '+actorName()}],remarks:[],modifiedAt:isoNow(),modifiedBy:actorName()});
+   db.orders.push({id:'SYS'+Date.now()+i,seq,clientNo:x.code,sender:'',recipient:x.name,phone:x.phone,address:x.address||x.city||'',city:x.city,product:'',amount:+x.amount||0,worker:'',status:'في الطريق',history:[{time:t,text:'طلب جديد — إدخال جماعي — بواسطة '+actorName()},{time:t,text:'في الطريق — بانتظار الوصول إلى الموزع — بواسطة '+actorName()}],remarks:[],modifiedAt:isoNow(),modifiedBy:actorName()});
  });
- localStorage.setItem(K,JSON.stringify(db));bulkText.value='';bulkPreview.innerHTML='';filter='قيد التوزيع';save();alert('تمت إضافة '+bulkParsed.length+' طلبات بنجاح');go('list');
+ localStorage.setItem(K,JSON.stringify(db));bulkText.value='';bulkPreview.innerHTML='';save();alert('تمت إضافة '+bulkParsed.length+' طلبات بنجاح ونقلها إلى قسم في الطريق');go('deliveryTransfers','deliveryTransfers');
 }
 
 
@@ -1744,11 +1767,11 @@ function importSelectedPdfOrders(){
  let nums=db.orders.map(o=>{let m=String(o.seq||'').match(/^AK(\d+)$/i);return m?+m[1]:(/^\d+$/.test(String(o.seq||''))?+o.seq:0)}),n=(nums.length?Math.max(...nums):0),t=tm(),stamp=Date.now();
  selected.forEach((x,i)=>{
    const seq='AK'+String(n+i+1).padStart(6,'0');
-   db.orders.push({id:'PDF'+stamp+i,seq,clientNo:x.code,sender:'',recipient:x.name||'بدون اسم',phone:x.phone||'',address:x.address||'',city:x.city||'وجدة',product:'',amount:+x.amount||0,worker:'',status:'قيد التوزيع',importSource:'PDF',importFile:pdfImportFileName,history:[{time:t,text:'طلب جديد — استيراد PDF — بواسطة '+actorName()},{time:t,text:'قيد التوزيع — بواسطة '+actorName()}],remarks:[],modifiedAt:isoNow(),modifiedBy:actorName()});
+   db.orders.push({id:'PDF'+stamp+i,seq,clientNo:x.code,sender:'',recipient:x.name||'بدون اسم',phone:x.phone||'',address:x.address||'',city:x.city||'وجدة',product:'',amount:+x.amount||0,worker:'',status:'في الطريق',importSource:'PDF',importFile:pdfImportFileName,history:[{time:t,text:'طلب جديد — استيراد PDF — بواسطة '+actorName()},{time:t,text:'في الطريق — بانتظار الوصول إلى الموزع — بواسطة '+actorName()}],remarks:[],modifiedAt:isoNow(),modifiedBy:actorName()});
  });
- localStorage.setItem(K,JSON.stringify(db));save();filter='قيد التوزيع';
+ localStorage.setItem(K,JSON.stringify(db));save();
  alert('تم نسخ '+selected.length+' طلب بنجاح.');
- pdfParsedOrders=[];pdfImportPreview.innerHTML='';pdfImportStatus.textContent='';pdfFileInput.value='';go('list','home');
+ pdfParsedOrders=[];pdfImportPreview.innerHTML='';pdfImportStatus.textContent='';pdfFileInput.value='';go('deliveryTransfers','deliveryTransfers');
 }
 
 function nextSeq(){
@@ -1762,7 +1785,19 @@ function nextSeq(){
  let n=(nums.length?Math.max(...nums):0)+1;
  return 'AK'+String(n).padStart(6,'0');
 }
-function add(e){e.preventDefault();if(hasExistingOrderCode(clientNo.value))return alert('هذا الطلب موجود بالفعل ولن يتم تكراره: '+clientNo.value);let t=tm(),code='MP'+String(Date.now()).slice(-9);seq.value=nextSeq();db.orders.push({id:code,seq:seq.value,sender:sender.value,clientNo:clientNo.value,recipient:recipient.value,phone:phone.value,address:address.value,city:city.value,product:product.value,amount:+amount.value,worker:worker.value,status:'قيد التوزيع',history:[{time:t,text:'طلب جديد — بواسطة '+actorName()},{time:t,text:'قيد التوزيع — بواسطة '+actorName()}],remarks:firstComment.value?[{time:t,text:firstComment.value+' — بواسطة '+actorName()}]:[],modifiedAt:isoNow(),modifiedBy:actorName()});e.target.reset();city.value='وجدة';save();filter='قيد التوزيع';go('list')}
+function add(e){
+ e.preventDefault();
+ if(hasExistingOrderCode(clientNo.value))return alert('هذا الطلب موجود بالفعل ولن يتم تكراره: '+clientNo.value);
+ let t=tm(),code='MP'+String(Date.now()).slice(-9);seq.value=nextSeq();
+ const wid=String(worker.value||'');
+ const o={id:code,seq:seq.value,sender:sender.value,clientNo:clientNo.value,recipient:recipient.value,phone:phone.value,address:address.value,city:city.value,product:product.value,amount:+amount.value,worker:wid,status:'في الطريق',history:[{time:t,text:'طلب جديد — بواسطة '+actorName()},{time:t,text:'في الطريق — بانتظار الوصول إلى الموزع — بواسطة '+actorName()}],remarks:firstComment.value?[{time:t,text:firstComment.value+' — بواسطة '+actorName()}]:[],modifiedAt:isoNow(),modifiedBy:actorName()};
+ db.orders.push(o);
+ if(wid){
+   const w=db.workers.find(x=>String(x.id)===wid&&!x.deletedAt);
+   if(w) createPendingDeliveryTransfer(o,w,'إرسال تلقائي بعد إنشاء الطلب');
+ }
+ e.target.reset();city.value='وجدة';save();go('deliveryTransfers','deliveryTransfers');
+}
 
 function runOrderSearch(){
   render();
@@ -1878,6 +1913,7 @@ function visibleOrders(){
    // بدون بحث: لا تعرض الطلبات المحذوفة ولا الطلبات التي أغلقت داخل حزمة تسوية مالية.
    // تبقى الطلبات المسواة محفوظة ويمكن العثور عليها بالبحث الشامل وفتح تفاصيلها كاملة.
    if(o.deletedAt||isOrderSettled(o))return false;
+   if(o.status==='في الطريق')return false;
    return filter==='الكل'||o.status===filter;
  });
 }
@@ -2045,6 +2081,18 @@ function renderReturnCreate(){
 
 function ensureDeliveryTransfers(){
  if(!Array.isArray(db.deliveryTransfers))db.deliveryTransfers=[];
+}
+function createPendingDeliveryTransfer(o,w,historyText){
+ ensureDeliveryTransfers();
+ if(!o||!w)return null;
+ const old=latestDeliveryTransferForOrder(o.id);
+ if(old)return old;
+ const now=isoNow(), label=tm();
+ const t={id:'DT'+Date.now()+Math.random().toString(36).slice(2,6),orderId:String(o.id),workerId:String(w.id),workerName:w.name,status:'sent',sentAt:now,sentLabel:label,modifiedAt:now,modifiedBy:actorName()};
+ db.deliveryTransfers.push(t);
+ o.deliveryTransferId=t.id;o.deliverySentAt=now;o.deliverySentLabel=label;o.status='في الطريق';o.modifiedAt=now;o.modifiedBy=actorName();
+ appendOrderHistory(o,historyText||('أرسل المالك الطلب إلى الموزع '+w.name+' وهو في الطريق'));
+ return t;
 }
 function latestDeliveryTransferForOrder(orderId){
  ensureDeliveryTransfers();
@@ -2247,7 +2295,7 @@ function renderDeliveryTransfers(){
    if(titleEl)titleEl.textContent='📤 إرسال الطلبات للموزع';
    if(helpEl){helpEl.textContent='';helpEl.style.display='none';}
    const orders=db.orders
-     .filter(o=>!o.deletedAt&&o.status==='قيد التوزيع')
+     .filter(o=>!o.deletedAt&&(o.status==='في الطريق'||(o.status==='قيد التوزيع'&&!o.deliveryReceivedAt&&latestDeliveryTransferForOrder(o.id)?.status!=='received')))
      .sort((a,b)=>timeValue(b.modifiedAt||b.createdAt)-timeValue(a.modifiedAt||a.createdAt))
      .filter(o=>{
        const hay=`${formatSeq(o.seq)} ${o.clientNo||''} ${o.recipient||''} ${o.phone||''} ${o.city||''}`.toLowerCase();
@@ -2288,25 +2336,7 @@ async function sendOrderToWorker(orderId){
  if(old)return alert(old.status==='received'?'هذا الطلب استلمه الموزع بالفعل':'هذا الطلب أُرسل للموزع بالفعل وينتظر التأكيد');
 
  if(!confirm('إرسال هذا الطلب إلى '+w.name+' لتأكيد استلامه؟'))return;
- const now=isoNow(), label=tm();
- const t={
-   id:'DT'+Date.now()+Math.random().toString(36).slice(2,6),
-   orderId:String(o.id),
-   workerId:String(w.id),
-   workerName:w.name,
-   status:'sent',
-   sentAt:now,
-   sentLabel:label,
-   modifiedAt:now,
-   modifiedBy:actorName()
- };
- db.deliveryTransfers.push(t);
- o.deliveryTransferId=t.id;
- o.deliverySentAt=now;
- o.deliverySentLabel=label;
- o.modifiedAt=now;
- o.modifiedBy=actorName();
- appendOrderHistory(o,'أرسل المالك الطلب إلى الموزع '+w.name+' لتأكيد الاستلام');
+ const t=createPendingDeliveryTransfer(o,w,'أرسل المالك الطلب إلى الموزع '+w.name+' وهو في الطريق');
 
  localStorage.setItem(K,JSON.stringify(db));
  renderDeliveryTransfers();render();menu();
@@ -2339,9 +2369,10 @@ async function confirmOrderReceipt(transferId){
  o.deliveryReceivedLabel=label;
  o.deliveryReceivedByWorkerId=String(session.workerId);
  o.deliveryReceivedByWorkerName=actorName();
+ o.status='قيد التوزيع';
  o.modifiedAt=now;
  o.modifiedBy=actorName();
- appendOrderHistory(o,'أكد الموزع استلام الطلب');
+ appendOrderHistory(o,'أكد الموزع استلام الطلب — انتقل إلى قيد التوزيع');
 
  localStorage.setItem(K,JSON.stringify(db));
  renderDeliveryTransfers();render();menu();
@@ -3298,6 +3329,9 @@ async function assignCurrentOrder(){
 
   o.worker=wid;
   appendOrderHistory(o,'تم إسناد الطلب إلى الموزع '+w.name);
+  if(o.status==='في الطريق' || (!o.deliveryReceivedAt && o.status==='قيد التوزيع')){
+    createPendingDeliveryTransfer(o,w,'تم إسناد الطلب وإرساله إلى الموزع '+w.name+' — في الطريق');
+  }
   save();
 
   // رفع فوري وآمن حتى يظهر الطلب على هاتف الموزع.
@@ -3305,12 +3339,12 @@ async function assignCurrentOrder(){
     const ok=await syncNow();
     if(ok){
       openOrder(current);
-      return alert('تم إسناد الطلب إلى '+w.name+' ومزامنته مع السحابة ✓');
+      return alert('تم إسناد الطلب إلى '+w.name+' وإرساله إلى قسم في الطريق وظهر للموزع ✓');
     }
   }
 
   openOrder(current);
-  alert('تم إسناد الطلب إلى '+w.name+' على هذا الجهاز، وستتم المزامنة تلقائياً.');
+  alert('تم إسناد الطلب إلى '+w.name+' ووضعه في الطريق، وستتم المزامنة تلقائياً.');
 }
 
 async function unassignCurrentOrder(){
