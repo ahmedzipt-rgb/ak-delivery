@@ -314,7 +314,7 @@ aside button{pointer-events:auto!important;touch-action:manipulation!important;}
  <select id="loginWorker"><option value="">اختر حسابك</option></select>
 <input id="loginPin" type="password" inputmode="numeric" placeholder="الرمز السري">
 <div id="loginStatus" style="margin-top:8px;font-weight:700;min-height:22px"></div>
-<div style="margin-top:6px;font-size:12px;opacity:.7">الإصدار 126</div>
+<div style="margin-top:6px;font-size:12px;opacity:.7">الإصدار 127</div>
 <button id="workerLoginBtn" type="button" onclick="workerLogin(event)" class="btn" style="width:100%">دخول الموزع</button>
 <hr>
 <h3>إنشاء حساب موزع</h3>
@@ -1001,6 +1001,39 @@ if(localStorage.getItem('ak_transit_flow_v113')!=='done'){
 }
 
 
+
+/* v127: تصحيح نهائي لمسار "في الطريق".
+   أي طلب ما زال قيد التوزيع ولم يوجد دليل استلام مؤكد من الموزع يعود إلى "في الطريق". */
+if(localStorage.getItem('ak_transit_repair_v127')!=='done'){
+  try{
+    let changed=false;
+    if(!Array.isArray(db.deliveryTransfers))db.deliveryTransfers=[];
+    for(const o of (db.orders||[])){
+      if(!o||o.deletedAt||o.duplicateHidden||o.status!=='قيد التوزيع')continue;
+      const received=!!o.deliveryReceivedAt || !!o.deliveryReceivedLabel ||
+        (db.deliveryTransfers||[]).some(t=>t&&!t.deletedAt&&String(t.orderId)===String(o.id)&&t.status==='received');
+      if(received)continue;
+      o.status='في الطريق';
+      o.modifiedAt=new Date().toISOString();
+      o.modifiedBy='تصحيح المسار v127';
+      changed=true;
+      const w=(db.workers||[]).find(x=>x&&!x.deletedAt&&String(x.id)===String(o.worker||''));
+      const active=(db.deliveryTransfers||[]).find(t=>t&&!t.deletedAt&&String(t.orderId)===String(o.id));
+      if(w&&!active){
+        const now=new Date().toISOString();
+        db.deliveryTransfers.push({
+          id:'DTV127'+Date.now()+Math.random().toString(36).slice(2,7),
+          orderId:String(o.id),workerId:String(w.id),workerName:w.name,
+          status:'sent',sentAt:now,sentLabel:new Date().toLocaleString('ar-MA'),
+          modifiedAt:now,modifiedBy:'تصحيح المسار v127'
+        });
+      }
+    }
+    if(changed)localStorage.setItem(K,JSON.stringify(db));
+    localStorage.setItem('ak_transit_repair_v127','done');
+  }catch(e){console.error('transit repair v127',e);}
+}
+
 /* النسخة 112: مرجع موحد برمز الطلب + عدادات مطابقة للعرض + منع تكرار غير هدّام.
    الحماية تتم عند الإدخال وفي السجلات التشغيلية فقط، بينما تبقى كل الطلبات الأصلية محفوظة. */
 function normOrderCode(v){return String(v||'').trim().toUpperCase().replace(/\s+/g,'');}
@@ -1544,12 +1577,12 @@ function menu(){
    return `<button data-menu-key="state:${htmlEscape(s)}" onclick="filter='${s}';go('list','state:${s}')">${s} <span class="menu-count">${n}</span></button>`;
  }).join('');
  updateSidebarActive();
+ try{bindMainNavigation();}catch(_){}
 }
-function go(x,menuKey){if(session.role==='worker'&&['add','bulk','pdfImport','returnCreate','workers','accounts','invoices','backupSafe','cloudSetup','emergencySync'].includes(x))return;if(menuKey)sidebarActiveKey=menuKey;document.querySelectorAll('.page').forEach(p=>p.classList.remove('on'));document.getElementById(x).classList.add('on');if(x==='list'){render();if(session.role==='worker')markAssignedSeen();}if(x==='add')seq.value=nextSeq();if(x==='accounts')accountsRender();if(x==='invoices')invoicesRender();if(x==='returnCreate')renderReturnCreate();if(x==='returnBatches')renderReturnBatches();if(x==='deliveryBatches')renderDeliveryBatches();if(x==='deliveryTransfers'){
- if(session.role==='worker'&&!['pending','received'].includes(deliveryTransferView))deliveryTransferView='pending';
- if(session.role!=='worker'&&!['ready','waiting','received'].includes(deliveryTransferView))deliveryTransferView='ready';
- renderDeliveryTransfers();
-}if(x==='backupSafe'){updateBackupStatus();showLocalSnapshots()}if(x==='emergencySync'){renderEmergencySync()}if(x==='cloudSetup'){updateCloudStatus('جاهز')}updateSidebarActive()}
+function go(x,menuKey){
+ if(menuKey)return directNavigate(menuKey);
+ return directNavigate(x==='list'?'home':x);
+}
 
 var bulkParsed=[];
 function parseBulkOrders(txt){
@@ -3506,37 +3539,64 @@ window.addEventListener('unhandledrejection',function(ev){
   runtimeDiag('Promise: '+((ev.reason&&ev.reason.message)||ev.reason||'خطأ'));
 });
 
-function bindMainNavigation(){
-  const aside=document.querySelector('aside');
-  if(!aside || aside.dataset.boundNav==='1')return;
-  aside.dataset.boundNav='1';
-
-  aside.addEventListener('click',function(e){
-    const b=e.target.closest('button[data-menu-key]');
-    if(!b || !aside.contains(b))return;
-    try{
-      e.preventDefault();
-      e.stopPropagation();
-      const key=String(b.dataset.menuKey||'');
-      if(key.startsWith('state:')){
-        filter=key.slice(6);
-        go('list',key);
-      }else{
-        const map={
-          home:'list', add:'add', bulk:'bulk', pdfImport:'pdfImport',
-          returnCreate:'returnCreate', returnBatches:'returnBatches',
-          deliveryTransfers:'deliveryTransfers', workers:'workers',
-          accounts:'accounts', invoices:'invoices', backupSafe:'backupSafe',
-          cloudSetup:'cloudSetup', emergencySync:'emergencySync'
-        };
-        const target=map[key];
-        if(target)go(target,key);
-      }
-    }catch(err){
-      console.error(err);
-      runtimeDiag('زر القائمة: '+(err&&err.message?err.message:String(err)));
+function directNavigate(key){
+  try{
+    let target='';
+    if(String(key).startsWith('state:')){
+      filter=String(key).slice(6);
+      target='list';
+    }else{
+      const map={
+        home:'list',add:'add',bulk:'bulk',pdfImport:'pdfImport',
+        returnCreate:'returnCreate',returnBatches:'returnBatches',
+        deliveryTransfers:'deliveryTransfers',workers:'workers',
+        accounts:'accounts',invoices:'invoices',backupSafe:'backupSafe',
+        cloudSetup:'cloudSetup',emergencySync:'emergencySync'
+      };
+      target=map[key]||'';
     }
-  },true);
+    if(!target)return false;
+    if(session.role==='worker'&&['add','bulk','pdfImport','returnCreate','workers','accounts','invoices','backupSafe','cloudSetup','emergencySync'].includes(target))return false;
+
+    sidebarActiveKey=key;
+    document.querySelectorAll('main > .page').forEach(p=>p.classList.remove('on'));
+    const page=document.getElementById(target);
+    if(!page)throw new Error('الصفحة غير موجودة: '+target);
+    page.classList.add('on');
+
+    try{
+      if(target==='list'){render();if(session.role==='worker')markAssignedSeen();}
+      else if(target==='add'){const s=document.getElementById('seq');if(s)s.value=nextSeq();}
+      else if(target==='accounts')accountsRender();
+      else if(target==='invoices')invoicesRender();
+      else if(target==='returnCreate')renderReturnCreate();
+      else if(target==='returnBatches')renderReturnBatches();
+      else if(target==='deliveryTransfers'){
+        deliveryTransferView=session.role==='worker'?'pending':'ready';
+        renderDeliveryTransfers();
+      }
+      else if(target==='backupSafe'){updateBackupStatus();showLocalSnapshots();}
+      else if(target==='emergencySync')renderEmergencySync();
+      else if(target==='cloudSetup')updateCloudStatus('جاهز');
+    }catch(e){console.error('page render',e);}
+    try{updateSidebarActive();}catch(_){}
+    return false;
+  }catch(err){
+    console.error('directNavigate',err);
+    runtimeDiag('خطأ في فتح الصفحة: '+(err&&err.message?err.message:String(err)));
+    return false;
+  }
+}
+
+function bindMainNavigation(){
+  document.querySelectorAll('aside button[data-menu-key]').forEach(function(b){
+    if(b.dataset.directBound==='1')return;
+    b.dataset.directBound='1';
+    b.onclick=function(ev){
+      if(ev){ev.preventDefault();ev.stopPropagation();}
+      return directNavigate(String(b.dataset.menuKey||''));
+    };
+  });
 }
 
 db.orders.forEach((o,i)=>{
