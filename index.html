@@ -521,8 +521,20 @@ body #overlay > .drawer{
 </select>
 <button class=r onclick="rejectOrder()">رفض</button>
 </div>
-<div style="display:flex;gap:4px;align-items:center">
-<input id="cancelReason" type="text" placeholder="سبب الإلغاء" style="width:auto;min-width:130px">
+<div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap">
+<select id="cancelReasonPreset" onchange="cancelReasonPresetChange()" style="width:auto;min-width:150px">
+<option value="">سبب الإلغاء...</option>
+<option>الزبون طلب الإلغاء</option>
+<option>تعذر التواصل مع الزبون</option>
+<option>العنوان غير صحيح</option>
+<option>الطلب مكرر</option>
+<option>الزبون غير متواجد</option>
+<option>تأخر الطلب</option>
+<option>مشكلة في المنتج</option>
+<option>خطأ في الطلب</option>
+<option value="__other__">سبب آخر</option>
+</select>
+<input id="cancelReason" type="text" placeholder="اكتب سببًا آخر" style="width:auto;min-width:150px;display:none">
 <button class=r onclick="cancelOrder()">إلغاء الطلب</button>
 </div>
 <div style="display:flex;gap:4px;align-items:center">
@@ -534,7 +546,7 @@ body #overlay > .drawer{
 <div id="ownerDeleteBox" style="margin-top:10px"></div>
 <button class=c onclick="statusSet('مبرمج')">برمجة</button><button class=gr onclick="statusSet('طلب رجوع','مرتجع')">مرتجع</button></div><h3>سجل حالة التوصيل</h3><div id=history class=log></div><hr><h3>التعليقات</h3><div id=remarks class=log></div><textarea id=remark placeholder="تعليق جديد"></textarea><button class=btn onclick=remarkAdd()>إضافة تعليق</button></div></div>
 <script>
-// AK Delivery v108: إلغاء الطلب مع سبب الإلغاء + الحفاظ على حزم التسويات
+// AK Delivery v109: اقتراحات جاهزة لسبب إلغاء الطلب + سبب آخر
 const K='delivery12';
 /* النسخة 73: اعتماد رمز المالك 0534 مرة واحدة على هذا الجهاز */
 if(localStorage.getItem('ak_owner_pin_migration_v73')!=='done'){
@@ -2654,12 +2666,22 @@ function rejectOrder(){
  appendOrderHistory(o,'رفض — السبب: '+reason);
  save(); openOrder(current);
 }
+function cancelReasonPresetChange(){
+ let p=document.getElementById('cancelReasonPreset'), el=document.getElementById('cancelReason');
+ if(!p||!el)return;
+ let other=p.value==='__other__';
+ el.style.display=other?'inline-block':'none';
+ if(!other)el.value='';
+ if(other)el.focus();
+}
 function cancelOrder(){
  let o=db.orders.find(x=>x.id===current); if(!o)return;
  if(o.deletedAt)return alert('الطلب محذوف ولا يمكن تغيير حالته');
+ let p=document.getElementById('cancelReasonPreset');
  let el=document.getElementById('cancelReason');
- let reason=(el?.value||'').trim();
- if(!reason)return alert('اكتب سبب إلغاء الطلب أولاً');
+ let reason=p?.value||'';
+ if(reason==='__other__')reason=(el?.value||'').trim();
+ if(!reason)return alert('اختر سبب إلغاء الطلب أولاً');
  if(!confirm('تأكيد إلغاء هذا الطلب؟'))return;
  o.status='ملغى';
  o.cancelReason=reason;
