@@ -907,7 +907,7 @@ if(!Array.isArray(db.deliveryBatches))db.deliveryBatches=[];
 if(!Array.isArray(db.deliveryTransfers))db.deliveryTransfers=[];
 
 
-/* النسخة 111: منع التكرار بدون حذف أو إخفاء أي طلب أصلي.
+/* النسخة 112: مرجع موحد برمز الطلب + عدادات مطابقة للعرض + منع تكرار غير هدّام.
    الحماية تتم عند الإدخال وفي السجلات التشغيلية فقط، بينما تبقى كل الطلبات الأصلية محفوظة. */
 function normOrderCode(v){return String(v||'').trim().toUpperCase().replace(/\s+/g,'');}
 function orderUniqueKey(o){
@@ -921,6 +921,41 @@ function uniqueIds(arr){
   const seen=new Set(),out=[];
   for(const v of (arr||[])){const k=String(v);if(k&&!seen.has(k)){seen.add(k);out.push(v)}}
   return out;
+}
+
+function orderById(id){
+  return (db.orders||[]).find(o=>o&&String(o.id)===String(id))||null;
+}
+function orderRefKeyById(id){
+  const o=orderById(id);
+  return o?orderUniqueKey(o):('I:'+String(id||''));
+}
+function returnDisplayModel(){
+  ensureReturnBatches();
+  const batches=(db.returnBatches||[]).filter(b=>b&&!b.deletedAt&&!b.duplicateHidden)
+    .filter(b=>session.role!=='worker'||String(b.workerId)===String(session.workerId))
+    .slice().sort((a,b)=>timeValue(b.createdAt||b.modifiedAt)-timeValue(a.createdAt||a.modifiedAt));
+  const seen=new Set();
+  return batches.map(b=>{
+    const orders=[];
+    for(const raw of uniqueIds(b.orderIds||[])){
+      const o=orderById(raw); if(!o)continue;
+      const k=orderUniqueKey(o); if(!k||seen.has(k))continue;
+      seen.add(k); orders.push(o);
+    }
+    return {batch:b,orders};
+  }).filter(x=>x.orders.length>0);
+}
+function activeReturnRefKeys(){
+  const keys=new Set();
+  for(const b of (db.returnBatches||[])){
+    if(!b||b.deletedAt||b.duplicateHidden)continue;
+    for(const id of uniqueIds(b.orderIds||[])){
+      const o=orderById(id); if(!o)continue;
+      const k=orderUniqueKey(o); if(k)keys.add(k);
+    }
+  }
+  return keys;
 }
 function dedupeDatabase(){
   if(!db||typeof db!=='object')return false;
@@ -953,13 +988,13 @@ function dedupeDatabase(){
     return (pb-pa)||(timeValue(b.modifiedAt||b.receivedAt||b.sentAt)-timeValue(a.modifiedAt||a.receivedAt||a.sentAt));
   });
   for(const t of trs){
-    const oid=String(t.orderId||'');if(!oid)continue;
-    if(!transferOwner.has(oid)){transferOwner.set(oid,t);continue;}
-    t.deletedAt=t.deletedAt||now;t.duplicateHidden=true;t.duplicateOf=String(transferOwner.get(oid).id||'');t.modifiedAt=now;t.modifiedBy='النظام - منع تكرار سجل الإرسال';changed=true;
+    const key=orderRefKeyById(t.orderId);if(!key)continue;
+    if(!transferOwner.has(key)){transferOwner.set(key,t);continue;}
+    t.deletedAt=t.deletedAt||now;t.duplicateHidden=true;t.duplicateOf=String(transferOwner.get(key).id||'');t.modifiedAt=now;t.modifiedBy='النظام - منع تكرار سجل الإرسال';changed=true;
   }
 
-  // حزم الإرجاع: نفس الطلب لا يظهر مرتين، لكن لا نحذف أي معرف طلب من البيانات الأصلية.
-  // نعطي الأولوية للحزمة الأكثر تقدماً ثم الأقدم عند التعادل.
+  // حزم الإرجاع: لا نحذف ولا نعدل orderIds هنا إطلاقاً.
+  // منع التكرار يتم في العرض والإنشاء اعتماداً على رمز الطلب كمرجع ثابت.
   const rank={owner_confirmed:3,completed:2,pending:1};
   const owner=new Map();
   const batches=db.returnBatches.filter(b=>b&&!b.deletedAt&&!b.duplicateHidden).slice().sort((a,b)=>{
@@ -967,26 +1002,23 @@ function dedupeDatabase(){
     return (rb-ra)||(timeValue(a.createdAt||a.modifiedAt)-timeValue(b.createdAt||b.modifiedAt));
   });
   for(const b of batches){
-    const before=(b.orderIds||[]).length;
-    const kept=[];
     for(const raw of uniqueIds(b.orderIds||[])){
-      const oid=String(raw);if(!oid)continue;
-      if(owner.has(oid))continue;
-      owner.set(oid,b);kept.push(raw);
+      const o=orderById(raw); if(!o)continue;
+      const key=orderUniqueKey(o); if(!key||owner.has(key))continue;
+      owner.set(key,b);
     }
-    if(kept.length!==before){b.orderIds=kept;b.count=kept.length;b.modifiedAt=now;b.modifiedBy='النظام - منع تكرار الإرجاع';changed=true;}
-    // لا نحذف الحزمة الفارغة تلقائياً؛ تبقى كسجل تاريخي.
   }
 
   // أصلح ربط كل طلب بحزمته الفعلية إن وُجدت.
   for(const o of db.orders){
     if(!o||o.deletedAt)continue;
-    const b=owner.get(String(o.id));
+    const key=orderUniqueKey(o);
+    const b=key?owner.get(key):null;
     if(b){
       if(String(o.returnBatchId||'')!==String(b.id)){o.returnBatchId=b.id;o.returnBatchCode=b.code||'';o.modifiedAt=now;changed=true;}
     }else if(o.status==='طلب رجوع' && o.returnBatchId){
-      // إذا اختفت الحزمة من العرض بسبب إصلاح سابق، لا نخفي الطلب؛ أزل الربط الميت ليظهر كطلب غير مرسل.
-      const exists=db.returnBatches.some(x=>x&&!x.deletedAt&&!x.duplicateHidden&&String(x.id)===String(o.returnBatchId)&&(x.orderIds||[]).map(String).includes(String(o.id)));
+      const exists=db.returnBatches.some(x=>x&&!x.deletedAt&&!x.duplicateHidden&&String(x.id)===String(o.returnBatchId)&&
+        (x.orderIds||[]).some(id=>orderRefKeyById(id)===key));
       if(!exists){delete o.returnBatchId;delete o.returnBatchCode;o.modifiedAt=now;o.modifiedBy='النظام - إصلاح ربط الإرجاع';changed=true;}
     }
   }
@@ -996,8 +1028,8 @@ function dedupeDatabase(){
   for(const st of db.settlements.filter(x=>x&&!x.duplicateHidden).slice().sort((a,b)=>timeValue(a.confirmedAt||a.date)-timeValue(b.confirmedAt||b.date))){
     const before=(st.orderIds||[]).length, kept=[];
     for(const raw of uniqueIds(st.orderIds||[])){
-      const oid=String(raw);if(!oid||settled.has(oid))continue;
-      settled.add(oid);kept.push(raw);
+      const key=orderRefKeyById(raw);if(!key||settled.has(key))continue;
+      settled.add(key);kept.push(raw);
     }
     if(kept.length!==before){st.orderIds=kept;if(Array.isArray(st.orderSnapshot))st.orderSnapshot=st.orderSnapshot.filter(x=>kept.map(String).includes(String(x.id)));changed=true;}
   }
@@ -1371,17 +1403,11 @@ function updateReturnRequestCount(){
  }
  let be=document.getElementById('returnBatchCount');
  if(be){
-   const n=(db.returnBatches||[]).filter(b=>{
-     if(!b||b.deletedAt)return false;
-     if(session.role==='worker')return String(b.workerId)===String(session.workerId)&&!(b.status==='completed'||b.status==='owner_confirmed'||b.confirmedAt);
-     return (b.status==='completed'||b.confirmedAt)&&!(b.status==='owner_confirmed'||b.ownerConfirmedAt);
-   });
-   // للموزع: العداد يعرض عدد الطلبات المطلوب إرجاعها، وليس عدد حزم الإرجاع.
-   const visibleBatches=(db.returnBatches||[]).filter(b=>b&&!b.deletedAt&&!b.duplicateHidden&&(session.role!=='worker'||String(b.workerId)===String(session.workerId)));
-   const ids=new Set(visibleBatches.flatMap(b=>b.orderIds||[]).map(String));
-   db.orders.filter(o=>!o.deletedAt&&o.status==='طلب رجوع'&&(session.role!=='worker'||orderAssignedToWorker(o,session.workerId))).forEach(o=>ids.add(String(o.id)));
-   const count=ids.size;
-   be.textContent=count;
+   // نفس المصدر الذي تُرسم منه الصفحة، لذلك يستحيل أن يظهر رقم أكبر من الطلبات الظاهرة.
+   const model=returnDisplayModel();
+   const keys=new Set();
+   for(const item of model)for(const o of item.orders){const k=orderUniqueKey(o);if(k)keys.add(k);}
+   be.textContent=keys.size;
  }
  let de=document.getElementById('deliveryBatchCount');
  if(de){
@@ -2380,8 +2406,8 @@ function renderDeliveryBatches(){
 
  el.innerHTML=arr.map(b=>{
    const received=b.status==='received';
-   const ids=uniqueIds(b.orderIds||[]).map(String);
-   const orders=db.orders.filter(o=>ids.includes(String(o.id)));
+   const orders=item.orders;
+   const ids=orders.map(o=>String(o.id));
    const lines=orders.map(o=>`<div style="padding:4px 0;border-bottom:1px solid #eee">
      <b dir="ltr">${formatSeq(o.seq)}</b> — <b>${htmlEscape(o.recipient||'—')}</b> — ${cash(o.amount)}
    </div>`).join('');
@@ -2514,15 +2540,14 @@ function ensureReturnBatches(){
 function renderReturnBatches(){
  ensureReturnBatches();
  const el=document.getElementById('returnBatchesList');if(!el)return;
- let arr=(db.returnBatches||[]).filter(b=>!b.duplicateHidden&&!b.deletedAt)
-   .filter(b=>!b.deletedAt&&(session.role!=='worker'||String(b.workerId)===String(session.workerId)))
-   .sort((a,b)=>timeValue(b.createdAt||b.modifiedAt)-timeValue(a.createdAt||a.modifiedAt));
- if(!arr.length){
+ const model=returnDisplayModel();
+ if(!model.length){
    el.innerHTML='لا توجد طلبات إرجاع مرسلة ومسجلة بعد.';
    updateReturnRequestCount();
    return;
  }
- el.innerHTML=arr.map(b=>{
+ el.innerHTML=model.map(item=>{
+   const b=item.batch;
    const workerDone=b.status==='completed'||b.status==='owner_confirmed'||!!b.confirmedAt;
    const ownerDone=b.status==='owner_confirmed'||!!b.ownerConfirmedAt;
    const ids=uniqueIds(b.orderIds||[]).map(String);
@@ -2566,8 +2591,8 @@ async function sendReturnBatches(){
  if(!isOwner)return alert('هذه العملية للمالك فقط');
  ensureReturnBatches();
 
- const inActiveBatch=new Set((db.returnBatches||[]).filter(b=>!b.deletedAt&&!b.duplicateHidden).flatMap(b=>b.orderIds||[]).map(String));
- const pending=db.orders.filter(o=>!o.duplicateHidden&&!o.deletedAt&&o.status==='طلب رجوع'&&!o.returnBatchId&&!inActiveBatch.has(String(o.id)));
+ const inActiveBatch=activeReturnRefKeys();
+ const pending=db.orders.filter(o=>!o.duplicateHidden&&!o.deletedAt&&o.status==='طلب رجوع'&&!o.returnBatchId&&!inActiveBatch.has(orderUniqueKey(o)));
  if(!pending.length)return alert('لا توجد طلبات إرجاع جديدة لإرسالها للموزعين');
 
  const grouped=new Map();
@@ -2679,7 +2704,8 @@ function createReturnFromList(id){
  const isOwner=(session&&session.role==='owner')||ownerMode===true;
  if(!isOwner)return alert('هذه الصلاحية للمالك فقط');
  let o=db.orders.find(x=>x.id===id);if(!o)return;
- if(o.status==='طلب رجوع'||o.status==='مرتجع'||(db.returnBatches||[]).some(b=>!b.deletedAt&&!b.duplicateHidden&&(b.orderIds||[]).map(String).includes(String(o.id))))return alert('الطلب موجود بالفعل ضمن الرجوع ولن يتم تكراره');
+ const rk=orderUniqueKey(o);
+ if(o.status==='طلب رجوع'||o.status==='مرتجع'||activeReturnRefKeys().has(rk))return alert('الطلب موجود بالفعل ضمن الرجوع ولن يتم تكراره');
  if(!confirm('إرسال طلب رجوع للطلب '+formatSeq(o.seq)+'؟'))return;
  let previous=o.status;
  o.status='طلب رجوع';o.returnRequestedAt=tm();
@@ -2718,7 +2744,8 @@ function requestReturn(){
  const isOwner=(session&&session.role==='owner')||ownerMode===true;
  if(!isOwner)return alert('إنشاء طلب الرجوع متاح للمالك فقط');
  let o=db.orders.find(x=>x.id===current);if(!o)return;
- if(o.status==='طلب رجوع'||(db.returnBatches||[]).some(b=>!b.deletedAt&&!b.duplicateHidden&&(b.orderIds||[]).map(String).includes(String(o.id))))return alert('يوجد طلب رجوع قائم بالفعل ولن يتم تكراره');
+ const rk=orderUniqueKey(o);
+ if(o.status==='طلب رجوع'||activeReturnRefKeys().has(rk))return alert('يوجد طلب رجوع قائم بالفعل ولن يتم تكراره');
  if(!confirm('إرسال طلب رجوع هذا الطلب إلى الموزع؟'))return;
  let previous=o.status;
  o.status='طلب رجوع';
