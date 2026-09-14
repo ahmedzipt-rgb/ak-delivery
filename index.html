@@ -311,8 +311,8 @@ body #overlay > .drawer{
  <select id="loginWorker"><option value="">اختر حسابك</option></select>
 <input id="loginPin" type="password" inputmode="numeric" placeholder="الرمز السري">
 <div id="loginStatus" style="margin-top:8px;font-weight:700;min-height:22px"></div>
-<div style="margin-top:6px;font-size:12px;opacity:.7">الإصدار 122</div>
-<button id="workerLoginBtn" type="button" onclick="workerLogin(event)" class="btn" style="width:100%">دخول الموزع</button>
+<div style="margin-top:6px;font-size:12px;opacity:.7">الإصدار 123</div>
+<button id="workerLoginBtn" type="button" disabled onclick="workerLogin(event)" class="btn" style="width:100%">دخول الموزع</button>
 <hr>
 <h3>إنشاء حساب موزع</h3>
 <input id="regName" placeholder="اختر اسمك">
@@ -322,7 +322,7 @@ body #overlay > .drawer{
  <hr>
 <div style="font-weight:800;font-size:20px;margin:12px 0 10px">دخول المالك</div>
 <input id="ownerLoginPin" type="password" inputmode="numeric" autocomplete="off" placeholder="أدخل رمز المالك 0534" style="width:100%;box-sizing:border-box;margin-bottom:10px">
-<button id="ownerLoginBtn" type="button" onclick="ownerLogin(event)" class="btn gr" style="width:100%">دخول المالك</button>
+<button id="ownerLoginBtn" type="button" disabled onclick="ownerLogin(event)" class="btn gr" style="width:100%">دخول المالك</button>
  
  </div>
 </div>
@@ -554,6 +554,7 @@ body #overlay > .drawer{
 <div id="ownerDeleteBox" style="margin-top:10px"></div>
 <button class=c onclick="statusSet('مبرمج')">برمجة</button><button class=gr onclick="statusSet('طلب رجوع','مرتجع')">مرتجع</button></div><h3>سجل حالة التوصيل</h3><div id=history class=log></div><hr><h3>التعليقات</h3><div id=remarks class=log></div><textarea id=remark placeholder="تعليق جديد"></textarea><button class=btn onclick=remarkAdd()>إضافة تعليق</button></div></div>
 <script>
+let appBootReady=false;
 let ownerMode=false,ownerTapCount=0,ownerTapTimer=null;
 
 // AK Delivery v109: اقتراحات جاهزة لسبب إلغاء الطلب + سبب آخر
@@ -851,6 +852,7 @@ function refreshLoginWorkers(){
 }
 async function workerLogin(ev){
  try{
+    if(!appBootReady){ setLoginStatus('انتظر لحظة حتى يكتمل تحميل التطبيق...',false); return; }
    if(ev&&ev.preventDefault)ev.preventDefault();
    const workerSel=document.getElementById('loginWorker');
    const pinEl=document.getElementById('loginPin');
@@ -901,6 +903,7 @@ async function workerLogin(ev){
 }
 function ownerLogin(ev){
   try{
+    if(!appBootReady){ setLoginStatus('انتظر لحظة حتى يكتمل تحميل التطبيق...',false); return false; }
     if(ev&&ev.preventDefault)ev.preventDefault();
     const pinEl=document.getElementById('ownerLoginPin');
     const loginEl=document.getElementById('loginScreen');
@@ -3520,5 +3523,16 @@ document.addEventListener('DOMContentLoaded',function(){
   if(op) op.addEventListener('keydown',function(e){ if(e.key==='Enter'){ ownerLogin(e); }});
   if(wp) wp.addEventListener('keydown',function(e){ if(e.key==='Enter'){ workerLogin(e); }});
 });
+
+
+// v123: لا نسمح بتسجيل الدخول قبل اكتمال تهيئة جميع المتغيرات والوظائف.
+appBootReady=true;
+try{
+  const wb=document.getElementById('workerLoginBtn');
+  const ob=document.getElementById('ownerLoginBtn');
+  if(wb)wb.disabled=false;
+  if(ob)ob.disabled=false;
+  setLoginStatus('',false);
+}catch(_){}
 
 </script></body></html>
