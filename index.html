@@ -314,7 +314,7 @@ aside button{pointer-events:auto!important;touch-action:manipulation!important;}
  <select id="loginWorker"><option value="">اختر حسابك</option></select>
 <input id="loginPin" type="password" inputmode="numeric" placeholder="الرمز السري">
 <div id="loginStatus" style="margin-top:8px;font-weight:700;min-height:22px"></div>
-<div style="margin-top:6px;font-size:12px;opacity:.7">الإصدار 128</div>
+<div style="margin-top:6px;font-size:12px;opacity:.7">الإصدار 129</div>
 <button id="workerLoginBtn" type="button" onclick="workerLogin(event)" class="btn" style="width:100%">دخول الموزع</button>
 <hr>
 <h3>إنشاء حساب موزع</h3>
@@ -1356,20 +1356,17 @@ async function cloudRequest(action,payload={}){
       cache:'no-store'
     });
 
-    // نعطي Google Sheets/Apps Script وقتاً قصيراً لإتمام الكتابة ثم نتحقق من النسخة المحفوظة.
-    let lastErr=null;
-    for(let i=0;i<4;i++){
-      await new Promise(resolve=>setTimeout(resolve,700+i*350));
-      try{
-        const check=await cloudRequest('loadAll',{});
-        let pack=check.snapshot ?? check.payload ?? check.data ?? check.value ?? null;
-        if(typeof pack==='string'){try{pack=JSON.parse(pack)}catch(_){}}
-        if(pack && pack._syncToken===token){
-          return {ok:true,verified:true,token:token};
-        }
-      }catch(e){lastErr=e;}
-    }
-    throw new Error(lastErr?.message||'تم إرسال الحفظ لكن تعذر التحقق منه في السحابة');
+    // v129: لا نبقي التطبيق عالقاً في «بانتظار المزامنة» إذا حجب المتصفح نتيجة POST.
+    try{
+      await new Promise(resolve=>setTimeout(resolve,900));
+      const check=await cloudRequest('loadAll',{});
+      let pack=check.snapshot ?? check.payload ?? check.data ?? check.value ?? null;
+      if(typeof pack==='string'){try{pack=JSON.parse(pack)}catch(_){}}
+      if(pack && (pack._syncToken===token || pack.db)){
+        return {ok:true,verified:pack._syncToken===token,token:token};
+      }
+    }catch(_){}
+    return {ok:true,verified:false,token:token};
 
   }else{
     throw new Error('عملية سحابية غير معروفة');
@@ -1515,7 +1512,18 @@ function scheduleCloudSync(){
 }
 window.addEventListener('online',()=>{showToast('عاد الاتصال بالإنترنت — جارٍ إرسال التغييرات');syncNow(true);});
 window.addEventListener('offline',()=>{updateSyncIndicators();showToast('لا يوجد إنترنت — سيتم حفظ التغييرات وإرسالها عند عودة الاتصال');});
-setInterval(()=>{if(navigator.onLine)syncNow(true)},45000);
+// v129: الموزع يجلب الطلبات من السحابة بسرعة ولا يرفع نسخة محلية قديمة.
+setInterval(()=>{
+  if(!navigator.onLine)return;
+  if(session.role==='worker')cloudPull(true,true);
+  else syncNow(true);
+},12000);
+// v129: عند رجوع الموزع إلى صفحة التطبيق نجلب الطلبات فوراً.
+document.addEventListener('visibilitychange',()=>{
+  if(document.visibilityState==='visible' && navigator.onLine && session.role==='worker'){
+    cloudPull(true,true);
+  }
+});
 function save(){
   dedupeDatabase();
   localStorage.setItem(K,JSON.stringify(db));
