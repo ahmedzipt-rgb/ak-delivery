@@ -314,7 +314,7 @@ aside button{pointer-events:auto!important;touch-action:manipulation!important;}
  <select id="loginWorker"><option value="">اختر حسابك</option></select>
 <input id="loginPin" type="password" inputmode="numeric" placeholder="الرمز السري">
 <div id="loginStatus" style="margin-top:8px;font-weight:700;min-height:22px"></div>
-<div style="margin-top:6px;font-size:12px;opacity:.7">الإصدار 129</div>
+<div style="margin-top:6px;font-size:12px;opacity:.7">الإصدار 130</div>
 <button id="workerLoginBtn" type="button" onclick="workerLogin(event)" class="btn" style="width:100%">دخول الموزع</button>
 <hr>
 <h3>إنشاء حساب موزع</h3>
@@ -1709,7 +1709,11 @@ function importBulk(){
  let t=tm();
  bulkParsed.forEach((x,i)=>{
    let seq='AK'+String(n+i+1).padStart(6,'0');
-   db.orders.push({id:'SYS'+Date.now()+i,seq,clientNo:x.code,sender:'',recipient:x.name,phone:x.phone,address:x.address||x.city||'',city:x.city,product:'',amount:+x.amount||0,worker:'',status:'في الطريق',history:[{time:t,text:'طلب جديد — إدخال جماعي — بواسطة '+actorName()},{time:t,text:'في الطريق — بانتظار الوصول إلى الموزع — بواسطة '+actorName()}],remarks:[],modifiedAt:isoNow(),modifiedBy:actorName()});
+   const activeWorkers=(db.workers||[]).filter(w=>w&&!w.deletedAt&&!w.blocked&&w.approved!==false);
+   const autoW=activeWorkers.length===1?activeWorkers[0]:null;
+   const o={id:'SYS'+Date.now()+i,seq,clientNo:x.code,sender:'',recipient:x.name,phone:x.phone,address:x.address||x.city||'',city:x.city,product:'',amount:+x.amount||0,worker:autoW?String(autoW.id):'',status:'في الطريق',history:[{time:t,text:'طلب جديد — إدخال جماعي — بواسطة '+actorName()},{time:t,text:'في الطريق — بانتظار الوصول إلى الموزع — بواسطة '+actorName()}],remarks:[],modifiedAt:isoNow(),modifiedBy:actorName()};
+   db.orders.push(o);
+   if(autoW)createPendingDeliveryTransfer(o,autoW,'إرسال تلقائي إلى الموزع '+autoW.name+' — في الطريق');
  });
  localStorage.setItem(K,JSON.stringify(db));bulkText.value='';bulkPreview.innerHTML='';save();alert('تمت إضافة '+bulkParsed.length+' طلبات بنجاح ونقلها إلى قسم في الطريق');go('deliveryTransfers','deliveryTransfers');
 }
@@ -1880,12 +1884,36 @@ function importSelectedPdfOrders(){
  let nums=db.orders.map(o=>{let m=String(o.seq||'').match(/^AK(\d+)$/i);return m?+m[1]:(/^\d+$/.test(String(o.seq||''))?+o.seq:0)}),n=(nums.length?Math.max(...nums):0),t=tm(),stamp=Date.now();
  selected.forEach((x,i)=>{
    const seq='AK'+String(n+i+1).padStart(6,'0');
-   db.orders.push({id:'PDF'+stamp+i,seq,clientNo:x.code,sender:'',recipient:x.name||'بدون اسم',phone:x.phone||'',address:x.address||'',city:x.city||'وجدة',product:'',amount:+x.amount||0,worker:'',status:'في الطريق',importSource:'PDF',importFile:pdfImportFileName,history:[{time:t,text:'طلب جديد — استيراد PDF — بواسطة '+actorName()},{time:t,text:'في الطريق — بانتظار الوصول إلى الموزع — بواسطة '+actorName()}],remarks:[],modifiedAt:isoNow(),modifiedBy:actorName()});
+   const activeWorkers=(db.workers||[]).filter(w=>w&&!w.deletedAt&&!w.blocked&&w.approved!==false);
+   const autoW=activeWorkers.length===1?activeWorkers[0]:null;
+   const o={id:'PDF'+stamp+i,seq,clientNo:x.code,sender:'',recipient:x.name||'بدون اسم',phone:x.phone||'',address:x.address||'',city:x.city||'وجدة',product:'',amount:+x.amount||0,worker:autoW?String(autoW.id):'',status:'في الطريق',importSource:'PDF',importFile:pdfImportFileName,history:[{time:t,text:'طلب جديد — استيراد PDF — بواسطة '+actorName()},{time:t,text:'في الطريق — بانتظار الوصول إلى الموزع — بواسطة '+actorName()}],remarks:[],modifiedAt:isoNow(),modifiedBy:actorName()};
+   db.orders.push(o);
+   if(autoW)createPendingDeliveryTransfer(o,autoW,'إرسال تلقائي إلى الموزع '+autoW.name+' — في الطريق');
  });
  localStorage.setItem(K,JSON.stringify(db));save();
  alert('تم نسخ '+selected.length+' طلب بنجاح.');
  pdfParsedOrders=[];pdfImportPreview.innerHTML='';pdfImportStatus.textContent='';pdfFileInput.value='';go('deliveryTransfers','deliveryTransfers');
 }
+
+/* v130: إصلاح الطلبات القديمة في الطريق التي لم يكن لها موزع بسبب الاستيراد السابق. */
+try{
+  const activeWorkers130=(db.workers||[]).filter(w=>w&&!w.deletedAt&&!w.blocked&&w.approved!==false);
+  if(activeWorkers130.length===1){
+    const w130=activeWorkers130[0];
+    let changed130=false;
+    for(const o130 of (db.orders||[])){
+      if(!o130||o130.deletedAt||o130.duplicateHidden||o130.status!=='في الطريق'||o130.worker)continue;
+      o130.worker=String(w130.id);
+      createPendingDeliveryTransfer(o130,w130,'تصحيح v130: إسناد الطلب الموجود في الطريق إلى '+w130.name);
+      changed130=true;
+    }
+    if(changed130){
+      localStorage.setItem(K,JSON.stringify(db));
+      localStorage.setItem(CLOUD_PENDING_KEY,'1');
+      setTimeout(()=>{if(navigator.onLine)syncNow(true)},600);
+    }
+  }
+}catch(e){console.error('v130 transit assignment repair',e);}
 
 function nextSeq(){
  let nums=db.orders.map(o=>{
