@@ -314,7 +314,7 @@ aside button{pointer-events:auto!important;touch-action:manipulation!important;}
  <select id="loginWorker"><option value="">اختر حسابك</option></select>
 <input id="loginPin" type="password" inputmode="numeric" placeholder="الرمز السري">
 <div id="loginStatus" style="margin-top:8px;font-weight:700;min-height:22px"></div>
-<div style="margin-top:6px;font-size:12px;opacity:.7">الإصدار 130</div>
+<div style="margin-top:6px;font-size:12px;opacity:.7">الإصدار 131</div>
 <button id="workerLoginBtn" type="button" onclick="workerLogin(event)" class="btn" style="width:100%">دخول الموزع</button>
 <hr>
 <h3>إنشاء حساب موزع</h3>
@@ -1337,36 +1337,33 @@ async function cloudRequest(action,payload={}){
     );
 
   }else if(action==='saveAll'){
-    // النسخة 68:
-    // Google Apps Script قد ينفذ POST من موقع Netlify لكن المتصفح يمنع قراءة
-    // استجابة POST بسبب CORS/redirect. لذلك نرسل الطلب no-cors ثم نتحقق عبر GET.
+    // v131: رفع مؤكد. لا نعتبر POST ناجحاً إلا بعد أن تعيد السحابة نفس الرمز
+    // ونفس عدد الطلبات والموزعين المرسلين.
     const token='AKSYNC-'+Date.now()+'-'+Math.random().toString(36).slice(2,8);
     const data=Object.assign({},payload||{},{_syncToken:token});
-    const body=JSON.stringify({
-      key:CLOUD_KEY,
-      action:'save',
-      data:data
-    });
+    const expectedOrders=Array.isArray(data.db?.orders)?data.db.orders.length:0;
+    const expectedWorkers=Array.isArray(data.db?.workers)?data.db.workers.length:0;
+    const body=JSON.stringify({key:CLOUD_KEY,action:'save',data:data});
 
     await fetch(CLOUD_URL,{
-      method:'POST',
-      mode:'no-cors',
+      method:'POST',mode:'no-cors',
       headers:{'Content-Type':'text/plain;charset=UTF-8'},
-      body:body,
-      cache:'no-store'
+      body,cache:'no-store'
     });
 
-    // v129: لا نبقي التطبيق عالقاً في «بانتظار المزامنة» إذا حجب المتصفح نتيجة POST.
-    try{
-      await new Promise(resolve=>setTimeout(resolve,900));
+    for(let i=0;i<6;i++){
+      await new Promise(resolve=>setTimeout(resolve,700));
       const check=await cloudRequest('loadAll',{});
       let pack=check.snapshot ?? check.payload ?? check.data ?? check.value ?? null;
       if(typeof pack==='string'){try{pack=JSON.parse(pack)}catch(_){}}
-      if(pack && (pack._syncToken===token || pack.db)){
-        return {ok:true,verified:pack._syncToken===token,token:token};
+      const cdb=pack&&pack.db;
+      const orders=Array.isArray(cdb?.orders)?cdb.orders.length:-1;
+      const workers=Array.isArray(cdb?.workers)?cdb.workers.length:-1;
+      if(pack && pack._syncToken===token && orders===expectedOrders && workers===expectedWorkers){
+        return {ok:true,verified:true,token,orders,workers};
       }
-    }catch(_){}
-    return {ok:true,verified:false,token:token};
+    }
+    throw new Error('السحابة لم تؤكد حفظ البيانات');
 
   }else{
     throw new Error('عملية سحابية غير معروفة');
@@ -1433,37 +1430,33 @@ async function cloudTest(){
  }catch(e){updateCloudStatus('غير متصل: '+e.message);}
 }
 async function cloudPush(silent=false){
- try{
-   if(!silent)updateCloudStatus('جاري مزامنة البيانات...');
+  try{
+    // v131: جهاز الموزع لا يرفع قاعدة البيانات أبداً؛ يجلب فقط.
+    if(session&&session.role==='worker')return false;
+    if(!silent)updateCloudStatus('جاري رفع بيانات المالك...');
 
-   // النسخة 69: قبل أي رفع، نجلب قاعدة السحابة ونضمها إلى البيانات المحلية.
-   // هذا يمنع جهازاً جديداً أو حساب موزع فارغاً من مسح الطلبات الموجودة في السحابة.
-   try{
-     const j=await cloudRequest('loadAll',{});
-     const cloudDb=parseCloudDb(j);
-     if(cloudDb){
-       db=mergeDatabases(db,cloudDb);
-       localStorage.setItem(K,JSON.stringify(db));
-     }
-   }catch(_){
-     // إذا لم توجد نسخة سحابية بعد، نكمل بالنسخة المحلية.
-   }
+    const localOrders=Array.isArray(db.orders)?db.orders.length:0;
+    const localWorkers=Array.isArray(db.workers)?db.workers.length:0;
+    // حماية من مسح السحابة بقاعدة فارغة.
+    if(localOrders===0 && localWorkers===0)throw new Error('تم منع رفع قاعدة فارغة');
 
-   await cloudRequest('saveAll',{db:db,updatedAt:isoNow()});
-   localStorage.setItem('ak_delivery_last_cloud_push',isoNow());
-   localStorage.setItem(CLOUD_LAST_OK_KEY,isoNow());
-   localStorage.removeItem(CLOUD_PENDING_KEY);
-   if(!silent)updateCloudStatus('تمت مزامنة جميع البيانات مع السحابة ✓');
-   else updateSyncIndicators();
-   menu();render();renderWorkers();accountsRender();refreshLoginWorkers();if(document.getElementById('deliveryTransfers')?.classList.contains('on'))renderDeliveryTransfers();
-   return true;
- }catch(e){
-   localStorage.setItem(CLOUD_PENDING_KEY,'1');
-   if(!silent)updateCloudStatus('فشل الرفع: '+e.message);
-   else updateSyncIndicators();
-   return false;
- }
+    const result=await cloudRequest('saveAll',{db:db,updatedAt:isoNow()});
+    if(!result||!result.verified)throw new Error('لم يتم تأكيد الحفظ');
+
+    localStorage.setItem('ak_delivery_last_cloud_push',isoNow());
+    localStorage.setItem(CLOUD_LAST_OK_KEY,isoNow());
+    localStorage.removeItem(CLOUD_PENDING_KEY);
+    if(!silent)updateCloudStatus('تم رفع '+localOrders+' طلب إلى السحابة ✓');
+    else updateSyncIndicators();
+    return true;
+  }catch(e){
+    localStorage.setItem(CLOUD_PENDING_KEY,'1');
+    if(!silent)updateCloudStatus('فشل الرفع: '+e.message);
+    updateSyncIndicators();
+    return false;
+  }
 }
+
 async function cloudPull(silent=false,merge=true){
  try{
    if(!silent)updateCloudStatus('جاري جلب البيانات...');
@@ -1493,9 +1486,14 @@ async function syncNow(silent=true){
   if(cloudSyncBusy||!navigator.onLine)return false;
   cloudSyncBusy=true;
   try{
-    // جلب + دمج ثم رفع؛ يقلل خطر أن يكتب جهاز فوق تغييرات الجهاز الآخر.
-    await cloudPull(true,true);
-    const ok=await cloudPush(true);
+    let ok=false;
+    if(session&&session.role==='worker'){
+      ok=await cloudPull(true,true);
+    }else{
+      // v131: المالك هو المصدر الآمن الآن؛ لا نجلب القاعدة الفارغة قبل رفع بياناته.
+      ok=await cloudPush(silent);
+      if(ok)await cloudPull(true,true);
+    }
     if(ok){
       localStorage.setItem(CLOUD_LAST_OK_KEY,isoNow());
       localStorage.removeItem(CLOUD_PENDING_KEY);
@@ -1504,6 +1502,7 @@ async function syncNow(silent=true){
     return ok;
   }finally{cloudSyncBusy=false;}
 }
+
 function scheduleCloudSync(){
   localStorage.setItem(CLOUD_PENDING_KEY,'1');
   updateSyncIndicators();
