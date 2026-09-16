@@ -307,6 +307,61 @@ body #overlay > .drawer{
 
 #loginScreen[style*="display: none"],#loginScreen[style*="display:none"]{pointer-events:none!important;visibility:hidden!important;}
 aside button{pointer-events:auto!important;touch-action:manipulation!important;}
+
+/* v139: وضع الهاتف حر الحركة؛ لا حبس للصفحة داخل حاويات ثابتة متعارضة. */
+html[data-view-mode="mobile"],
+html[data-view-mode="mobile"] body{
+  height:auto!important;
+  min-height:100%!important;
+  max-height:none!important;
+  overflow:auto!important;
+  touch-action:pan-x pan-y!important;
+  overscroll-behavior:auto!important;
+}
+html[data-view-mode="mobile"] body{display:block!important;}
+html[data-view-mode="mobile"] #appHeader,
+html[data-view-mode="mobile"] header{position:sticky!important;top:0!important;}
+html[data-view-mode="mobile"] .app{
+  height:auto!important;
+  min-height:calc(100dvh - 58px)!important;
+  overflow:visible!important;
+  align-items:stretch!important;
+}
+html[data-view-mode="mobile"] aside{
+  height:auto!important;
+  min-height:calc(100dvh - 58px)!important;
+  overflow:visible!important;
+  overscroll-behavior:auto!important;
+}
+html[data-view-mode="mobile"] main{
+  height:auto!important;
+  min-height:calc(100dvh - 58px)!important;
+  overflow:visible!important;
+  touch-action:pan-x pan-y!important;
+  overscroll-behavior:auto!important;
+}
+html[data-view-mode="mobile"] #list.page.on{
+  height:auto!important;
+  min-height:0!important;
+  overflow:visible!important;
+}
+html[data-view-mode="mobile"] #list.page.on>#orderListCard{
+  min-height:240px!important;
+  overflow:auto!important;
+  touch-action:pan-x pan-y!important;
+  overscroll-behavior:auto!important;
+}
+@media(max-width:650px){
+  html[data-view-mode="auto"],html[data-view-mode="auto"] body{
+    height:auto!important;max-height:none!important;overflow:auto!important;touch-action:pan-x pan-y!important;
+  }
+  html[data-view-mode="auto"] body{display:block!important;}
+  html[data-view-mode="auto"] .app{height:auto!important;min-height:calc(100dvh - 58px)!important;overflow:visible!important;}
+  html[data-view-mode="auto"] aside{height:auto!important;min-height:calc(100dvh - 58px)!important;overflow:visible!important;}
+  html[data-view-mode="auto"] main{height:auto!important;min-height:calc(100dvh - 58px)!important;overflow:visible!important;touch-action:pan-x pan-y!important;}
+  html[data-view-mode="auto"] #list.page.on{height:auto!important;overflow:visible!important;}
+  html[data-view-mode="auto"] #list.page.on>#orderListCard{min-height:240px!important;overflow:auto!important;touch-action:pan-x pan-y!important;}
+}
 </style></head>
 <body>
 <div id="loginScreen" class="login-screen">
@@ -314,7 +369,7 @@ aside button{pointer-events:auto!important;touch-action:manipulation!important;}
  <select id="loginWorker"><option value="">اختر حسابك</option></select>
 <input id="loginPin" type="password" inputmode="numeric" placeholder="الرمز السري">
 <div id="loginStatus" style="margin-top:8px;font-weight:700;min-height:22px"></div>
-<div style="margin-top:6px;font-size:12px;opacity:.7">الإصدار 138</div>
+<div style="margin-top:6px;font-size:12px;opacity:.7">الإصدار 140</div>
 <button id="workerLoginBtn" type="button" onclick="workerLogin(event)" class="btn" style="width:100%">دخول الموزع</button>
 <hr>
 <h3>إنشاء حساب موزع</h3>
@@ -557,7 +612,7 @@ aside button{pointer-events:auto!important;touch-action:manipulation!important;}
 <div id="returnRequestBox" style="margin-top:10px"></div>
 <div id="ownerRestoreBox" style="margin-top:10px"></div>
 <div id="ownerDeleteBox" style="margin-top:10px"></div>
-<button class=c onclick="statusSet('مبرمج')">برمجة</button><button class=gr onclick="statusSet('طلب رجوع','مرتجع')">مرتجع</button></div><h3>سجل حالة التوصيل</h3><div id=history class=log></div><hr><h3>التعليقات</h3><div id=remarks class=log></div><textarea id=remark placeholder="تعليق جديد"></textarea><button class=btn onclick=remarkAdd()>إضافة تعليق</button></div></div>
+<button class=c onclick="statusSet('مبرمج')">برمجة</button><button class=gr onclick="statusSet('طلب رجوع','مرتجع')">مرتجع</button></div><h3>سجل حالة التوصيل</h3><div id=history class=log></div><hr><h3>التعليقات</h3><div id=remarks class=log></div><textarea id=remark placeholder="تعليق جديد"></textarea><button class=btn onclick=remarkAdd()>إضافة تعليق</button><button class="btn gr" style="display:block;width:100%;margin-top:18px;padding:12px;font-weight:800" onclick="closeDrawer()">✕ إغلاق تفاصيل الطلب</button></div></div>
 <script>
 let appBootReady=false;
 let ownerMode=false,ownerTapCount=0,ownerTapTimer=null;
@@ -1728,8 +1783,10 @@ function isOrderReturnArchived(o){
   return !!(o && returnedOrderIdSet().has(String(o.id)));
 }
 function workerOrderArchived(o){
-  if(!o||session.role!=='worker')return false;
-  return isOrderSettled(o)||['تم التسليم','مرتجع','رفض','ملغى'].includes(String(o.status||''));
+ if(!o||session.role!=='worker')return false;
+  // v139: نفس قاعدة المالك تماماً؛ لا يختفي الطلب لمجرد تغيّر حالته.
+  // يخرج من العدادات فقط بعد دخوله فعلياً في حزمة دفع أو حزمة رجوع.
+  return isOrderSettled(o)||isOrderReturnArchived(o);
 }
 
 var sidebarActiveKey='home';
