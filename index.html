@@ -335,6 +335,7 @@ aside button{pointer-events:auto!important;touch-action:manipulation!important;}
 </span>
 <span id="ownerCloudMini" style="display:none;margin-right:8px;font-size:12px;padding:4px 8px;border-radius:12px;background:#ffffff22">☁️ جاهز</span>
 <span id="workerNewBadge" style="display:none;margin-right:8px;font-size:12px;padding:4px 8px;border-radius:12px;background:#ffffff22">🔔 0</span>
+<button id="workerRefreshBtn" type="button" onclick="event.stopPropagation();workerRefreshOrders()" style="display:none;width:auto;margin-right:6px;padding:5px 9px;background:#15803d;color:#fff;border:1px solid #ffffff55;border-radius:9px;font-weight:700">🔄 تحديث طلباتي</button>
 </header>
 <div id="runtimeDiag" style="display:none;position:fixed;bottom:8px;left:8px;right:8px;z-index:10000;background:#7f1d1d;color:#fff;padding:9px 12px;border-radius:8px;font-size:12px;direction:ltr;text-align:left;max-height:34vh;overflow:auto"></div>
 <div id="syncToast" style="display:none;position:fixed;top:72px;left:50%;transform:translateX(-50%);z-index:9999;background:#222;color:#fff;padding:9px 14px;border-radius:10px;font-size:13px;max-width:90%;text-align:center"></div>
@@ -970,6 +971,8 @@ function applyPermissions(){
  if(ownerMini) ownerMini.style.display=session.role==='owner'?'inline-block':'none';
  const wb=document.getElementById('workerNewBadge');
  if(wb) wb.style.display=isWorker?'inline-block':'none';
+ const refreshBtn=document.getElementById('workerRefreshBtn');
+ if(refreshBtn) refreshBtn.style.display=isWorker?'inline-block':'none';
  render();menu();updateSyncIndicators();
 }
 let db=JSON.parse(localStorage.getItem(K)||'null')||{orders:[],workers:[]},filter='قيد التوزيع',current=null,states=['الكل','قيد التوزيع','تعذر الاتصال','مؤجل','مبرمج','تم التسليم','رفض','ملغى','مرتجع'];
@@ -1482,6 +1485,29 @@ async function cloudPull(silent=false,merge=true){
    return false;
  }
 }
+async function workerRefreshOrders(){
+ const btn=document.getElementById('workerRefreshBtn');
+ if(!session||session.role!=='worker')return false;
+ if(!navigator.onLine){showToast('لا يوجد اتصال بالإنترنت');return false;}
+ if(btn){btn.disabled=true;btn.textContent='⏳ جارٍ التحديث';}
+ showToast('جارٍ جلب طلباتك من السحابة...');
+ try{
+   const ok=await cloudPull(true,true);
+   if(ok){
+     markAssignedSeen();
+     try{menu();render();}catch(_){}
+     showToast('✅ تم تحديث طلباتك من السحابة');
+     return true;
+   }
+   showToast('تعذر تحديث الطلبات؛ حاول مرة أخرى');
+   return false;
+ }catch(e){
+   showToast('تعذر التحديث: '+(e&&e.message?e.message:'خطأ غير معروف'));
+   return false;
+ }finally{
+   if(btn){btn.disabled=false;btn.textContent='🔄 تحديث طلباتي';}
+ }
+}
 async function syncNow(silent=true){
   if(cloudSyncBusy||!navigator.onLine)return false;
   cloudSyncBusy=true;
@@ -1522,6 +1548,10 @@ document.addEventListener('visibilitychange',()=>{
   if(document.visibilityState==='visible' && navigator.onLine && session.role==='worker'){
     cloudPull(true,true);
   }
+});
+// عند الرجوع إلى التطبيق من الخلفية أو فتح النسخة المثبتة، حدّث طلبات الموزع فوراً.
+window.addEventListener('pageshow',()=>{
+  if(navigator.onLine && session && session.role==='worker')workerRefreshOrders();
 });
 function save(){
   dedupeDatabase();
