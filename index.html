@@ -314,7 +314,7 @@ aside button{pointer-events:auto!important;touch-action:manipulation!important;}
  <select id="loginWorker"><option value="">اختر حسابك</option></select>
 <input id="loginPin" type="password" inputmode="numeric" placeholder="الرمز السري">
 <div id="loginStatus" style="margin-top:8px;font-weight:700;min-height:22px"></div>
-<div style="margin-top:6px;font-size:12px;opacity:.7">الإصدار 133</div>
+<div style="margin-top:6px;font-size:12px;opacity:.7">الإصدار 135</div>
 <button id="workerLoginBtn" type="button" onclick="workerLogin(event)" class="btn" style="width:100%">دخول الموزع</button>
 <hr>
 <h3>إنشاء حساب موزع</h3>
@@ -423,7 +423,7 @@ aside button{pointer-events:auto!important;touch-action:manipulation!important;}
 
 <div style="display:flex;gap:8px;flex-wrap:wrap">
 <button class="btn gr" onclick="cloudTest()">اختبار الاتصال</button>
-<button class="btn g" onclick="cloudPull()">⬇️ جلب البيانات</button>
+<button class="btn g" onclick="ownerCloudPull()">⬇️ جلب البيانات</button>
 <button class="btn" onclick="cloudPush()">⬆️ رفع البيانات</button>
 </div>
 <div id="cloudStatus" style="margin-top:12px"><b>الحالة:</b> جاهز</div>
@@ -511,7 +511,7 @@ aside button{pointer-events:auto!important;touch-action:manipulation!important;}
 <input id=eAmount type=number step=.01 placeholder="القيمة">
 <select id=eWorker></select>
 <select id=eStatus>
-<option>قيد التوزيع</option><option>تعذر الاتصال</option><option>مؤجل</option>
+<option>في الطريق</option><option>قيد التوزيع</option><option>تعذر الاتصال</option><option>مؤجل</option>
 <option>مبرمج</option><option>تم التسليم</option><option>رفض</option><option>ملغى</option><option>مرتجع</option>
 </select>
 </div>
@@ -1485,6 +1485,20 @@ async function cloudPull(silent=false,merge=true){
    return false;
  }
 }
+
+// v135: الجلب اليدوي لدى المالك يعني اعتماد نسخة السحابة كاملة، لا دمجها
+// مع نسخة محلية أحدث قد تخفي التغييرات القادمة من الموزع.
+async function ownerCloudPull(){
+  if(!session||session.role!=='owner')return cloudPull(false,true);
+  if(!navigator.onLine){showToast('لا يوجد اتصال بالإنترنت');return false;}
+  if(!confirm('سيتم حفظ نسخة احتياطية محلية ثم استبدال بيانات هذا الجهاز بنسخة السحابة. متابعة؟'))return false;
+  const ok=await cloudPull(false,false);
+  if(ok){
+    updateCloudStatus('تم اعتماد نسخة السحابة على جهاز المالك ✓');
+    showToast('✅ تم جلب نسخة السحابة كاملة');
+  }
+  return ok;
+}
 async function workerRefreshOrders(){
  const btn=document.getElementById('workerRefreshBtn');
  if(!session||session.role!=='worker')return false;
@@ -1535,13 +1549,21 @@ function scheduleCloudSync(){
   clearTimeout(cloudSyncTimer);
   cloudSyncTimer=setTimeout(()=>syncNow(true),1400);
 }
-window.addEventListener('online',()=>{showToast('عاد الاتصال بالإنترنت — جارٍ إرسال التغييرات');syncNow(true);});
+window.addEventListener('online',()=>{
+  if(session&&session.role==='worker'){
+    showToast('عاد الاتصال بالإنترنت — جارٍ تحديث الطلبات');
+    cloudPull(true,true);
+  }else{
+    // v135: لا نرفع نسخة المالك تلقائياً عند عودة الاتصال حتى لا تطغى على السحابة.
+    updateSyncIndicators();
+    showToast('عاد الاتصال بالإنترنت');
+  }
+});
 window.addEventListener('offline',()=>{updateSyncIndicators();showToast('لا يوجد إنترنت — سيتم حفظ التغييرات وإرسالها عند عودة الاتصال');});
-// v129: الموزع يجلب الطلبات من السحابة بسرعة ولا يرفع نسخة محلية قديمة.
+// v135: الموزع يجلب دورياً، أما المالك فلا يرفع قاعدة جهازه دورياً.
 setInterval(()=>{
   if(!navigator.onLine)return;
   if(session.role==='worker')cloudPull(true,true);
-  else syncNow(true);
 },12000);
 // v129: عند رجوع الموزع إلى صفحة التطبيق نجلب الطلبات فوراً.
 document.addEventListener('visibilitychange',()=>{
@@ -3575,10 +3597,10 @@ function saveEdit(){
   o.worker=eWorker.value;
   // v128: تعديل بيانات الطلب لا يغيّر حالة «في الطريق».
   // الانتقال إلى «قيد التوزيع» يتم فقط من confirmOrderReceipt بعد تأكيد الموزع الاستلام.
-  if(previousStatus==='في الطريق' && eStatus.value==='قيد التوزيع'){
+  if(previousStatus==='في الطريق' && !eStatus.value){
     o.status='في الطريق';
   }else{
-    o.status=eStatus.value;
+    o.status=eStatus.value||previousStatus||'قيد التوزيع';
   }
   o.ownerNote=eOwnerNote.value.trim();
   // يسجل وقت ومنفذ التعديل للمزامنة دون كشف الملاحظة الداخلية للموزع.
@@ -3728,7 +3750,10 @@ if(!session || !session.role){
     }catch(_){}
   },250);
 }
-setTimeout(()=>{if(navigator.onLine && session && session.role)syncNow(true)},1800);
+// v135: التحديث التلقائي عند التشغيل للموزع فقط. المالك يستخدم زري الجلب/الرفع بوضوح.
+setTimeout(()=>{
+  if(navigator.onLine && session && session.role==='worker')cloudPull(true,true);
+},1800);
 
 window.addEventListener('error',function(ev){
  try{
