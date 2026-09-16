@@ -314,7 +314,7 @@ aside button{pointer-events:auto!important;touch-action:manipulation!important;}
  <select id="loginWorker"><option value="">اختر حسابك</option></select>
 <input id="loginPin" type="password" inputmode="numeric" placeholder="الرمز السري">
 <div id="loginStatus" style="margin-top:8px;font-weight:700;min-height:22px"></div>
-<div style="margin-top:6px;font-size:12px;opacity:.7">الإصدار 132</div>
+<div style="margin-top:6px;font-size:12px;opacity:.7">الإصدار 133</div>
 <button id="workerLoginBtn" type="button" onclick="workerLogin(event)" class="btn" style="width:100%">دخول الموزع</button>
 <hr>
 <h3>إنشاء حساب موزع</h3>
@@ -1598,6 +1598,10 @@ function settledOrderIdSet(){
 function isOrderSettled(o){
   return !!(o && settledOrderIdSet().has(String(o.id)));
 }
+function workerOrderArchived(o){
+  if(!o||session.role!=='worker')return false;
+  return isOrderSettled(o)||['تم التسليم','مرتجع','رفض','ملغى'].includes(String(o.status||''));
+}
 
 var sidebarActiveKey='home';
 function updateSidebarActive(){
@@ -1609,7 +1613,7 @@ function menu(){
  updateReturnRequestCount();
  const settledIds=settledOrderIdSet();
  stateMenu.innerHTML=states.map(s=>{
-   const activeOrders=db.orders.filter(o=>!o.duplicateHidden&&!o.deletedAt&&o.status!=='في الطريق'&&!settledIds.has(String(o.id))&&(session.role!=='worker'||workerCanSeeOrder(o,session.workerId)));
+   const activeOrders=db.orders.filter(o=>!o.duplicateHidden&&!o.deletedAt&&o.status!=='في الطريق'&&!settledIds.has(String(o.id))&&(session.role!=='worker'||(workerCanSeeOrder(o,session.workerId)&&!workerOrderArchived(o))));
    const n=s==='الكل'?activeOrders.length:activeOrders.filter(o=>o.status===s).length;
    return `<button data-menu-key="state:${htmlEscape(s)}" onclick="filter='${s}';go('list','state:${s}')">${s} <span class="menu-count">${n}</span></button>`;
  }).join('');
@@ -2077,7 +2081,7 @@ function visibleOrders(){
    if(session.role==='worker'&&!workerCanSeeOrder(o,session.workerId))return false;
    // الطلبات المدفوعة مؤرشفة بالكامل للموزع، حتى أثناء البحث.
    // تبقى محفوظة ومتاحة للمالك في الحسابات والفواتير والبحث الشامل.
-   if(session.role==='worker'&&isOrderSettled(o))return false;
+   if(workerOrderArchived(o))return false;
    const historyText=(o.history||[]).map(h=>`${h.time||''} ${h.text||''}`).join(' ');
    const remarksText=(o.remarks||[]).map(r=>`${r.time||''} ${r.text||''}`).join(' ');
    const haystack=(`${o.seq||''} ${o.id||''} ${o.clientNo||''} ${o.recipient||''} ${o.phone||''} ${o.sender||''} ${o.address||''} ${o.city||''} ${o.product||''} ${o.status||''} ${historyText} ${remarksText}`).toLowerCase();
