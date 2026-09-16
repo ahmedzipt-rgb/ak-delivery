@@ -314,7 +314,7 @@ aside button{pointer-events:auto!important;touch-action:manipulation!important;}
  <select id="loginWorker"><option value="">اختر حسابك</option></select>
 <input id="loginPin" type="password" inputmode="numeric" placeholder="الرمز السري">
 <div id="loginStatus" style="margin-top:8px;font-weight:700;min-height:22px"></div>
-<div style="margin-top:6px;font-size:12px;opacity:.7">الإصدار 135</div>
+<div style="margin-top:6px;font-size:12px;opacity:.7">الإصدار 137</div>
 <button id="workerLoginBtn" type="button" onclick="workerLogin(event)" class="btn" style="width:100%">دخول الموزع</button>
 <hr>
 <h3>إنشاء حساب موزع</h3>
@@ -1438,6 +1438,22 @@ async function cloudPush(silent=false){
     if(session&&session.role==='worker')return false;
     if(!silent)updateCloudStatus('جاري رفع بيانات المالك...');
 
+    // v137: قبل رفع بيانات المالك، نجلب آخر نسخة سحابية ونضم إليها
+    // تحديثات الموزع الأحدث. بهذا لا يستطيع رفع المالك أن يمحو تحديثاً
+    // وصل من الموزع قبل لحظات.
+    try{
+      const latest=await cloudRequest('loadAll',{});
+      const latestDb=parseCloudDb(latest);
+      if(latestDb){
+        db=mergeDatabases(db,latestDb);
+        localStorage.setItem(K,JSON.stringify(db));
+      }
+    }catch(loadErr){
+      // لا نواصل فوق خطأ حقيقي في الجلب؛ الاستثناء الوحيد هو سحابة فارغة
+      // التي يعبر عنها الخادم بإجابة ناجحة و latestDb=null.
+      throw new Error('تعذر قراءة آخر تحديثات الموزع قبل الرفع');
+    }
+
     const localOrders=Array.isArray(db.orders)?db.orders.length:0;
     const localWorkers=Array.isArray(db.workers)?db.workers.length:0;
     // حماية من مسح السحابة بقاعدة فارغة.
@@ -1455,6 +1471,80 @@ async function cloudPush(silent=false){
   }catch(e){
     localStorage.setItem(CLOUD_PENDING_KEY,'1');
     if(!silent)updateCloudStatus('فشل الرفع: '+e.message);
+    updateSyncIndicators();
+    return false;
+  }
+}
+
+// v137: يرسل جهاز الموزع تغييراته فقط، من دون استبدال بيانات المالك.
+// نبدأ دائماً من أحدث نسخة سحابية ثم ندمج الطلبات والسجلات الخاصة بالموزع الحالي.
+async function workerCloudPush(silent=true){
+  if(!session||session.role!=='worker')return false;
+  try{
+    const wid=String(session.workerId||'');
+    if(!wid)throw new Error('حساب الموزع غير محدد');
+    if(!silent)showToast('جارٍ إرسال تحديثاتك إلى المالك...');
+
+    const loaded=await cloudRequest('loadAll',{});
+    const cloudDb=parseCloudDb(loaded);
+    if(!cloudDb)throw new Error('لا توجد قاعدة سحابية للمالك');
+    const out=JSON.parse(JSON.stringify(cloudDb));
+    if(!Array.isArray(out.orders))out.orders=[];
+    if(!Array.isArray(out.deliveryTransfers))out.deliveryTransfers=[];
+    if(!Array.isArray(out.deliveryBatches))out.deliveryBatches=[];
+    if(!Array.isArray(out.returnBatches))out.returnBatches=[];
+
+    const cloudOrders=new Map(out.orders.map(o=>[String(o.id),o]));
+    const workerFields=['status','history','remarks','rejectReason','postponeDate','returnRequestedAt',
+      'returnCompletedAt','deliveryReceivedAt','deliveryReceivedLabel','deliveryReceivedByWorkerId',
+      'deliveryReceivedByWorkerName','modifiedAt','modifiedBy','lastChangeKind'];
+    for(const local of (db.orders||[])){
+      if(!local||local.id==null||!orderAssignedToWorker(local,wid))continue;
+      const remote=cloudOrders.get(String(local.id));
+      // إذا كان الطلب موجوداً عند الموزع وغير موجود في السحابة، نعيده إلى
+      // النسخة السحابية بدل إسقاط تحديثه بالكامل.
+      if(!remote){
+        if(!local.deletedAt){
+          const copy=JSON.parse(JSON.stringify(local));
+          out.orders.push(copy);
+          cloudOrders.set(String(local.id),copy);
+        }
+        continue;
+      }
+      if(timeValue(local.modifiedAt)<=timeValue(remote.modifiedAt))continue;
+      for(const key of workerFields){
+        if(local[key]!==undefined)remote[key]=JSON.parse(JSON.stringify(local[key]));
+        else if(key in remote)delete remote[key];
+      }
+    }
+
+    function mergeWorkerRows(name){
+      const remote=Array.isArray(out[name])?out[name]:[];
+      const index=new Map(remote.map((x,i)=>[String(x.id),i]));
+      for(const local of (db[name]||[])){
+        if(!local||local.id==null||String(local.workerId)!==wid)continue;
+        const i=index.get(String(local.id));
+        if(i===undefined){remote.push(JSON.parse(JSON.stringify(local)));continue;}
+        if(timeValue(local.modifiedAt||local.receivedAt||local.completedAt)>
+           timeValue(remote[i].modifiedAt||remote[i].receivedAt||remote[i].completedAt)){
+          remote[i]=JSON.parse(JSON.stringify(local));
+        }
+      }
+      out[name]=remote;
+    }
+    mergeWorkerRows('deliveryTransfers');
+    mergeWorkerRows('deliveryBatches');
+    mergeWorkerRows('returnBatches');
+
+    const result=await cloudRequest('saveAll',{db:out,updatedAt:isoNow(),updatedBy:'worker:'+wid});
+    if(!result||!result.verified)throw new Error('لم يتم تأكيد حفظ تحديثات الموزع');
+    localStorage.setItem(CLOUD_LAST_OK_KEY,isoNow());
+    localStorage.removeItem(CLOUD_PENDING_KEY);
+    if(!silent)showToast('✅ وصلت تحديثاتك إلى المالك');
+    return true;
+  }catch(e){
+    localStorage.setItem(CLOUD_PENDING_KEY,'1');
+    if(!silent)showToast('تعذر إرسال التحديث: '+(e&&e.message?e.message:'خطأ غير معروف'));
     updateSyncIndicators();
     return false;
   }
@@ -1528,7 +1618,10 @@ async function syncNow(silent=true){
   try{
     let ok=false;
     if(session&&session.role==='worker'){
-      ok=await cloudPull(true,true);
+      // v137: يرفع الموزع تعديلاته أولاً، ثم يجلب النسخة المدمجة المؤكدة.
+      // الآن نرفع تغييراته المصرح بها أولاً، ثم نجلب النسخة المدمجة المؤكدة.
+      ok=await workerCloudPush(silent);
+      if(ok)ok=await cloudPull(true,true);
     }else{
       // v131: المالك هو المصدر الآمن الآن؛ لا نجلب القاعدة الفارغة قبل رفع بياناته.
       ok=await cloudPush(silent);
@@ -1551,8 +1644,9 @@ function scheduleCloudSync(){
 }
 window.addEventListener('online',()=>{
   if(session&&session.role==='worker'){
-    showToast('عاد الاتصال بالإنترنت — جارٍ تحديث الطلبات');
-    cloudPull(true,true);
+    showToast('عاد الاتصال بالإنترنت — جارٍ تبادل التحديثات');
+    if(localStorage.getItem(CLOUD_PENDING_KEY)==='1')syncNow(true);
+    else cloudPull(true,true);
   }else{
     // v135: لا نرفع نسخة المالك تلقائياً عند عودة الاتصال حتى لا تطغى على السحابة.
     updateSyncIndicators();
@@ -1563,7 +1657,10 @@ window.addEventListener('offline',()=>{updateSyncIndicators();showToast('لا ي
 // v135: الموزع يجلب دورياً، أما المالك فلا يرفع قاعدة جهازه دورياً.
 setInterval(()=>{
   if(!navigator.onLine)return;
-  if(session.role==='worker')cloudPull(true,true);
+  if(session.role==='worker'){
+    if(localStorage.getItem(CLOUD_PENDING_KEY)==='1')syncNow(true);
+    else cloudPull(true,true);
+  }
 },12000);
 // v129: عند رجوع الموزع إلى صفحة التطبيق نجلب الطلبات فوراً.
 document.addEventListener('visibilitychange',()=>{
