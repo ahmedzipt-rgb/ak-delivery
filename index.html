@@ -314,7 +314,7 @@ aside button{pointer-events:auto!important;touch-action:manipulation!important;}
  <select id="loginWorker"><option value="">اختر حسابك</option></select>
 <input id="loginPin" type="password" inputmode="numeric" placeholder="الرمز السري">
 <div id="loginStatus" style="margin-top:8px;font-weight:700;min-height:22px"></div>
-<div style="margin-top:6px;font-size:12px;opacity:.7">الإصدار 137</div>
+<div style="margin-top:6px;font-size:12px;opacity:.7">الإصدار 138</div>
 <button id="workerLoginBtn" type="button" onclick="workerLogin(event)" class="btn" style="width:100%">دخول الموزع</button>
 <hr>
 <h3>إنشاء حساب موزع</h3>
@@ -379,13 +379,13 @@ aside button{pointer-events:auto!important;touch-action:manipulation!important;}
 
 <div style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:10px">
 <button class="btn g" onclick="sendReturnBatches()">↩ إرسال طلب الإرجاع للموزع</button>
-<button class="btn gr" onclick="go('returnBatches')">فتح سجل طلبات الإرجاع</button>
+<button class="btn gr" onclick="go('returnBatches')">فتح أرشيف الرجوع</button>
 </div>
 <input id=returnSearch placeholder="ابحث برقم الترتيب أو رمز الطلب أو اسم المستلم أو الهاتف" oninput="renderReturnCreate()">
 <div id=returnCreateList style="margin-top:12px"></div>
 </div></section>
 <section id=returnBatches class=page><div class=card>
-<h2>📦 سجل طلبات الإرجاع</h2>
+<h2>📦 أرشيف الرجوع</h2>
 
 <div id=returnBatchesList></div>
 </div></section>
@@ -1717,6 +1717,16 @@ function settledOrderIdSet(){
 function isOrderSettled(o){
   return !!(o && settledOrderIdSet().has(String(o.id)));
 }
+// v138: الطلب يدخل أرشيف الرجوع فور إنشاء حزمة الرجوع، ويبقى محفوظاً داخل الحزمة.
+function returnedOrderIdSet(){
+  if(!Array.isArray(db.returnBatches))db.returnBatches=[];
+  return new Set(db.returnBatches
+    .filter(b=>b&&!b.deletedAt&&!b.duplicateHidden&&Array.isArray(b.orderIds))
+    .flatMap(b=>b.orderIds).map(String));
+}
+function isOrderReturnArchived(o){
+  return !!(o && returnedOrderIdSet().has(String(o.id)));
+}
 function workerOrderArchived(o){
   if(!o||session.role!=='worker')return false;
   return isOrderSettled(o)||['تم التسليم','مرتجع','رفض','ملغى'].includes(String(o.status||''));
@@ -1731,8 +1741,9 @@ function updateSidebarActive(){
 function menu(){
  updateReturnRequestCount();
  const settledIds=settledOrderIdSet();
+ const returnedIds=returnedOrderIdSet();
  stateMenu.innerHTML=states.map(s=>{
-   const activeOrders=db.orders.filter(o=>!o.duplicateHidden&&!o.deletedAt&&o.status!=='في الطريق'&&!settledIds.has(String(o.id))&&(session.role!=='worker'||(workerCanSeeOrder(o,session.workerId)&&!workerOrderArchived(o))));
+   const activeOrders=db.orders.filter(o=>!o.duplicateHidden&&!o.deletedAt&&o.status!=='في الطريق'&&!settledIds.has(String(o.id))&&!returnedIds.has(String(o.id))&&(session.role!=='worker'||(workerCanSeeOrder(o,session.workerId)&&!workerOrderArchived(o))));
    const n=s==='الكل'?activeOrders.length:activeOrders.filter(o=>o.status===s).length;
    return `<button data-menu-key="state:${htmlEscape(s)}" onclick="filter='${s}';go('list','state:${s}')">${s} <span class="menu-count">${n}</span></button>`;
  }).join('');
@@ -2208,7 +2219,7 @@ function visibleOrders(){
    if(term)return haystack.includes(term);
    // بدون بحث: لا تعرض الطلبات المحذوفة ولا الطلبات التي أغلقت داخل حزمة تسوية مالية.
    // تبقى الطلبات المسواة محفوظة ويمكن العثور عليها بالبحث الشامل وفتح تفاصيلها كاملة.
-   if(o.deletedAt||isOrderSettled(o))return false;
+   if(o.deletedAt||isOrderSettled(o)||isOrderReturnArchived(o))return false;
    if(o.status==='في الطريق')return false;
    return filter==='الكل'||o.status===filter;
  });
@@ -2864,6 +2875,11 @@ async function confirmDeliveryBatchReceived(batchId){
 function ensureReturnBatches(){
  if(!Array.isArray(db.returnBatches))db.returnBatches=[];
 }
+var openReturnArchiveBatchId='';
+function toggleReturnArchiveBatch(id){
+ openReturnArchiveBatchId=String(openReturnArchiveBatchId)===String(id)?'':String(id);
+ renderReturnBatches();
+}
 function renderReturnBatches(){
  ensureReturnBatches();
  const el=document.getElementById('returnBatchesList');if(!el)return;
@@ -2879,6 +2895,7 @@ function renderReturnBatches(){
    const ownerDone=b.status==='owner_confirmed'||!!b.ownerConfirmedAt;
    const ids=uniqueIds(b.orderIds||[]).map(String);
    const orders=db.orders.filter(o=>ids.includes(String(o.id)));
+   const opened=String(openReturnArchiveBatchId)===String(b.id);
    const orderLines=orders.map(o=>`<div style="padding:6px 0;border-bottom:1px solid #eee">
      <b>رمز الطلب:</b> <b dir="ltr" style="direction:ltr;display:inline-block">${htmlEscape(o.clientNo||'—')}</b> — ${htmlEscape(o.recipient||'—')} — ${cash(o.amount)}
    </div>`).join('');
@@ -2907,7 +2924,8 @@ function renderReturnBatches(){
      <b>تاريخ الإرسال:</b> ${htmlEscape(b.createdLabel||b.createdAt||'—')}
      ${workerDone?`<br><b>تاريخ إرجاع الموزع:</b> ${htmlEscape(b.confirmedLabel||b.confirmedAt||'—')}`:''}
      ${ownerDone?`<br><b>تأكيد استلام المالك:</b> ${htmlEscape(b.ownerConfirmedLabel||b.ownerConfirmedAt||'—')}`:''}</p>
-     <div>${orderLines}</div>
+     <button class="btn" style="margin-top:8px" onclick="toggleReturnArchiveBatch('${String(b.id).replace(/'/g,'')}')">${opened?'إغلاق الطلبات':'فتح '+ids.length+' طلبات'}</button>
+     ${opened?`<div style="margin-top:8px">${orderLines}</div>`:''}
      ${action}
    </div>`;
  }).join('');
@@ -3548,7 +3566,7 @@ function accountsRender(){
  </div>
 
  <div class=card>
-   <h2>📦 حزم التسويات المدفوعة</h2>
+   <h2>📦 أرشيف الدفع</h2>
    ${activeSettlements().length?activeSettlements().slice().reverse().map((v,i)=>settlementBundleHtml(v,i)).join(''):'لا توجد حزم تسوية سابقة'}
  </div>`;
 }
