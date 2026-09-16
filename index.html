@@ -314,7 +314,7 @@ aside button{pointer-events:auto!important;touch-action:manipulation!important;}
  <select id="loginWorker"><option value="">اختر حسابك</option></select>
 <input id="loginPin" type="password" inputmode="numeric" placeholder="الرمز السري">
 <div id="loginStatus" style="margin-top:8px;font-weight:700;min-height:22px"></div>
-<div style="margin-top:6px;font-size:12px;opacity:.7">الإصدار 131</div>
+<div style="margin-top:6px;font-size:12px;opacity:.7">الإصدار 132</div>
 <button id="workerLoginBtn" type="button" onclick="workerLogin(event)" class="btn" style="width:100%">دخول الموزع</button>
 <hr>
 <h3>إنشاء حساب موزع</h3>
@@ -2025,10 +2025,10 @@ function renderWorkerFinanceSummary(){
       <div><b>الطلبات</b><h2>${arr.length}</h2></div>
     </div>
     <button class="btn g" style="margin-top:10px" onclick="workerConfirmPayment()" ${arr.length?'':'disabled'}>✓ تأكيد دفع ${cash(due)}</button>
-    <div style="margin-top:16px;border-top:1px solid #e5e7eb;padding-top:12px">
-      <h2 style="margin:0 0 8px">📦 حزم التسويات المدفوعة</h2>
-      ${mySettlements.length?mySettlements.map((v,i)=>settlementBundleHtml(v,i,true)).join(''):'لا توجد حزم مدفوعة بعد'}
-    </div>
+    <details style="margin-top:16px;border-top:1px solid #e5e7eb;padding-top:12px">
+      <summary style="cursor:pointer;font-weight:800;font-size:18px">📦 أرشيف التسويات المدفوعة (${mySettlements.length})</summary>
+      <div style="margin-top:10px">${mySettlements.length?mySettlements.map((v,i)=>settlementBundleHtml(v,i,true)).join(''):'لا توجد حزم مدفوعة بعد'}</div>
+    </details>
   `;
 }
 async function workerConfirmPayment(){
@@ -2075,6 +2075,9 @@ function visibleOrders(){
  return db.orders.filter(o=>{
    if(o.duplicateHidden)return false;
    if(session.role==='worker'&&!workerCanSeeOrder(o,session.workerId))return false;
+   // الطلبات المدفوعة مؤرشفة بالكامل للموزع، حتى أثناء البحث.
+   // تبقى محفوظة ومتاحة للمالك في الحسابات والفواتير والبحث الشامل.
+   if(session.role==='worker'&&isOrderSettled(o))return false;
    const historyText=(o.history||[]).map(h=>`${h.time||''} ${h.text||''}`).join(' ');
    const remarksText=(o.remarks||[]).map(r=>`${r.time||''} ${r.text||''}`).join(' ');
    const haystack=(`${o.seq||''} ${o.id||''} ${o.clientNo||''} ${o.recipient||''} ${o.phone||''} ${o.sender||''} ${o.address||''} ${o.city||''} ${o.product||''} ${o.status||''} ${historyText} ${remarksText}`).toLowerCase();
