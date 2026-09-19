@@ -369,7 +369,7 @@ html[data-view-mode="mobile"] #list.page.on>#orderListCard{
  <select id="loginWorker"><option value="">اختر حسابك</option></select>
 <input id="loginPin" type="password" inputmode="numeric" placeholder="الرمز السري">
 <div id="loginStatus" style="margin-top:8px;font-weight:700;min-height:22px"></div>
-<div style="margin-top:6px;font-size:12px;opacity:.7">الإصدار 143</div>
+<div style="margin-top:6px;font-size:12px;opacity:.7">الإصدار 144</div>
 <button id="workerLoginBtn" type="button" onclick="workerLogin(event)" class="btn" style="width:100%">دخول الموزع</button>
 <hr>
 <h3>إنشاء حساب موزع</h3>
@@ -394,7 +394,7 @@ html[data-view-mode="mobile"] #list.page.on>#orderListCard{
 </header>
 <div id="runtimeDiag" style="display:none;position:fixed;bottom:8px;left:8px;right:8px;z-index:10000;background:#7f1d1d;color:#fff;padding:9px 12px;border-radius:8px;font-size:12px;direction:ltr;text-align:left;max-height:34vh;overflow:auto"></div>
 <div id="syncToast" style="display:none;position:fixed;top:72px;left:50%;transform:translateX(-50%);z-index:9999;background:#222;color:#fff;padding:9px 14px;border-radius:10px;font-size:13px;max-width:90%;text-align:center"></div>
-<div class=app><aside><h3>القائمة</h3><button data-menu-key="home" onclick="go('list','home')">🏠 الرئيسية</button><button data-menu-key="add" onclick="go('add','add')">➕ طلب جديد</button><button data-menu-key="bulk" onclick="go('bulk','bulk')">📋 لصق طلبات دفعة واحدة</button><button data-menu-key="pdfImport" onclick="go('pdfImport','pdfImport')">📄 استيراد PDF</button><div id=stateMenu></div><button id="returnCreateMenu" data-menu-key="returnCreate" onclick="go('returnCreate','returnCreate')">↩ طلبات الرجوع <span id="returnReqCount" class="badge">0</span></button><button id="returnBatchesMenu" data-menu-key="returnBatches" onclick="go('returnBatches','returnBatches')">📦 سجل طلبات الإرجاع <span id="returnBatchCount" class="badge">0</span></button><button id="deliveryTransfersMenu" data-menu-key="deliveryTransfers" onclick="go('deliveryTransfers','deliveryTransfers')">🚚 في الطريق <span id="deliveryTransferCount" class="badge transit-badge">0</span></button><button data-menu-key="workers" onclick="go('workers','workers')">👤 الموزعون</button><button data-menu-key="accounts" onclick="go('accounts','accounts')">💰 الحسابات</button><button data-menu-key="invoices" onclick="go('invoices','invoices')">🧾 الفواتير</button><button data-menu-key="backupSafe" onclick="go('backupSafe','backupSafe')">🛡️ النسخ الاحتياطي</button><button data-menu-key="cloudSetup" onclick="go('cloudSetup','cloudSetup')">☁️ المزامنة السحابية</button><button data-menu-key="emergencySync" onclick="go('emergencySync','emergencySync')">🔄 مزامنة الموزع</button></aside><main>
+<div class=app><aside><h3>القائمة</h3><button data-menu-key="home" onclick="go('list','home')">🏠 الرئيسية</button><button data-menu-key="add" onclick="go('add','add')">➕ طلب جديد</button><button data-menu-key="bulk" onclick="go('bulk','bulk')">📋 لصق طلبات دفعة واحدة</button><button data-menu-key="pdfImport" onclick="go('pdfImport','pdfImport')">📄 استيراد PDF</button><div id=stateMenu></div><button id="returnBatchesMenu" data-menu-key="returnBatches" onclick="go('returnBatches','returnBatches')">↩ طلبات الرجوع <span id="returnBatchCount" class="badge">0</span></button><button id="deliveryTransfersMenu" data-menu-key="deliveryTransfers" onclick="go('deliveryTransfers','deliveryTransfers')">🚚 في الطريق <span id="deliveryTransferCount" class="badge transit-badge">0</span></button><button data-menu-key="workers" onclick="go('workers','workers')">👤 الموزعون</button><button data-menu-key="accounts" onclick="go('accounts','accounts')">💰 الحسابات</button><button data-menu-key="invoices" onclick="go('invoices','invoices')">🧾 الفواتير</button><button data-menu-key="backupSafe" onclick="go('backupSafe','backupSafe')">🛡️ النسخ الاحتياطي</button><button data-menu-key="cloudSetup" onclick="go('cloudSetup','cloudSetup')">☁️ المزامنة السحابية</button><button data-menu-key="emergencySync" onclick="go('emergencySync','emergencySync')">🔄 مزامنة الموزع</button></aside><main>
 <section id=list class="page on"><div class=card><h2 id=title>قيد التوزيع</h2>
 <div class=grid>
 <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
@@ -429,18 +429,9 @@ html[data-view-mode="mobile"] #list.page.on>#orderListCard{
   <label style="display:block;font-weight:700;margin:0 0 5px">إسناد الطلب إلى الموزع</label>
   <select id=worker></select>
 </div></div><textarea id=firstComment placeholder="تعليق"></textarea><br><button class=btn>حفظ الطلب</button></form></div></section>
-<section id=returnCreate class=page><div class=card>
-<h2>طلبات الرجوع</h2>
-
-<div style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:10px">
-<button class="btn g" onclick="sendReturnBatches()">↩ إرسال طلب الإرجاع للموزع</button>
-<button class="btn gr" onclick="go('returnBatches')">فتح أرشيف الرجوع</button>
-</div>
-<input id=returnSearch placeholder="ابحث برقم الترتيب أو رمز الطلب أو اسم المستلم أو الهاتف" oninput="renderReturnCreate()">
-<div id=returnCreateList style="margin-top:12px"></div>
-</div></section>
 <section id=returnBatches class=page><div class=card>
-<h2>📦 أرشيف الرجوع</h2>
+<h2>↩ طلبات الرجوع</h2>
+<p style="color:#555;font-size:13px">ينشئ المالك طلب الرجوع من تفاصيل الطلب، وينفذه الموزع، ولا تُقفل الحزمة إلا بعد تأكيد المالك استلامها.</p>
 
 <div id=returnBatchesList></div>
 </div></section>
@@ -628,7 +619,7 @@ html[data-view-mode="mobile"] #list.page.on>#orderListCard{
 <div id="ownerRestoreBox" style="margin-top:10px"></div>
 <div id="ownerDeleteBox" style="margin-top:10px"></div>
 <button class=btn onclick="openCustomerTransfer()">🔄 تحويل إلى زبون آخر</button>
-<button class=c onclick="statusSet('مبرمج')">برمجة</button><button class=gr onclick="statusSet('طلب رجوع','مرتجع')">مرتجع</button></div><h3>سجل حالة التوصيل</h3><div id=history class=log></div><hr><h3>التعليقات</h3><div id=remarks class=log></div><textarea id=remark placeholder="تعليق جديد"></textarea><button class=btn onclick=remarkAdd()>إضافة تعليق</button><button class="btn gr" style="display:block;width:100%;margin-top:18px;padding:12px;font-weight:800" onclick="closeDrawer()">✕ إغلاق تفاصيل الطلب</button></div></div>
+<button class=c onclick="statusSet('مبرمج')">برمجة</button></div><h3>سجل حالة التوصيل</h3><div id=history class=log></div><hr><h3>التعليقات</h3><div id=remarks class=log></div><textarea id=remark placeholder="تعليق جديد"></textarea><button class=btn onclick=remarkAdd()>إضافة تعليق</button><button class="btn gr" style="display:block;width:100%;margin-top:18px;padding:12px;font-weight:800" onclick="closeDrawer()">✕ إغلاق تفاصيل الطلب</button></div></div>
 <script>
 let appBootReady=false;
 let ownerMode=false,ownerTapCount=0,ownerTapTimer=null;
@@ -1763,17 +1754,15 @@ function save(){
 }
 
 function updateReturnRequestCount(){
- let el=document.getElementById('returnReqCount');
- if(el){
-   let n=db.orders.filter(o=>!o.duplicateHidden&&!o.deletedAt&&o.status==='طلب رجوع').length;
-   el.textContent=n;
- }
  let be=document.getElementById('returnBatchCount');
  if(be){
-   // نفس المصدر الذي تُرسم منه الصفحة، لذلك يستحيل أن يظهر رقم أكبر من الطلبات الظاهرة.
+   // يعرض عدد الطلبات الموجودة في حزم لم يقفلها المالك بعد.
    const model=returnDisplayModel();
    const keys=new Set();
-   for(const item of model)for(const o of item.orders){const k=orderUniqueKey(o);if(k)keys.add(k);}
+   for(const item of model){
+     if(item.batch.status==='owner_confirmed'||item.batch.ownerConfirmedAt)continue;
+     for(const o of item.orders){const k=orderUniqueKey(o);if(k)keys.add(k);}
+   }
    be.textContent=keys.size;
  }
  let de=document.getElementById('deliveryBatchCount');
@@ -1800,11 +1789,11 @@ function settledOrderIdSet(){
 function isOrderSettled(o){
   return !!(o && settledOrderIdSet().has(String(o.id)));
 }
-// v138: الطلب يدخل أرشيف الرجوع فور إنشاء حزمة الرجوع، ويبقى محفوظاً داخل الحزمة.
+// v144: لا يدخل الطلب أرشيف الرجوع ولا يخرج من العدادات إلا بعد أن يؤكد المالك استلامه.
 function returnedOrderIdSet(){
   if(!Array.isArray(db.returnBatches))db.returnBatches=[];
   return new Set(db.returnBatches
-    .filter(b=>b&&!b.deletedAt&&!b.duplicateHidden&&Array.isArray(b.orderIds))
+    .filter(b=>b&&!b.deletedAt&&!b.duplicateHidden&&(b.status==='owner_confirmed'||b.ownerConfirmedAt)&&Array.isArray(b.orderIds))
     .flatMap(b=>b.orderIds).map(String));
 }
 function isOrderReturnArchived(o){
@@ -2912,7 +2901,7 @@ function renderDeliveryBatches(){
        <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap"><div><b>طلب إرجاع غير مرتبط بحزمة</b></div><span class="badge">بانتظار الإرسال للموزع</span></div>
        <p><b>الموزع:</b> ${htmlEscape(w?.name||'غير مسند')}<br><b>عدد الطلبات:</b> 1<br><b>تاريخ طلب الرجوع:</b> ${htmlEscape(o.returnRequestedAt||'—')}</p>
        <div style="padding:6px 0;border-bottom:1px solid #eee"><b>رمز الطلب:</b> <b dir="ltr">${htmlEscape(o.clientNo||'—')}</b> — ${htmlEscape(o.recipient||'—')} — ${cash(o.amount)}</div>
-       ${session.role==='owner'?`<button class="btn gr" style="margin-top:10px" onclick="go('returnCreate')">إرسال طلب الإرجاع</button>`:''}
+       ${session.role==='owner'?`<button class="btn gr" style="margin-top:10px" onclick="openOrder('${o.id}')">فتح الطلب وإرساله للرجوع</button>`:''}
      </div>`;
    }).join('');
  }
@@ -3017,6 +3006,7 @@ function toggleReturnArchiveBatch(id){
 }
 function renderReturnBatches(){
  ensureReturnBatches();
+ migrateLegacyReturnsV144();
  const el=document.getElementById('returnBatchesList');if(!el)return;
  const model=returnDisplayModel();
  if(!model.length){
@@ -3035,11 +3025,11 @@ function renderReturnBatches(){
      <b>رمز الطلب:</b> <b dir="ltr" style="direction:ltr;display:inline-block">${htmlEscape(o.clientNo||'—')}</b> — ${htmlEscape(o.recipient||'—')} — ${cash(o.amount)}
    </div>`).join('');
 
-   let stateText='بانتظار تنفيذ الموزع';
+   let stateText='حزمة مفتوحة — بانتظار تنفيذ الموزع';
    if(workerDone&&!ownerDone){
-     stateText=session.role==='worker'?'تم الإرجاع — بانتظار تأكيد المالك':'أعاد الموزع الطلبات — بانتظار تأكيدك';
+     stateText=session.role==='worker'?'حزمة مفتوحة — بانتظار استلام المالك':'حزمة مفتوحة — وصلت من الموزع وبانتظار تأكيدك';
    }else if(ownerDone){
-     stateText='✓ استلم المالك وأكد الإرجاع';
+     stateText='✓ حزمة مقفلة — استلم المالك وأكد الإرجاع';
    }
 
    let action='';
@@ -3119,7 +3109,7 @@ async function confirmReturnBatch(batchId){
  ensureReturnBatches();
  const b=db.returnBatches.find(x=>String(x.id)===String(batchId));if(!b)return;
  if(String(b.workerId)!==String(session.workerId))return alert('هذه الحزمة ليست مخصصة لحسابك');
- if(b.status==='completed')return alert('تم تأكيد هذه الحزمة سابقاً');
+ if(b.status==='completed'||b.status==='owner_confirmed'||b.confirmedAt)return alert('تم تأكيد تنفيذ هذه الحزمة سابقاً وهي بانتظار المالك أو مقفلة');
 
  const ids=(b.orderIds||[]).map(String);
  if(!confirm('تأكيد أنك أعدت جميع الطلبات المطلوبة للمالك وعددها '+ids.length+' طلبات؟'))return;
@@ -3186,14 +3176,8 @@ function createReturnFromList(id){
  let o=db.orders.find(x=>x.id===id);if(!o)return;
  const rk=orderUniqueKey(o);
  if(o.status==='طلب رجوع'||o.status==='مرتجع'||activeReturnRefKeys().has(rk))return alert('الطلب موجود بالفعل ضمن الرجوع ولن يتم تكراره');
- if(!confirm('إرسال طلب رجوع للطلب '+formatSeq(o.seq)+'؟'))return;
- let previous=o.status;
- o.status='طلب رجوع';o.returnRequestedAt=tm();
- if(!o.history)o.history=[];
- o.history.push({time:o.returnRequestedAt,text:'طلب المالك رجوع الطلب — الحالة السابقة: '+previous});
- localStorage.setItem(K,JSON.stringify(db));
- render();menu();renderReturnCreate();
- alert('تم إرسال طلب الرجوع إلى الموزع');
+ current=id;
+ requestReturn();
 }
 
 function renderReturnControls(o){
@@ -3213,42 +3197,83 @@ function renderReturnControls(o){
      box.innerHTML=`<button class="btn g" style="width:100%" onclick="confirmReturnDone()">✓ تم تنفيذ طلب الرجوع</button>
      <small style="display:block;margin-top:5px;color:#666">طلب رجوع فردي قديم غير مرتبط بحزمة.</small>`;
    }
- }else if(isOwner && o.status==='طلب رجوع'){
-   box.innerHTML=`<span class="badge">طلب الرجوع بانتظار استجابة الموزع</span>`;
+ }else if(isOwner && (o.status==='طلب رجوع'||o.status==='مرتجع')){
+   box.innerHTML=`<button class="btn gr" style="width:100%" onclick="closeDrawer();go('returnBatches')">↩ فتح حزمة الرجوع ومتابعتها</button>
+   <small style="display:block;margin-top:5px;color:#666">تبقى الحزمة مفتوحة حتى يؤكد المالك استلام الطلبات.</small>`;
  }else{
    box.innerHTML='';
  }
 }
 
-function requestReturn(){
+function attachOrderToOpenReturnBatch(o){
+ ensureReturnBatches();
+ const wid=String(o.worker||'');
+ if(!wid)throw new Error('يجب إسناد الطلب إلى موزع أولاً');
+ const w=db.workers.find(x=>String(x.id)===wid&&!x.deletedAt);
+ if(!w)throw new Error('لم يتم العثور على الموزع المسند إليه الطلب');
+ let b=db.returnBatches.find(x=>x&&!x.deletedAt&&!x.duplicateHidden&&String(x.workerId)===wid&&x.status==='pending'&&!x.ownerConfirmedAt);
+ const now=isoNow(),label=tm();
+ if(!b){
+   const suffix=String(Date.now()).slice(-6);
+   b={id:'RB'+Date.now(),code:'RET-'+new Date().toISOString().slice(0,10).replace(/-/g,'')+'-'+suffix,
+      workerId:wid,workerName:w.name,orderIds:[],count:0,status:'pending',
+      createdAt:now,createdLabel:label,modifiedAt:now,modifiedBy:actorName()};
+   db.returnBatches.push(b);
+ }
+ if(!(b.orderIds||[]).map(String).includes(String(o.id)))b.orderIds=(b.orderIds||[]).concat([o.id]);
+ b.count=uniqueIds(b.orderIds).length;b.modifiedAt=now;b.modifiedBy=actorName();
+ o.returnBatchId=b.id;o.returnBatchCode=b.code;
+ return b;
+}
+
+function migrateLegacyReturnsV144(){
+ const isOwner=(session&&session.role==='owner')||ownerMode===true;
+ if(!isOwner)return false;
+ let changed=false;
+ const active=activeReturnRefKeys();
+ for(const o of (db.orders||[])){
+   if(!o||o.deletedAt||!o.worker||!['طلب رجوع','مرتجع'].includes(o.status))continue;
+   const key=orderUniqueKey(o);if(key&&active.has(key))continue;
+   try{
+     const b=attachOrderToOpenReturnBatch(o);
+     if(o.status==='مرتجع'){
+       b.status='completed';b.confirmedAt=b.confirmedAt||isoNow();b.confirmedLabel=b.confirmedLabel||tm();
+     }
+     changed=true;if(key)active.add(key);
+   }catch(_){}
+ }
+ if(changed)localStorage.setItem(K,JSON.stringify(db));
+ return changed;
+}
+
+async function requestReturn(){
  const isOwner=(session&&session.role==='owner')||ownerMode===true;
  if(!isOwner)return alert('إنشاء طلب الرجوع متاح للمالك فقط');
  let o=db.orders.find(x=>x.id===current);if(!o)return;
  const rk=orderUniqueKey(o);
  if(o.status==='طلب رجوع'||activeReturnRefKeys().has(rk))return alert('يوجد طلب رجوع قائم بالفعل ولن يتم تكراره');
+ if(!o.worker)return alert('يجب إسناد الطلب إلى موزع قبل طلب الرجوع');
  if(!confirm('إرسال طلب رجوع هذا الطلب إلى الموزع؟'))return;
  let previous=o.status;
  o.status='طلب رجوع';
  o.returnRequestedAt=tm();
- if(!o.history)o.history=[];
- o.history.push({time:o.returnRequestedAt,text:'طلب المالك رجوع الطلب — الحالة السابقة: '+previous});
- localStorage.setItem(K,JSON.stringify(db));
- render();menu();
+ let b;
+ try{b=attachOrderToOpenReturnBatch(o)}catch(e){return alert(e.message)}
+ appendOrderHistory(o,'طلب المالك رجوع الطلب ضمن الحزمة '+b.code+' — الحالة السابقة: '+previous);
+ save();
+ if(navigator.onLine)await syncNow(true);
  openOrder(current);
+ showToast('✅ وصل طلب الرجوع إلى حزمة الموزع',3500);
 }
 
 function confirmReturnDone(){
  if(!(session&&session.role==='worker'))return alert('هذه العملية مخصصة للموزع');
  let o=db.orders.find(x=>x.id===current);if(!o)return;
  if(o.status!=='طلب رجوع')return alert('لا يوجد طلب رجوع لهذا الطلب');
- if(!confirm('تأكيد أنك استجبت لطلب الرجوع وأعدت الطلب؟'))return;
- o.status='مرتجع';
- o.returnCompletedAt=tm();
- if(!o.history)o.history=[];
- o.history.push({time:o.returnCompletedAt,text:'استجاب الموزع لطلب الرجوع — تم إرجاع الطلب'});
- localStorage.setItem(K,JSON.stringify(db));
- render();menu();accountsRender();
- openOrder(current);
+ let b=(db.returnBatches||[]).find(x=>x&&!x.deletedAt&&(x.orderIds||[]).map(String).includes(String(o.id))&&x.status!=='owner_confirmed');
+ if(!b){try{b=attachOrderToOpenReturnBatch(o)}catch(e){return alert(e.message)}}
+ closeDrawer();go('returnBatches');
+ confirmReturnBatch(b.id);
 }
 function renderOwnerRestore(o){
  let box=document.getElementById('ownerRestoreBox');
@@ -3918,7 +3943,7 @@ function directNavigate(key){
     }else{
       const map={
         home:'list',add:'add',bulk:'bulk',pdfImport:'pdfImport',
-        returnCreate:'returnCreate',returnBatches:'returnBatches',
+        returnCreate:'returnBatches',returnBatches:'returnBatches',
         deliveryTransfers:'deliveryTransfers',workers:'workers',
         accounts:'accounts',invoices:'invoices',backupSafe:'backupSafe',
         cloudSetup:'cloudSetup',emergencySync:'emergencySync'
@@ -3928,7 +3953,7 @@ function directNavigate(key){
     if(!target)return false;
     if(session.role==='worker'&&['add','bulk','pdfImport','returnCreate','workers','accounts','invoices','backupSafe','cloudSetup','emergencySync'].includes(target))return false;
 
-    sidebarActiveKey=key;
+    sidebarActiveKey=key==='returnCreate'?'returnBatches':key;
     document.querySelectorAll('main > .page').forEach(p=>p.classList.remove('on'));
     const page=document.getElementById(target);
     if(!page)throw new Error('الصفحة غير موجودة: '+target);
@@ -3939,7 +3964,6 @@ function directNavigate(key){
       else if(target==='add'){const s=document.getElementById('seq');if(s)s.value=nextSeq();}
       else if(target==='accounts')accountsRender();
       else if(target==='invoices')invoicesRender();
-      else if(target==='returnCreate')renderReturnCreate();
       else if(target==='returnBatches')renderReturnBatches();
       else if(target==='deliveryTransfers'){
         deliveryTransferView=session.role==='worker'?'pending':'ready';
