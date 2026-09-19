@@ -369,7 +369,7 @@ html[data-view-mode="mobile"] #list.page.on>#orderListCard{
  <select id="loginWorker"><option value="">اختر حسابك</option></select>
 <input id="loginPin" type="password" inputmode="numeric" placeholder="الرمز السري">
 <div id="loginStatus" style="margin-top:8px;font-weight:700;min-height:22px"></div>
-<div style="margin-top:6px;font-size:12px;opacity:.7">الإصدار 140</div>
+<div style="margin-top:6px;font-size:12px;opacity:.7">الإصدار 142</div>
 <button id="workerLoginBtn" type="button" onclick="workerLogin(event)" class="btn" style="width:100%">دخول الموزع</button>
 <hr>
 <h3>إنشاء حساب موزع</h3>
@@ -1292,6 +1292,7 @@ let cloudSyncTimer=null;
 let cloudSyncBusy=false;
 const CLOUD_PENDING_KEY='ak_delivery_cloud_pending_v59';
 const CLOUD_LAST_OK_KEY='ak_delivery_last_cloud_ok_v59';
+const CLOUD_LAST_ERROR_KEY='ak_delivery_last_cloud_error_v142';
 const CLOUD_SEEN_ASSIGNED_KEY='ak_delivery_seen_assigned_v59';
 
 // النسخة 70: مطابقة موحدة وآمنة بين الطلب وحساب الموزع.
@@ -1362,7 +1363,8 @@ function updateSyncIndicators(msg){
  if(st && !msg){
    const last=localStorage.getItem(CLOUD_LAST_OK_KEY);
    const pending=localStorage.getItem(CLOUD_PENDING_KEY)==='1';
-   st.innerHTML='<b>الحالة:</b> '+(!navigator.onLine?'لا يوجد إنترنت':pending?'توجد تغييرات بانتظار المزامنة':last?'متصل — آخر مزامنة '+new Date(last).toLocaleString('ar-MA'):'جاهز');
+   const lastError=localStorage.getItem(CLOUD_LAST_ERROR_KEY);
+   st.innerHTML='<b>الحالة:</b> '+(!navigator.onLine?'لا يوجد إنترنت':pending?(lastError?'تعذرت المزامنة: '+lastError+' — ستتم إعادة المحاولة تلقائياً':'توجد تغييرات بانتظار المزامنة'):last?'متصل — آخر مزامنة '+new Date(last).toLocaleString('ar-MA'):'جاهز');
  }
  updateWorkerNewBadge();
 }
@@ -1384,13 +1386,13 @@ async function cloudRequest(action,payload={}){
 
   if(action==='ping'){
     r=await fetch(
-      CLOUD_URL+'?key='+encodeURIComponent(CLOUD_KEY)+'&action=ping',
+      CLOUD_URL+'?key='+encodeURIComponent(CLOUD_KEY)+'&action=ping&_t='+Date.now(),
       {method:'GET',cache:'no-store'}
     );
 
   }else if(action==='loadAll'){
     r=await fetch(
-      CLOUD_URL+'?key='+encodeURIComponent(CLOUD_KEY)+'&action=load',
+      CLOUD_URL+'?key='+encodeURIComponent(CLOUD_KEY)+'&action=load&_t='+Date.now()+'-'+Math.random().toString(36).slice(2),
       {method:'GET',cache:'no-store'}
     );
 
@@ -1520,13 +1522,15 @@ async function cloudPush(silent=false){
     localStorage.setItem('ak_delivery_last_cloud_push',isoNow());
     localStorage.setItem(CLOUD_LAST_OK_KEY,isoNow());
     localStorage.removeItem(CLOUD_PENDING_KEY);
+    localStorage.removeItem(CLOUD_LAST_ERROR_KEY);
     if(!silent)updateCloudStatus('تم رفع '+localOrders+' طلب إلى السحابة ✓');
     else updateSyncIndicators();
     return true;
   }catch(e){
     localStorage.setItem(CLOUD_PENDING_KEY,'1');
+    localStorage.setItem(CLOUD_LAST_ERROR_KEY,e&&e.message?e.message:'خطأ غير معروف');
     if(!silent)updateCloudStatus('فشل الرفع: '+e.message);
-    updateSyncIndicators();
+    else updateSyncIndicators();
     return false;
   }
 }
@@ -1595,10 +1599,12 @@ async function workerCloudPush(silent=true){
     if(!result||!result.verified)throw new Error('لم يتم تأكيد حفظ تحديثات الموزع');
     localStorage.setItem(CLOUD_LAST_OK_KEY,isoNow());
     localStorage.removeItem(CLOUD_PENDING_KEY);
+    localStorage.removeItem(CLOUD_LAST_ERROR_KEY);
     if(!silent)showToast('✅ وصلت تحديثاتك إلى المالك');
     return true;
   }catch(e){
     localStorage.setItem(CLOUD_PENDING_KEY,'1');
+    localStorage.setItem(CLOUD_LAST_ERROR_KEY,e&&e.message?e.message:'خطأ غير معروف');
     if(!silent)showToast('تعذر إرسال التحديث: '+(e&&e.message?e.message:'خطأ غير معروف'));
     updateSyncIndicators();
     return false;
@@ -1668,7 +1674,12 @@ async function workerRefreshOrders(){
  }
 }
 async function syncNow(silent=true){
-  if(cloudSyncBusy||!navigator.onLine)return false;
+  if(!navigator.onLine)return false;
+  if(cloudSyncBusy){
+    clearTimeout(cloudSyncTimer);
+    cloudSyncTimer=setTimeout(()=>syncNow(true),2500);
+    return false;
+  }
   cloudSyncBusy=true;
   try{
     let ok=false;
@@ -1685,6 +1696,7 @@ async function syncNow(silent=true){
     if(ok){
       localStorage.setItem(CLOUD_LAST_OK_KEY,isoNow());
       localStorage.removeItem(CLOUD_PENDING_KEY);
+      localStorage.removeItem(CLOUD_LAST_ERROR_KEY);
     }
     updateSyncIndicators();
     return ok;
@@ -1712,15 +1724,14 @@ window.addEventListener('offline',()=>{updateSyncIndicators();showToast('لا ي
 // v135: الموزع يجلب دورياً، أما المالك فلا يرفع قاعدة جهازه دورياً.
 setInterval(()=>{
   if(!navigator.onLine)return;
-  if(session.role==='worker'){
-    if(localStorage.getItem(CLOUD_PENDING_KEY)==='1')syncNow(true);
-    else cloudPull(true,true);
-  }
+  if(localStorage.getItem(CLOUD_PENDING_KEY)==='1')syncNow(true);
+  else if(session.role==='worker')cloudPull(true,true);
 },12000);
 // v129: عند رجوع الموزع إلى صفحة التطبيق نجلب الطلبات فوراً.
 document.addEventListener('visibilitychange',()=>{
-  if(document.visibilityState==='visible' && navigator.onLine && session.role==='worker'){
-    cloudPull(true,true);
+  if(document.visibilityState==='visible' && navigator.onLine){
+    if(localStorage.getItem(CLOUD_PENDING_KEY)==='1')syncNow(true);
+    else if(session.role==='worker')cloudPull(true,true);
   }
 });
 // عند الرجوع إلى التطبيق من الخلفية أو فتح النسخة المثبتة، حدّث طلبات الموزع فوراً.
@@ -2163,7 +2174,7 @@ function add(e){
 function runOrderSearch(){
   render();
   const n=visibleOrders().length;
-  if(search && String(search.value||'').trim()) showSyncToast('نتائج البحث: '+n);
+  if(search && String(search.value||'').trim()) showToast('نتائج البحث: '+n);
 }
 function clearOrderSearch(){
   if(search)search.value='';
