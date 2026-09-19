@@ -369,7 +369,7 @@ html[data-view-mode="mobile"] #list.page.on>#orderListCard{
  <select id="loginWorker"><option value="">اختر حسابك</option></select>
 <input id="loginPin" type="password" inputmode="numeric" placeholder="الرمز السري">
 <div id="loginStatus" style="margin-top:8px;font-weight:700;min-height:22px"></div>
-<div style="margin-top:6px;font-size:12px;opacity:.7">الإصدار 142</div>
+<div style="margin-top:6px;font-size:12px;opacity:.7">الإصدار 143</div>
 <button id="workerLoginBtn" type="button" onclick="workerLogin(event)" class="btn" style="width:100%">دخول الموزع</button>
 <hr>
 <h3>إنشاء حساب موزع</h3>
@@ -576,6 +576,21 @@ html[data-view-mode="mobile"] #list.page.on>#orderListCard{
 <button class="btn gr" onclick="closeEdit()">إلغاء</button>
 </div>
 </div>
+<div id="customerTransferBox" class="card" style="display:none;border:2px solid #1882b3">
+<h3 style="margin-top:0">🔄 تحويل الطلب إلى زبون آخر</h3>
+<p style="font-size:13px;color:#555">سيبقى رمز الطلب نفسه، وسيُحفظ اسم الزبون السابق في سجل الطلب.</p>
+<div class="grid">
+<input id="tRecipient" placeholder="اسم الزبون الجديد">
+<input id="tPhone" placeholder="هاتف الزبون الجديد">
+<input id="tAddress" placeholder="العنوان الجديد">
+<input id="tCity" placeholder="المدينة الجديدة">
+<input id="tAmount" type="number" step=".01" placeholder="القيمة الجديدة">
+</div>
+<div style="margin-top:9px;display:flex;gap:7px;flex-wrap:wrap">
+<button class="btn g" onclick="confirmCustomerTransfer()">✓ تأكيد التحويل</button>
+<button class="btn gr" onclick="closeCustomerTransfer()">إلغاء</button>
+</div>
+</div>
 <div class=actions><button class=g onclick="statusSet('تم التسليم')">تم التسليم</button><button class=y onclick="statusSet('تعذر الاتصال')">تعذر الاتصال</button><div style="display:flex;gap:4px;align-items:center">
 <select id="rejectReason" style="width:auto;min-width:130px">
 <option value="">سبب الرفض...</option>
@@ -612,6 +627,7 @@ html[data-view-mode="mobile"] #list.page.on>#orderListCard{
 <div id="returnRequestBox" style="margin-top:10px"></div>
 <div id="ownerRestoreBox" style="margin-top:10px"></div>
 <div id="ownerDeleteBox" style="margin-top:10px"></div>
+<button class=btn onclick="openCustomerTransfer()">🔄 تحويل إلى زبون آخر</button>
 <button class=c onclick="statusSet('مبرمج')">برمجة</button><button class=gr onclick="statusSet('طلب رجوع','مرتجع')">مرتجع</button></div><h3>سجل حالة التوصيل</h3><div id=history class=log></div><hr><h3>التعليقات</h3><div id=remarks class=log></div><textarea id=remark placeholder="تعليق جديد"></textarea><button class=btn onclick=remarkAdd()>إضافة تعليق</button><button class="btn gr" style="display:block;width:100%;margin-top:18px;padding:12px;font-weight:800" onclick="closeDrawer()">✕ إغلاق تفاصيل الطلب</button></div></div>
 <script>
 let appBootReady=false;
@@ -1556,7 +1572,8 @@ async function workerCloudPush(silent=true){
     const cloudOrders=new Map(out.orders.map(o=>[String(o.id),o]));
     const workerFields=['status','history','remarks','rejectReason','postponeDate','returnRequestedAt',
       'returnCompletedAt','deliveryReceivedAt','deliveryReceivedLabel','deliveryReceivedByWorkerId',
-      'deliveryReceivedByWorkerName','modifiedAt','modifiedBy','lastChangeKind'];
+      'deliveryReceivedByWorkerName','recipient','phone','address','city','amount','customerTransfers',
+      'cancelReason','cancelledAt','modifiedAt','modifiedBy','lastChangeKind'];
     for(const local of (db.orders||[])){
       if(!local||local.id==null||!orderAssignedToWorker(local,wid))continue;
       const remote=cloudOrders.get(String(local.id));
@@ -2382,6 +2399,7 @@ function openOrder(id){
  <b>المرسل</b><span>${o.sender}</span>
  <b>رمز الطلب</b><span>${o.clientNo||'—'}</span>
  <b>المستلم</b><span>${o.recipient}</span>
+ ${Array.isArray(o.customerTransfers)&&o.customerTransfers.length?`<b>الزبائن السابقون</b><span>${o.customerTransfers.map(t=>htmlEscape(t.fromRecipient||'—')).join(' ← ')}</span>`:''}
  <b>العنوان</b><span>${o.address||'—'}</span>
  <b>المدينة</b><span>${o.city}</span>
  <b>الهاتف</b><span>
@@ -2405,6 +2423,7 @@ function openOrder(id){
  ${o.cancelReason?`<b>سبب الإلغاء</b><span>${htmlEscape(o.cancelReason)}</span>`:''}
  ${o.cancelledAt?`<b>تاريخ الإلغاء</b><span>${htmlEscape(o.cancelledAt)}</span>`:''}
  ${o.postponeDate?`<b>مؤجل إلى</b><span>${o.postponeDate}</span>`:''}
+ ${Array.isArray(o.customerTransfers)&&o.customerTransfers.length?`<b>آخر تحويل</b><span>${htmlEscape(o.customerTransfers[o.customerTransfers.length-1].label||'')}</span>`:''}
  </div>
  <h3 style="margin-top:14px">المراحل التي مر بها الطلب</h3>
  ${orderLifecycleSummary(o)}`;
@@ -2426,9 +2445,57 @@ function openOrder(id){
    renderReturnControls(o);
  }
  if(document.getElementById('editBox'))editBox.style.display='none';
+ if(document.getElementById('customerTransferBox'))customerTransferBox.style.display='none';
  overlay.style.display='block';
 }
 function closeDrawer(){overlay.style.display='none';current=null}
+
+function openCustomerTransfer(){
+ const o=db.orders.find(x=>x.id===current); if(!o||o.deletedAt)return;
+ if(session&&session.role==='worker'&&!orderAssignedToWorker(o,session.workerId))return alert('هذا الطلب غير مسند إليك');
+ if(isOrderSettled(o)||isOrderReturnArchived(o))return alert('لا يمكن تحويل طلب أُغلق داخل أرشيف الدفع أو الرجوع');
+ tRecipient.value='';
+ tPhone.value='';
+ tAddress.value=o.address||'';
+ tCity.value=o.city||'';
+ tAmount.value=+o.amount||0;
+ customerTransferBox.style.display='block';
+ customerTransferBox.scrollIntoView({behavior:'smooth',block:'center'});
+ setTimeout(()=>tRecipient.focus(),250);
+}
+function closeCustomerTransfer(){
+ const box=document.getElementById('customerTransferBox'); if(box)box.style.display='none';
+}
+async function confirmCustomerTransfer(){
+ const o=db.orders.find(x=>x.id===current); if(!o||o.deletedAt)return;
+ if(session&&session.role==='worker'&&!orderAssignedToWorker(o,session.workerId))return alert('هذا الطلب غير مسند إليك');
+ if(isOrderSettled(o)||isOrderReturnArchived(o))return alert('لا يمكن تحويل طلب أُغلق داخل أرشيف الدفع أو الرجوع');
+ const newName=tRecipient.value.trim(),newPhone=tPhone.value.trim(),newAddress=tAddress.value.trim(),newCity=tCity.value.trim();
+ const newAmount=+tAmount.value||0;
+ if(!newName)return alert('أدخل اسم الزبون الجديد');
+ if(!newPhone)return alert('أدخل هاتف الزبون الجديد');
+ if(!newAddress)return alert('أدخل عنوان الزبون الجديد');
+ const oldName=String(o.recipient||'بدون اسم').trim();
+ if(oldName.toLowerCase()===newName.toLowerCase())return alert('اسم الزبون الجديد مطابق للاسم الحالي');
+ if(!confirm('تأكيد تحويل الطلب من «'+oldName+'» إلى «'+newName+'» مع الاحتفاظ بنفس الرمز؟'))return;
+ const stamp=tm();
+ if(!Array.isArray(o.customerTransfers))o.customerTransfers=[];
+ const label='تم تحويل الطلب من «'+oldName+'» إلى «'+newName+'»';
+ o.customerTransfers.push({
+   id:'CT-'+Date.now(),time:stamp,label,
+   fromRecipient:oldName,fromPhone:o.phone||'',fromAddress:o.address||'',fromCity:o.city||'',fromAmount:+o.amount||0,
+   toRecipient:newName,toPhone:newPhone,toAddress:newAddress,toCity:newCity,toAmount:newAmount,
+   changedBy:actorName()
+ });
+ o.recipient=newName;o.phone=newPhone;o.address=newAddress;o.city=newCity;o.amount=newAmount;
+ o.status='قيد التوزيع';
+ o.rejectReason='';o.cancelReason='';o.cancelledAt='';o.postponeDate='';o.returnRequestedAt='';o.returnCompletedAt='';
+ appendOrderHistory(o,label+' — نفس رمز الطلب: '+(o.clientNo||formatSeq(o.seq)));
+ save();
+ if(navigator.onLine)await syncNow(true);
+ openOrder(current);
+ showToast('✅ '+label,4200);
+}
 
 function renderReturnCreate(){
  updateReturnRequestCount();
