@@ -448,6 +448,12 @@ html[data-view-mode="mobile"] #list.page.on>#orderListCard,html[data-view-mode="
     flex-basis:135px!important;
   }
 }
+html[data-lang="fr"]{direction:ltr}
+html[data-lang="fr"] body{direction:ltr;text-align:left}
+html[data-lang="fr"] aside button{text-align:left!important;padding-left:15px!important;padding-right:54px!important}
+html[data-lang="fr"] aside .badge,html[data-lang="fr"] aside .menu-count{left:auto!important;right:14px!important}
+html[data-lang="fr"] th,html[data-lang="fr"] td{text-align:left}
+#langToggleBtn{width:auto;padding:5px 9px;background:#fff;color:#175d79;border:1px solid #ffffffaa;border-radius:6px;font-weight:900}
 </style></head>
 <body>
 <div id="loginScreen" class="login-screen">
@@ -455,7 +461,7 @@ html[data-view-mode="mobile"] #list.page.on>#orderListCard,html[data-view-mode="
  <select id="loginWorker"><option value="">اختر حسابك</option></select>
 <input id="loginPin" type="password" inputmode="numeric" placeholder="الرمز السري">
 <div id="loginStatus" style="margin-top:8px;font-weight:700;min-height:22px"></div>
-<div style="margin-top:6px;font-size:12px;opacity:.7">الإصدار 150</div>
+<div style="margin-top:6px;font-size:12px;opacity:.7">الإصدار 151</div>
 <button id="workerLoginBtn" type="button" onclick="workerLogin(event)" class="btn" style="width:100%">دخول الموزع</button>
 <hr>
 <h3>إنشاء حساب موزع</h3>
@@ -473,6 +479,7 @@ html[data-view-mode="mobile"] #list.page.on>#orderListCard,html[data-view-mode="
 <header id="appHeader" onclick="ownerTap()">مسيّر التوصيل <button class="logout" onclick="event.stopPropagation();logout()">خروج</button> <span style="display:inline-flex;gap:4px;margin-right:8px">
 <button id="viewDesktopBtn" type="button" onclick="event.stopPropagation();saveViewMode('desktop')" style="width:auto;padding:5px 7px">🖥️</button>
 <button id="viewMobileBtn" type="button" onclick="event.stopPropagation();saveViewMode('mobile')" style="width:auto;padding:5px 7px">📱</button>
+<button id="langToggleBtn" type="button" onclick="event.stopPropagation();toggleAppLanguage()" title="Français / العربية">FR</button>
 </span>
 <span id="ownerCloudMini" style="display:none;margin-right:8px;font-size:12px;padding:4px 8px;border-radius:12px;background:#ffffff22">☁️ جاهز</span>
 <span id="workerNewBadge" style="display:none;margin-right:8px;font-size:12px;padding:4px 8px;border-radius:12px;background:#ffffff22">🔔 0</span>
@@ -4298,6 +4305,93 @@ if(!session || !session.role){
 setTimeout(()=>{
   if(navigator.onLine && session && session.role==='worker')cloudPull(true,true);
 },1800);
+
+// v151: واجهة ثنائية اللغة. تبقى القيم والبيانات الداخلية كما هي، وتتغير النصوص المعروضة فقط.
+const AK_LANG_KEY='ak_delivery_language';
+const AK_FR={
+ 'مسيّر التوصيل':'Gestion des livraisons','خروج':'Déconnexion','القائمة':'Menu','الرئيسية':'Accueil',
+ 'طلب جديد':'Nouvelle commande','لصق طلبات دفعة واحدة':'Coller plusieurs commandes','استيراد PDF':'Importer PDF',
+ 'الكل':'Toutes','قيد التوزيع':'En distribution','تعذر الاتصال':'Injoignable','مؤجل':'Reportée','مبرمج':'Programmée',
+ 'تم التسليم':'Livrée','رفض':'Refusée','ملغى':'Annulée','مرتجع':'Retournée','طلب رجوع':'Retour demandé',
+ 'طلبات رجوع الطلبات':'Demandes de retour','في الطريق':'En route','الموزعون':'Livreurs','الحسابات':'Comptes',
+ 'الفواتير':'Factures','النسخ الاحتياطي':'Sauvegarde','المزامنة السحابية':'Synchronisation cloud',
+ 'مزامنة الموزع':'Synchronisation livreur','تغيير الزبون':'Changer le client','تسجيل الدخول':'Connexion',
+ 'دخول الموزع':'Connexion livreur','إنشاء حساب موزع':'Créer un compte livreur','إنشاء حساب الموزع':'Créer le compte livreur',
+ 'دخول المالك':'Connexion propriétaire','اختر حسابك':'Choisissez votre compte','الرمز السري':'Code secret',
+ 'تأكيد الرقم السري':'Confirmer le code secret','اختر اسمك':'Choisissez votre nom','أدخل رمز المالك 0534':'Entrez le code propriétaire 0534',
+ 'بحث في جميع الطلبات حتى المحذوفة':'Rechercher dans toutes les commandes, même supprimées','بحث':'Rechercher','مسح':'Effacer',
+ 'تنزيل Excel':'Télécharger Excel','تنزيل PDF':'Télécharger PDF','رقم الترتيب':'N° ordre','رمز الطلب':'Code commande',
+ 'المستلم':'Destinataire','العنوان':'Adresse','المدة':'Durée','الهاتف':'Téléphone','القيمة والحساب':'Montant et compte',
+ 'الحالة':'Statut','إضافة طلب جديد':'Ajouter une commande','اسم الزبون المرسل':'Nom du client expéditeur',
+ 'رمز الطلب المرسل من الزبون':'Code envoyé par le client','اسم المستلم':'Nom du destinataire','المدينة':'Ville',
+ 'المنتج':'Produit','القيمة':'Montant','إسناد الطلب إلى الموزع':'Affecter la commande au livreur','تعليق':'Commentaire',
+ 'حفظ الطلب':'Enregistrer','إدخال الطلبات بالنسخ واللصق':'Saisie des commandes par copier-coller','الصق الطلبات هنا...':'Collez les commandes ici…',
+ 'معاينة':'Aperçu','إضافة الطلبات':'Ajouter les commandes','استيراد الطلبات من PDF':'Importer les commandes du PDF',
+ 'اختيار الكل':'Tout sélectionner','إلغاء الاختيار':'Tout désélectionner','نسخ الطلبات المختارة':'Importer la sélection',
+ 'تحويل الطلب إلى زبون آخر':'Transférer vers un autre client','اسم الزبون الجديد':'Nom du nouveau client',
+ 'هاتف الزبون الجديد':'Téléphone du nouveau client','العنوان الجديد':'Nouvelle adresse','المدينة الجديدة':'Nouvelle ville',
+ 'إرسال التغيير للموزع':'Envoyer le changement au livreur','حزم استلام الطلبات':'Lots de réception',
+ 'إنشاء وإرسال حزمة الطلبات للموزع':'Créer et envoyer le lot au livreur','إرسال واستلام الطلبات':'Envoi et réception des commandes',
+ 'بحث برقم الطلب أو المستلم أو الهاتف':'Rechercher par code, destinataire ou téléphone','إنشاء حساب موزع بواسطة المالك':'Créer un compte livreur',
+ 'اسم الموزع':'Nom du livreur','الأجرة لكل طلب':'Tarif par commande','إنشاء الحساب وتفعيله':'Créer et activer le compte',
+ 'اختبار الاتصال':'Tester la connexion','جلب البيانات':'Récupérer les données','رفع البيانات':'Envoyer les données','جاهز':'Prêt',
+ 'حماية بيانات التطبيق':'Protection des données','تنزيل نسخة احتياطية كاملة':'Télécharger une sauvegarde complète',
+ 'استعادة نسخة احتياطية':'Restaurer une sauvegarde','إنشاء لقطة محلية الآن':'Créer une copie locale',
+ 'عرض اللقطات المحلية':'Afficher les copies locales','النسخ التلقائي المحلي':'Copies locales automatiques',
+ 'فواتير الزبائن':'Factures clients','فتح / حفظ الفاتورة PDF':'Ouvrir / enregistrer la facture PDF',
+ 'تنزيل سجل الفواتير Excel':'Télécharger le registre Excel','فواتير تسوية الموزعين':'Factures de règlement des livreurs',
+ 'إلغاء':'Annuler','حفظ التعديل':'Enregistrer les modifications','تعديل الطلب':'Modifier la commande',
+ 'حذف الطلب':'Supprimer la commande','طلب رجوع الطلب':'Demander le retour','فتح حزمة الرجوع ومتابعتها':'Ouvrir et suivre le lot de retour',
+ 'تم تنفيذ طلب الرجوع':'Retour effectué','إعادة إلى قيد التوزيع':'Remettre en distribution','اتصال':'Appeler',
+ 'الحالة:':'Statut :','متصل':'Connecté','بانتظار المزامنة':'En attente de synchronisation','تحديث طلباتي':'Actualiser mes commandes',
+ 'اليوم':'jour','أيام':'jours','يوم':'jour','ملاحظة داخلية للمالك (لا تظهر للموزع)':'Note interne du propriétaire',
+ 'إلغاء الإسناد':'Annuler l’affectation','إسناد وحفظ':'Affecter et enregistrer','وضع المالك':'Mode propriétaire'
+};
+const AK_AR=Object.fromEntries(Object.entries(AK_FR).map(([a,f])=>[f,a]));
+const AK_PHRASES=[
+ ['عدد الطلبات','Nombre de commandes'],['نتائج البحث في جميع الطلبات','Résultats dans toutes les commandes'],
+ ['تم إنشاء','Créé'],['تم حفظ','Enregistré'],['تم إرسال','Envoyé'],['تم استلام','Reçu'],
+ ['خطأ','Erreur'],['نجاح','Succès'],['انتظار','Attente'],['بانتظار','En attente'],
+ ['المالك','propriétaire'],['الموزع','livreur'],['الطلبات','commandes'],['الطلب','commande'],
+ ['د.م','MAD'],['من:','De :'],['إلى:','À :'],['تاريخ','Date'],['المبلغ','Montant'],['الصافي','Net']
+];
+let appLanguage=localStorage.getItem(AK_LANG_KEY)==='fr'?'fr':'ar';
+function akTranslateString(value,to=appLanguage){
+ let s=String(value??'');
+ const dict=to==='fr'?AK_FR:AK_AR;
+ const trimmed=s.trim();
+ if(dict[trimmed])return s.replace(trimmed,dict[trimmed]);
+ const decoratedKey=Object.keys(dict).sort((a,b)=>b.length-a.length).find(k=>trimmed.endsWith(k)||trimmed.startsWith(k));
+ if(decoratedKey)return s.replace(decoratedKey,dict[decoratedKey]);
+ const phrases=to==='fr'?AK_PHRASES:AK_PHRASES.map(([a,f])=>[f,a]);
+ for(const [a,b] of phrases)s=s.split(a).join(b);
+ return s;
+}
+function akTranslateElement(root=document){
+ const skip=new Set(['SCRIPT','STYLE','TEXTAREA']);
+ const walker=document.createTreeWalker(root,NodeFilter.SHOW_TEXT);
+ const nodes=[];while(walker.nextNode())nodes.push(walker.currentNode);
+ nodes.forEach(n=>{if(!n.parentElement||skip.has(n.parentElement.tagName))return;const v=akTranslateString(n.nodeValue);if(v!==n.nodeValue)n.nodeValue=v;});
+ const attrs=['placeholder','title','aria-label'];
+ const els=root.querySelectorAll?root.querySelectorAll('input,select,textarea,button,[title],[aria-label]'):[];
+ els.forEach(el=>attrs.forEach(a=>{if(el.hasAttribute(a)){const v=akTranslateString(el.getAttribute(a));if(v!==el.getAttribute(a))el.setAttribute(a,v);}}));
+}
+function applyAppLanguage(lang,save=true){
+ appLanguage=lang==='fr'?'fr':'ar';if(save)localStorage.setItem(AK_LANG_KEY,appLanguage);
+ document.documentElement.dataset.lang=appLanguage;
+ document.documentElement.lang=appLanguage==='fr'?'fr':'ar';
+ document.documentElement.dir=appLanguage==='fr'?'ltr':'rtl';
+ const b=document.getElementById('langToggleBtn');if(b)b.textContent=appLanguage==='fr'?'AR':'FR';
+ akTranslateElement(document.body);
+}
+function toggleAppLanguage(){applyAppLanguage(appLanguage==='fr'?'ar':'fr');}
+const akNativeAlert=window.alert.bind(window),akNativeConfirm=window.confirm.bind(window),akNativePrompt=window.prompt.bind(window);
+window.alert=m=>akNativeAlert(akTranslateString(m));
+window.confirm=m=>akNativeConfirm(akTranslateString(m));
+window.prompt=(m,d)=>akNativePrompt(akTranslateString(m),d);
+const akLangObserver=new MutationObserver(list=>{for(const m of list){m.addedNodes.forEach(n=>{if(n.nodeType===1)akTranslateElement(n);else if(n.nodeType===3&&n.parentElement&&!['SCRIPT','STYLE','TEXTAREA'].includes(n.parentElement.tagName)){const v=akTranslateString(n.nodeValue);if(v!==n.nodeValue)n.nodeValue=v;}});}});
+akLangObserver.observe(document.body,{childList:true,subtree:true});
+applyAppLanguage(appLanguage,false);
 
 window.addEventListener('error',function(ev){
  try{
