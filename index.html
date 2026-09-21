@@ -396,6 +396,58 @@ html[data-view-mode="mobile"] #list.page.on>#orderListCard{
   vertical-align:middle!important;text-align:center!important;white-space:nowrap!important;background:#f8fbfd
 }
 .stay-days-col .badge{display:inline-flex!important;min-width:42px!important;max-width:50px!important;justify-content:center!important;padding:4px 3px!important}
+
+/* v150: تثبيت أعلى الشاشة وتمرير المحتوى الواقع تحته فقط في جميع الأوضاع والحسابات */
+html,html[data-view-mode="desktop"],html[data-view-mode="mobile"],html[data-view-mode="auto"]{
+  height:100%!important;min-height:100%!important;max-height:100%!important;overflow:hidden!important;
+}
+body,html[data-view-mode="desktop"] body,html[data-view-mode="mobile"] body,html[data-view-mode="auto"] body{
+  display:flex!important;flex-direction:column!important;
+  height:100dvh!important;min-height:100dvh!important;max-height:100dvh!important;overflow:hidden!important;
+}
+#appHeader,header{position:relative!important;top:auto!important;flex:0 0 auto!important;z-index:30!important}
+.app,html[data-view-mode="desktop"] .app,html[data-view-mode="mobile"] .app,html[data-view-mode="auto"] .app{
+  flex:1 1 auto!important;height:auto!important;min-height:0!important;max-height:none!important;
+  overflow:hidden!important;align-items:stretch!important;
+}
+aside,html[data-view-mode="desktop"] aside,html[data-view-mode="mobile"] aside,html[data-view-mode="auto"] aside{
+  flex:0 0 210px!important;height:100%!important;min-height:0!important;max-height:100%!important;
+  overflow-x:hidden!important;overflow-y:auto!important;overscroll-behavior:contain!important;
+  -webkit-overflow-scrolling:touch!important;touch-action:pan-y!important;
+}
+main,html[data-view-mode="desktop"] main,html[data-view-mode="mobile"] main,html[data-view-mode="auto"] main{
+  flex:1 1 auto!important;height:100%!important;min-height:0!important;max-height:100%!important;
+  overflow:hidden!important;overscroll-behavior:contain!important;
+}
+.page.on,html[data-view-mode="desktop"] .page.on,html[data-view-mode="mobile"] .page.on,html[data-view-mode="auto"] .page.on{
+  display:block!important;height:100%!important;min-height:0!important;max-height:100%!important;
+  overflow:auto!important;overscroll-behavior:contain!important;-webkit-overflow-scrolling:touch!important;
+  touch-action:pan-x pan-y!important;
+}
+/* صفحة الطلبات: بطاقة الأدوات ثابتة، والتمرير داخل جدول الطلبات فقط */
+#list.page.on,html[data-view-mode="desktop"] #list.page.on,html[data-view-mode="mobile"] #list.page.on,html[data-view-mode="auto"] #list.page.on{
+  display:flex!important;flex-direction:column!important;height:100%!important;min-height:0!important;
+  overflow:hidden!important;
+}
+#list.page.on>.card:first-child,#list.page.on>#workerFinanceSummary{
+  flex:0 0 auto!important;
+}
+#list.page.on>#orderListCard,html[data-view-mode="desktop"] #list.page.on>#orderListCard,
+html[data-view-mode="mobile"] #list.page.on>#orderListCard,html[data-view-mode="auto"] #list.page.on>#orderListCard{
+  flex:1 1 auto!important;height:auto!important;min-height:0!important;max-height:none!important;
+  margin-bottom:0!important;overflow:auto!important;overscroll-behavior:contain!important;
+  -webkit-overflow-scrolling:touch!important;touch-action:pan-x pan-y!important;
+}
+/* تبقى عناوين كل الجداول ظاهرة أثناء تمرير السجلات في جميع الأقسام */
+.page.on table thead th,.page.on table>tbody:first-child>tr:first-child>th{
+  position:sticky!important;top:0!important;z-index:8!important;background:#fff!important;
+  box-shadow:0 2px 0 #e1e6ea!important;
+}
+@media(max-width:650px){
+  aside,html[data-view-mode="desktop"] aside,html[data-view-mode="mobile"] aside,html[data-view-mode="auto"] aside{
+    flex-basis:135px!important;
+  }
+}
 </style></head>
 <body>
 <div id="loginScreen" class="login-screen">
@@ -403,7 +455,7 @@ html[data-view-mode="mobile"] #list.page.on>#orderListCard{
  <select id="loginWorker"><option value="">اختر حسابك</option></select>
 <input id="loginPin" type="password" inputmode="numeric" placeholder="الرمز السري">
 <div id="loginStatus" style="margin-top:8px;font-weight:700;min-height:22px"></div>
-<div style="margin-top:6px;font-size:12px;opacity:.7">الإصدار 149</div>
+<div style="margin-top:6px;font-size:12px;opacity:.7">الإصدار 150</div>
 <button id="workerLoginBtn" type="button" onclick="workerLogin(event)" class="btn" style="width:100%">دخول الموزع</button>
 <hr>
 <h3>إنشاء حساب موزع</h3>
@@ -465,13 +517,11 @@ html[data-view-mode="mobile"] #list.page.on>#orderListCard{
 </div></div><textarea id=firstComment placeholder="تعليق"></textarea><br><button class=btn>حفظ الطلب</button></form></div></section>
 <section id=returnBatches class=page><div class=card>
 <h2>↩ طلبات رجوع الطلبات</h2>
-<p style="color:#555;font-size:13px">ينشئ المالك طلب الرجوع من تفاصيل الطلب، وينفذه الموزع، ولا تُقفل الحزمة إلا بعد تأكيد المالك استلامها.</p>
 
 <div id=returnBatchesList></div>
 </div></section>
 <section id=customerChanges class=page><div class=card>
 <h2>🔄 تغيير الزبون</h2>
-<p style="color:#555;font-size:13px">يرسل المالك بيانات الزبون الجديد، ثم يعتمدها الموزع بالضغط على زر الاستقبال.</p>
 <div id="customerChangesList"></div>
 </div></section>
 <section id=deliveryBatches class=page><div class=card>
@@ -608,7 +658,6 @@ html[data-view-mode="mobile"] #list.page.on>#orderListCard{
 </div>
 <div id="customerTransferBox" class="card" style="display:none;border:2px solid #1882b3">
 <h3 style="margin-top:0">🔄 تحويل الطلب إلى زبون آخر</h3>
-<p style="font-size:13px;color:#555">سيبقى رمز الطلب نفسه، وسيُرسل التغيير للموزع كي يؤكد استقباله.</p>
 <div class="grid">
 <input id="tRecipient" placeholder="اسم الزبون الجديد">
 <input id="tPhone" placeholder="هاتف الزبون الجديد">
@@ -3359,19 +3408,15 @@ function renderReturnControls(o){
  const isWorker=(session&&session.role==='worker');
 
  if(isOwner && o.status!=='طلب رجوع' && o.status!=='مرتجع'){
-   box.innerHTML=`<button class="btn" style="width:100%" onclick="requestReturn()">↩ طلب رجوع الطلب</button>
-   <small style="display:block;margin-top:5px;color:#666">إنشاء طلب الرجوع متاح للمالك فقط.</small>`;
+   box.innerHTML=`<button class="btn" style="width:100%" onclick="requestReturn()">↩ طلب رجوع الطلب</button>`;
  }else if(isWorker && o.status==='طلب رجوع'){
    if(o.returnBatchId){
-     box.innerHTML=`<button class="btn g" style="width:100%" onclick="closeDrawer();go('returnBatches')">↩ فتح طلب الإرجاع وتأكيد التنفيذ</button>
-     <small style="display:block;margin-top:5px;color:#666">هذا الطلب ضمن طلب إرجاع أرسله المالك، ويجب على الموزع تأكيد التنفيذ بعد إعادة الطلبات فعلياً.</small>`;
+     box.innerHTML=`<button class="btn g" style="width:100%" onclick="closeDrawer();go('returnBatches')">↩ فتح طلب الإرجاع وتأكيد التنفيذ</button>`;
    }else{
-     box.innerHTML=`<button class="btn g" style="width:100%" onclick="confirmReturnDone()">✓ تم تنفيذ طلب الرجوع</button>
-     <small style="display:block;margin-top:5px;color:#666">طلب رجوع فردي قديم غير مرتبط بحزمة.</small>`;
+     box.innerHTML=`<button class="btn g" style="width:100%" onclick="confirmReturnDone()">✓ تم تنفيذ طلب الرجوع</button>`;
    }
  }else if(isOwner && (o.status==='طلب رجوع'||o.status==='مرتجع')){
-   box.innerHTML=`<button class="btn gr" style="width:100%" onclick="closeDrawer();go('returnBatches')">↩ فتح حزمة الرجوع ومتابعتها</button>
-   <small style="display:block;margin-top:5px;color:#666">تبقى الحزمة مفتوحة حتى يؤكد المالك استلام الطلبات.</small>`;
+   box.innerHTML=`<button class="btn gr" style="width:100%" onclick="closeDrawer();go('returnBatches')">↩ فتح حزمة الرجوع ومتابعتها</button>`;
  }else{
    box.innerHTML='';
  }
@@ -3501,16 +3546,14 @@ function renderOwnerRestore(o){
  if(!box)return;
  const isOwner=(session&&session.role==='owner')||ownerMode===true;
  if(isOwner && o && o.status!=='قيد التوزيع'){
-   box.innerHTML=`<button class="btn g" style="width:100%;font-size:16px" onclick="restoreToDelivery()">↩ إعادة إلى قيد التوزيع</button>
-   <small style="display:block;margin-top:6px;color:#666">صلاحية المالك فقط — الحالة الحالية: ${o.status}</small>`;
+   box.innerHTML=`<button class="btn g" style="width:100%;font-size:16px" onclick="restoreToDelivery()">↩ إعادة إلى قيد التوزيع</button>`;
  }else box.innerHTML='';
 }
 
 function renderOwnerDelete(o){
  const box=document.getElementById('ownerDeleteBox'); if(!box)return;
  const isOwner=(session&&session.role==='owner')||ownerMode===true;
- box.innerHTML=isOwner&&o&&!o.deletedAt?`<button class="btn r" style="width:100%;font-size:16px" onclick="deleteCurrentOrder()">🗑️ حذف الطلب</button>
- <small style="display:block;margin-top:6px;color:#666">الحذف متاح للمالك فقط، ويُحفظ كسجل حذف آمن للمزامنة.</small>`:'';
+ box.innerHTML=isOwner&&o&&!o.deletedAt?`<button class="btn r" style="width:100%;font-size:16px" onclick="deleteCurrentOrder()">🗑️ حذف الطلب</button>`:'';
 }
 function deleteCurrentOrder(){
  const isOwner=(session&&session.role==='owner')||ownerMode===true;
