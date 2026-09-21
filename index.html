@@ -1,4 +1,4 @@
-<!doctype html><!-- AK Delivery v115: fixed navigation bars; scroll content only; reduced explanatory text --><html lang="ar" dir="rtl"><head>
+<!doctype html><!-- AK Delivery v156: fixed navigation bars; scroll content only; reduced explanatory text --><html lang="ar" dir="rtl"><head>
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><!-- AK Delivery v86: persistent received-order history for distributors and owner -->
@@ -496,6 +496,43 @@ html[data-lang="fr"] th,html[data-lang="fr"] td{text-align:left}
   html[data-role="worker"] #orderListCard th,html[data-role="worker"] #orderListCard td{display:table-cell!important;position:static!important;height:auto!important;max-height:none!important;visibility:visible!important;opacity:1!important;clip:auto!important;clip-path:none!important;}
 }
 
+
+/* v156 language-aware order details: FR right / AR left */
+html[data-lang="fr"] #overlay > .drawer{position:fixed!important;right:0px!important;left:auto!important;margin-right:0!important;margin-left:0!important;transform:none!important;direction:ltr!important;text-align:left!important;}
+html[data-lang="fr"] #overlay > .drawer #detail{direction:ltr!important;text-align:left!important;}
+html[data-lang="ar"] #overlay > .drawer{position:fixed!important;left:0px!important;right:auto!important;margin-left:0!important;margin-right:0!important;transform:none!important;direction:rtl!important;text-align:right!important;}
+html[data-lang="ar"] #overlay > .drawer #detail{direction:rtl!important;text-align:right!important;}
+
+/* v156 mobile-only details panel fix: do not affect desktop */
+@media (max-width:650px){
+  html[data-lang="fr"] #overlay > .drawer{
+    position:fixed!important;
+    top:0!important;bottom:0!important;
+    right:0!important;left:auto!important;
+    width:95vw!important;max-width:510px!important;
+    margin:0!important;transform:none!important;
+    direction:ltr!important;text-align:left!important;
+  }
+  html[data-lang="ar"] #overlay > .drawer{
+    position:fixed!important;
+    top:0!important;bottom:0!important;
+    left:0!important;right:auto!important;
+    width:95vw!important;max-width:510px!important;
+    margin:0!important;transform:none!important;
+    direction:rtl!important;text-align:right!important;
+  }
+  #overlay > .drawer #detail{width:100%!important;max-width:100%!important;}
+  #detail .info{grid-template-columns:minmax(92px,115px) minmax(0,1fr)!important;}
+  #detail,#detail *{overflow-wrap:anywhere;word-break:normal;}
+}
+
+/* v156 mobile side placement correction — desktop untouched */
+html[data-view-mode="mobile"][data-lang="fr"] #overlay > .drawer{right:0!important;left:auto!important;width:calc(100vw - 135px)!important;max-width:510px!important;}
+html[data-view-mode="mobile"][data-lang="ar"] #overlay > .drawer{left:0!important;right:auto!important;width:calc(100vw - 135px)!important;max-width:510px!important;}
+@media(max-width:650px){
+  html[data-view-mode="auto"][data-lang="fr"] #overlay > .drawer{right:0!important;left:auto!important;width:calc(100vw - 135px)!important;max-width:510px!important;}
+  html[data-view-mode="auto"][data-lang="ar"] #overlay > .drawer{left:0!important;right:auto!important;width:calc(100vw - 135px)!important;max-width:510px!important;}
+}
 </style></head>
 <body>
 <div id="loginScreen" class="login-screen">
@@ -2586,18 +2623,38 @@ function orderLifecycleSummary(o){
  return `<div class="log" style="max-height:260px;overflow:auto">${entries.map(e=>`<div><b>${htmlEscape(e.time)}</b> : ${htmlEscape(e.text)}</div>`).join('')}</div>`;
 }
 
-function openOrder(id){
+function syncOrderDrawerDirection(){
  const _drawer=document.querySelector('#overlay > .drawer');
- if(_drawer){
-   _drawer.style.setProperty('position','fixed','important');
-   _drawer.style.setProperty('left','0','important');
-   _drawer.style.setProperty('right','auto','important');
-   _drawer.style.setProperty('width',(window.innerWidth<=650?'calc(100vw - 135px)':'min(510px, calc(100vw - 210px))'),'important');
-   _drawer.style.setProperty('max-width',(window.innerWidth<=650?'calc(100vw - 135px)':'calc(100vw - 210px)'),'important');
-   _drawer.style.setProperty('margin','0','important');
-   _drawer.style.setProperty('transform','none','important');
-   _drawer.style.setProperty('direction','rtl','important');
+ if(!_drawer)return;
+ const isFr=(typeof appLanguage!=='undefined'?appLanguage==='fr':(document.documentElement.dataset.lang==='fr'||document.documentElement.lang==='fr'));
+ const mode=document.documentElement.getAttribute('data-view-mode')||'auto';
+ const isMobile=(mode==='mobile')||(mode==='auto'&&window.innerWidth<=650);
+ _drawer.style.setProperty('position','fixed','important');
+ if(isMobile){
+   _drawer.style.setProperty('left',isFr?'auto':'0','important');
+   _drawer.style.setProperty('right',isFr?'0':'auto','important');
+   _drawer.style.setProperty('width','calc(100vw - 135px)','important');
+   _drawer.style.setProperty('max-width','510px','important');
+ }else{
+   /* Desktop behavior is intentionally left unchanged. */
+   _drawer.style.removeProperty('left');
+   _drawer.style.removeProperty('right');
+   _drawer.style.removeProperty('width');
+   _drawer.style.removeProperty('max-width');
  }
+ _drawer.style.setProperty('margin','0','important');
+ _drawer.style.setProperty('transform','none','important');
+ _drawer.style.setProperty('direction',isFr?'ltr':'rtl','important');
+ _drawer.style.setProperty('text-align',isFr?'left':'right','important');
+ const _detail=document.getElementById('detail');
+ if(_detail){
+   _detail.style.setProperty('direction',isFr?'ltr':'rtl','important');
+   _detail.style.setProperty('text-align',isFr?'left':'right','important');
+ }
+}
+
+function openOrder(id){
+ syncOrderDrawerDirection();
 
  current=id;
  let o=db.orders.find(x=>x.id===id);
@@ -4007,6 +4064,16 @@ html[data-view-mode="desktop"] #list.page.on,html[data-view-mode="mobile"] #list
   #orderHeaderFixed table,#orderListCard table{min-width:760px!important;}
   html[data-role="worker"] aside{flex:0 0 135px!important;width:135px!important;}
 }
+
+/* v156 panel width fix: keep full natural details width at the outer edge */
+html[data-lang="fr"] #overlay > .drawer,
+html[data-lang="ar"] #overlay > .drawer,
+html[data-view-mode="desktop"] #overlay > .drawer,
+html[data-view-mode="mobile"] #overlay > .drawer,
+body #overlay > .drawer{
+  width:min(510px,95vw)!important;
+  max-width:95vw!important;
+}
 </style></head><body><div class="head"><h1>فاتورة تسوية الموزع</h1><p>رقم الفاتورة: <b>${htmlEscape(invoiceNo)}</b></p><p>الموزع: <b>${htmlEscape(w?.name||st.workerName||'—')}</b> — تاريخ التسوية: ${htmlEscape(st.date||'—')}</p></div>
  <table><tr><th>#</th><th>رقم الترتيب</th><th>رمز الطلب</th><th>المستلم</th><th>قيمة الطلب</th><th>خصم التوصيل</th><th>الصافي</th></tr>${rows}</table>
  <div class="summary"><b>عدد الطلبات:</b> ${orders.length}<br><b>المجموع العام لمبالغ الطلبات:</b> ${cash(collected)}<br><b>إجمالي خصم ثمن التوصيل:</b> ${cash(fees)}<br><b>الباقي الواجب دفعه للمالك:</b> ${cash(net)}</div>
@@ -4516,6 +4583,7 @@ function applyAppLanguage(lang,save=true){
  document.documentElement.dir=appLanguage==='fr'?'ltr':'rtl';
  const b=document.getElementById('langToggleBtn');if(b)b.textContent=appLanguage==='fr'?'AR':'FR';
  akTranslateElement(document.body);
+ syncOrderDrawerDirection();
 }
 function toggleAppLanguage(){applyAppLanguage(appLanguage==='fr'?'ar':'fr');}
 const akNativeAlert=window.alert.bind(window),akNativeConfirm=window.confirm.bind(window),akNativePrompt=window.prompt.bind(window);
