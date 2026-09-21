@@ -364,6 +364,38 @@ html[data-view-mode="mobile"] #list.page.on>#orderListCard{
 }
 /* v148: إبقاء قسم تغيير الزبون ظاهراً دائماً في شريط المالك والموزع */
 aside #customerChangesMenu{display:block!important;visibility:visible!important}
+/* v149: تمرير واحد حر للصفحة كلها بدلاً من حبس اللمس داخل عدة حاويات متداخلة */
+html,html[data-view-mode="desktop"],html[data-view-mode="mobile"],html[data-view-mode="auto"],
+body,html[data-view-mode="desktop"] body,html[data-view-mode="mobile"] body,html[data-view-mode="auto"] body{
+  height:auto!important;min-height:100%!important;max-height:none!important;
+  overflow:auto!important;touch-action:pan-x pan-y!important;overscroll-behavior:auto!important;
+  -webkit-overflow-scrolling:touch!important;
+}
+body{display:block!important}
+.app,html[data-view-mode="desktop"] .app,html[data-view-mode="mobile"] .app,html[data-view-mode="auto"] .app{
+  height:auto!important;min-height:calc(100dvh - 58px)!important;overflow:visible!important;align-items:stretch!important;
+}
+aside,html[data-view-mode="desktop"] aside,html[data-view-mode="mobile"] aside,html[data-view-mode="auto"] aside{
+  height:auto!important;min-height:calc(100dvh - 58px)!important;overflow:visible!important;overscroll-behavior:auto!important;
+}
+main,html[data-view-mode="desktop"] main,html[data-view-mode="mobile"] main,html[data-view-mode="auto"] main{
+  height:auto!important;min-height:calc(100dvh - 58px)!important;overflow:visible!important;
+  touch-action:pan-x pan-y!important;overscroll-behavior:auto!important;
+}
+#list.page.on,html[data-view-mode="desktop"] #list.page.on,html[data-view-mode="mobile"] #list.page.on{
+  height:auto!important;overflow:visible!important;
+}
+#list.page.on>#orderListCard,html[data-view-mode="desktop"] #list.page.on>#orderListCard,
+html[data-view-mode="mobile"] #list.page.on>#orderListCard{
+  flex:none!important;height:auto!important;min-height:240px!important;overflow:visible!important;
+  touch-action:pan-x pan-y!important;overscroll-behavior:auto!important;
+}
+.stay-days-col{
+  width:58px!important;min-width:58px!important;max-width:58px!important;
+  padding-left:3px!important;padding-right:3px!important;
+  vertical-align:middle!important;text-align:center!important;white-space:nowrap!important;background:#f8fbfd
+}
+.stay-days-col .badge{display:inline-flex!important;min-width:42px!important;max-width:50px!important;justify-content:center!important;padding:4px 3px!important}
 </style></head>
 <body>
 <div id="loginScreen" class="login-screen">
@@ -371,7 +403,7 @@ aside #customerChangesMenu{display:block!important;visibility:visible!important}
  <select id="loginWorker"><option value="">اختر حسابك</option></select>
 <input id="loginPin" type="password" inputmode="numeric" placeholder="الرمز السري">
 <div id="loginStatus" style="margin-top:8px;font-weight:700;min-height:22px"></div>
-<div style="margin-top:6px;font-size:12px;opacity:.7">الإصدار 148</div>
+<div style="margin-top:6px;font-size:12px;opacity:.7">الإصدار 149</div>
 <button id="workerLoginBtn" type="button" onclick="workerLogin(event)" class="btn" style="width:100%">دخول الموزع</button>
 <hr>
 <h3>إنشاء حساب موزع</h3>
@@ -408,7 +440,7 @@ aside #customerChangesMenu{display:block!important;visibility:visible!important}
 <button class="btn r" onclick="exportPDF()">📄 تنزيل PDF</button>
 </div></div>
 <div id="workerFinanceSummary" class="card" style="display:none"></div>
-<div id="orderListCard" class=card><table><thead><tr><th>رقم الترتيب</th><th>رمز الطلب</th><th>المستلم</th><th>العنوان</th><th>الهاتف</th><th>القيمة والحساب</th><th>الحالة</th></tr></thead><tbody id=rows></tbody></table></div></section>
+<div id="orderListCard" class=card><table><thead><tr><th>رقم الترتيب</th><th>رمز الطلب</th><th>المستلم</th><th>العنوان</th><th class="stay-days-col">المدة</th><th>الهاتف</th><th>القيمة والحساب</th><th>الحالة</th></tr></thead><tbody id=rows></tbody></table></div></section>
 <section id=bulk class=page><div class=card><h2>إدخال الطلبات بالنسخ واللصق</h2>
 
 <textarea id=bulkText style="min-height:180px" placeholder="الصق الطلبات هنا..."></textarea>
@@ -2371,7 +2403,7 @@ function render(){
  const searching=!!String(search?.value||'').trim();
  title.textContent=searching?'نتائج البحث في جميع الطلبات':statusDisplayName(filter);
  let a=visibleOrders();
- rows.innerHTML=a.map(o=>`<tr${o.deletedAt?' style="opacity:.78;background:#fff3f3"':''}><td><b dir="ltr">${formatSeq(o.seq)}</b></td><td class=code onclick="openOrder('${o.id}')">${o.clientNo||'—'}${o.deletedAt?'<div><span class="badge" style="background:#b91c1c;color:white">محذوف</span></div>':''}</td><td>${o.recipient}<div style="text-align:center;margin-top:5px">${daysBadge(o)}</div></td><td>${o.address||'—'}${o.city?'، '+o.city:''}</td><td>
+ rows.innerHTML=a.map(o=>`<tr${o.deletedAt?' style="opacity:.78;background:#fff3f3"':''}><td><b dir="ltr">${formatSeq(o.seq)}</b></td><td class=code onclick="openOrder('${o.id}')">${o.clientNo||'—'}${o.deletedAt?'<div><span class="badge" style="background:#b91c1c;color:white">محذوف</span></div>':''}</td><td>${o.recipient}</td><td>${o.address||'—'}${o.city?'، '+o.city:''}</td><td class="stay-days-col" style="text-align:center">${daysBadge(o)}</td><td>
 <div dir="ltr" style="direction:ltr;unicode-bidi:bidi-override;display:inline-block">${o.phone}</div>
 <div style="margin-top:4px;display:flex;gap:4px;flex-wrap:wrap">
 <button class="btn g" style="padding:5px 7px;font-size:11px" onclick="contactPhone('${o.phone}')">📞</button>
