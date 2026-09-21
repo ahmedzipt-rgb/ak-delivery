@@ -461,6 +461,19 @@ html[data-lang="fr"] th,html[data-lang="fr"] td{text-align:left}
 #orderListCard tbody,#orderListCard tbody tr,#orderListCard tbody td{
   visibility:visible!important;opacity:1!important;
 }
+/* v154: منع خلل الطبقة البيضاء في Chrome Android الناتج عن sticky داخل جدول قابل للتمرير */
+#orderListCard,#orderListCard table,#orderListCard thead,#orderListCard tbody,
+#orderListCard tr,#orderListCard th,#orderListCard td{
+  isolation:auto!important;transform:none!important;filter:none!important;
+}
+#orderListCard table{position:static!important;z-index:auto!important}
+#orderListCard thead,#orderListCard tbody,#orderListCard tr,#orderListCard td{
+  position:static!important;z-index:auto!important;
+}
+#orderListCard thead th,.page.on #orderListCard thead th{
+  position:static!important;top:auto!important;z-index:auto!important;
+  box-shadow:none!important;
+}
 </style></head>
 <body>
 <div id="loginScreen" class="login-screen">
@@ -468,7 +481,7 @@ html[data-lang="fr"] th,html[data-lang="fr"] td{text-align:left}
  <select id="loginWorker"><option value="">اختر حسابك</option></select>
 <input id="loginPin" type="password" inputmode="numeric" placeholder="الرمز السري">
 <div id="loginStatus" style="margin-top:8px;font-weight:700;min-height:22px"></div>
-<div style="margin-top:6px;font-size:12px;opacity:.7">الإصدار 153</div>
+<div style="margin-top:6px;font-size:12px;opacity:.7">الإصدار 154</div>
 <button id="workerLoginBtn" type="button" onclick="workerLogin(event)" class="btn" style="width:100%">دخول الموزع</button>
 <hr>
 <h3>إنشاء حساب موزع</h3>
