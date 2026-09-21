@@ -369,7 +369,7 @@ html[data-view-mode="mobile"] #list.page.on>#orderListCard{
  <select id="loginWorker"><option value="">اختر حسابك</option></select>
 <input id="loginPin" type="password" inputmode="numeric" placeholder="الرمز السري">
 <div id="loginStatus" style="margin-top:8px;font-weight:700;min-height:22px"></div>
-<div style="margin-top:6px;font-size:12px;opacity:.7">الإصدار 146</div>
+<div style="margin-top:6px;font-size:12px;opacity:.7">الإصدار 147</div>
 <button id="workerLoginBtn" type="button" onclick="workerLogin(event)" class="btn" style="width:100%">دخول الموزع</button>
 <hr>
 <h3>إنشاء حساب موزع</h3>
@@ -394,7 +394,7 @@ html[data-view-mode="mobile"] #list.page.on>#orderListCard{
 </header>
 <div id="runtimeDiag" style="display:none;position:fixed;bottom:8px;left:8px;right:8px;z-index:10000;background:#7f1d1d;color:#fff;padding:9px 12px;border-radius:8px;font-size:12px;direction:ltr;text-align:left;max-height:34vh;overflow:auto"></div>
 <div id="syncToast" style="display:none;position:fixed;top:72px;left:50%;transform:translateX(-50%);z-index:9999;background:#222;color:#fff;padding:9px 14px;border-radius:10px;font-size:13px;max-width:90%;text-align:center"></div>
-<div class=app><aside><h3>القائمة</h3><button data-menu-key="home" onclick="go('list','home')">🏠 الرئيسية</button><button data-menu-key="add" onclick="go('add','add')">➕ طلب جديد</button><button data-menu-key="bulk" onclick="go('bulk','bulk')">📋 لصق طلبات دفعة واحدة</button><button data-menu-key="pdfImport" onclick="go('pdfImport','pdfImport')">📄 استيراد PDF</button><div id=stateMenu></div><button id="returnBatchesMenu" data-menu-key="returnBatches" onclick="go('returnBatches','returnBatches')">↩ طلبات رجوع الطلبات <span id="returnBatchCount" class="badge">0</span></button><button id="deliveryTransfersMenu" data-menu-key="deliveryTransfers" onclick="go('deliveryTransfers','deliveryTransfers')">🚚 في الطريق <span id="deliveryTransferCount" class="badge transit-badge">0</span></button><button data-menu-key="workers" onclick="go('workers','workers')">👤 الموزعون</button><button data-menu-key="accounts" onclick="go('accounts','accounts')">💰 الحسابات</button><button data-menu-key="invoices" onclick="go('invoices','invoices')">🧾 الفواتير</button><button data-menu-key="backupSafe" onclick="go('backupSafe','backupSafe')">🛡️ النسخ الاحتياطي</button><button data-menu-key="cloudSetup" onclick="go('cloudSetup','cloudSetup')">☁️ المزامنة السحابية</button><button data-menu-key="emergencySync" onclick="go('emergencySync','emergencySync')">🔄 مزامنة الموزع</button></aside><main>
+<div class=app><aside><h3>القائمة</h3><button data-menu-key="home" onclick="go('list','home')">🏠 الرئيسية</button><button data-menu-key="add" onclick="go('add','add')">➕ طلب جديد</button><button data-menu-key="bulk" onclick="go('bulk','bulk')">📋 لصق طلبات دفعة واحدة</button><button data-menu-key="pdfImport" onclick="go('pdfImport','pdfImport')">📄 استيراد PDF</button><div id=stateMenu></div><button id="customerChangesMenu" data-menu-key="customerChanges" onclick="go('customerChanges','customerChanges')">🔄 تغيير الزبون <span id="customerChangeCount" class="badge">0</span></button><button id="returnBatchesMenu" data-menu-key="returnBatches" onclick="go('returnBatches','returnBatches')">↩ طلبات رجوع الطلبات <span id="returnBatchCount" class="badge">0</span></button><button id="deliveryTransfersMenu" data-menu-key="deliveryTransfers" onclick="go('deliveryTransfers','deliveryTransfers')">🚚 في الطريق <span id="deliveryTransferCount" class="badge transit-badge">0</span></button><button data-menu-key="workers" onclick="go('workers','workers')">👤 الموزعون</button><button data-menu-key="accounts" onclick="go('accounts','accounts')">💰 الحسابات</button><button data-menu-key="invoices" onclick="go('invoices','invoices')">🧾 الفواتير</button><button data-menu-key="backupSafe" onclick="go('backupSafe','backupSafe')">🛡️ النسخ الاحتياطي</button><button data-menu-key="cloudSetup" onclick="go('cloudSetup','cloudSetup')">☁️ المزامنة السحابية</button><button data-menu-key="emergencySync" onclick="go('emergencySync','emergencySync')">🔄 مزامنة الموزع</button></aside><main>
 <section id=list class="page on"><div class=card><h2 id=title>قيد التوزيع</h2>
 <div class=grid>
 <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
@@ -434,6 +434,11 @@ html[data-view-mode="mobile"] #list.page.on>#orderListCard{
 <p style="color:#555;font-size:13px">ينشئ المالك طلب الرجوع من تفاصيل الطلب، وينفذه الموزع، ولا تُقفل الحزمة إلا بعد تأكيد المالك استلامها.</p>
 
 <div id=returnBatchesList></div>
+</div></section>
+<section id=customerChanges class=page><div class=card>
+<h2>🔄 تغيير الزبون</h2>
+<p style="color:#555;font-size:13px">يرسل المالك بيانات الزبون الجديد، ثم يعتمدها الموزع بالضغط على زر الاستقبال.</p>
+<div id="customerChangesList"></div>
 </div></section>
 <section id=deliveryBatches class=page><div class=card>
 <h2>📥 حزم استلام الطلبات</h2>
@@ -569,7 +574,7 @@ html[data-view-mode="mobile"] #list.page.on>#orderListCard{
 </div>
 <div id="customerTransferBox" class="card" style="display:none;border:2px solid #1882b3">
 <h3 style="margin-top:0">🔄 تحويل الطلب إلى زبون آخر</h3>
-<p style="font-size:13px;color:#555">سيبقى رمز الطلب نفسه، وسيُحفظ اسم الزبون السابق في سجل الطلب.</p>
+<p style="font-size:13px;color:#555">سيبقى رمز الطلب نفسه، وسيُرسل التغيير للموزع كي يؤكد استقباله.</p>
 <div class="grid">
 <input id="tRecipient" placeholder="اسم الزبون الجديد">
 <input id="tPhone" placeholder="هاتف الزبون الجديد">
@@ -578,7 +583,7 @@ html[data-view-mode="mobile"] #list.page.on>#orderListCard{
 <input id="tAmount" type="number" step=".01" placeholder="القيمة الجديدة">
 </div>
 <div style="margin-top:9px;display:flex;gap:7px;flex-wrap:wrap">
-<button class="btn g" onclick="confirmCustomerTransfer()">✓ تأكيد التحويل</button>
+<button class="btn g" onclick="confirmCustomerTransfer()">✓ إرسال التغيير للموزع</button>
 <button class="btn gr" onclick="closeCustomerTransfer()">إلغاء</button>
 </div>
 </div>
@@ -618,7 +623,7 @@ html[data-view-mode="mobile"] #list.page.on>#orderListCard{
 <div id="returnRequestBox" style="margin-top:10px"></div>
 <div id="ownerRestoreBox" style="margin-top:10px"></div>
 <div id="ownerDeleteBox" style="margin-top:10px"></div>
-<button class=btn onclick="openCustomerTransfer()">🔄 تحويل إلى زبون آخر</button>
+<button id="customerChangeOwnerBtn" class=btn onclick="openCustomerTransfer()">🔄 تغيير الزبون</button>
 <button class=c onclick="statusSet('مبرمج')">برمجة</button></div><h3>سجل حالة التوصيل</h3><div id=history class=log></div><hr><h3>التعليقات</h3><div id=remarks class=log></div><textarea id=remark placeholder="تعليق جديد"></textarea><button class=btn onclick=remarkAdd()>إضافة تعليق</button><button class="btn gr" style="display:block;width:100%;margin-top:18px;padding:12px;font-weight:800" onclick="closeDrawer()">✕ إغلاق تفاصيل الطلب</button></div></div>
 <script>
 let appBootReady=false;
@@ -1041,6 +1046,7 @@ let db=JSON.parse(localStorage.getItem(K)||'null')||{orders:[],workers:[]},filte
 if(!Array.isArray(db.returnBatches))db.returnBatches=[];
 if(!Array.isArray(db.deliveryBatches))db.deliveryBatches=[];
 if(!Array.isArray(db.deliveryTransfers))db.deliveryTransfers=[];
+if(!Array.isArray(db.customerChangeRequests))db.customerChangeRequests=[];
 // v113: الطلب لا يصبح قيد التوزيع إلا بعد تأكيد الموزع استلامه.
 if(localStorage.getItem('ak_transit_flow_v113')!=='done'){
   let changed=false;
@@ -1476,7 +1482,7 @@ function mergeDatabases(localDb,cloudDb){
   if(!cloudDb)return localDb;
   const out=JSON.parse(JSON.stringify(cloudDb));
   for(const [k,v] of Object.entries(localDb||{})){
-    if(k==='orders'||k==='workers'||k==='settlements'||k==='returnBatches'||k==='deliveryBatches'||k==='deliveryTransfers')continue;
+    if(k==='orders'||k==='workers'||k==='settlements'||k==='returnBatches'||k==='deliveryBatches'||k==='deliveryTransfers'||k==='customerChangeRequests')continue;
     if(out[k]===undefined)out[k]=JSON.parse(JSON.stringify(v));
   }
   out.orders=mergeById(localDb.orders||[],cloudDb.orders||[]);
@@ -1485,6 +1491,7 @@ function mergeDatabases(localDb,cloudDb){
   out.returnBatches=mergeById(localDb.returnBatches||[],cloudDb.returnBatches||[]);
   out.deliveryBatches=mergeById(localDb.deliveryBatches||[],cloudDb.deliveryBatches||[]);
   out.deliveryTransfers=mergeById(localDb.deliveryTransfers||[],cloudDb.deliveryTransfers||[]);
+  out.customerChangeRequests=mergeById(localDb.customerChangeRequests||[],cloudDb.customerChangeRequests||[]);
   const prevDb=db; db=out; dedupeDatabase(); const cleaned=db; db=prevDb;
   return cleaned;
 }
@@ -1559,6 +1566,7 @@ async function workerCloudPush(silent=true){
     if(!Array.isArray(out.deliveryTransfers))out.deliveryTransfers=[];
     if(!Array.isArray(out.deliveryBatches))out.deliveryBatches=[];
     if(!Array.isArray(out.returnBatches))out.returnBatches=[];
+    if(!Array.isArray(out.customerChangeRequests))out.customerChangeRequests=[];
 
     const cloudOrders=new Map(out.orders.map(o=>[String(o.id),o]));
     const workerFields=['status','history','remarks','rejectReason','postponeDate','returnRequestedAt',
@@ -1602,6 +1610,7 @@ async function workerCloudPush(silent=true){
     mergeWorkerRows('deliveryTransfers');
     mergeWorkerRows('deliveryBatches');
     mergeWorkerRows('returnBatches');
+    mergeWorkerRows('customerChangeRequests');
 
     const result=await cloudRequest('saveAll',{db:out,updatedAt:isoNow(),updatedBy:'worker:'+wid});
     if(!result||!result.verified)throw new Error('لم يتم تأكيد حفظ تحديثات الموزع');
@@ -1754,6 +1763,7 @@ function save(){
 }
 
 function updateReturnRequestCount(){
+ updateCustomerChangeCount();
  let be=document.getElementById('returnBatchCount');
  if(be){
    // يعرض عدد الطلبات الموجودة في حزم لم يقفلها المالك بعد.
@@ -2456,12 +2466,15 @@ function openOrder(id){
  ${o.cancelledAt?`<b>تاريخ الإلغاء</b><span>${htmlEscape(o.cancelledAt)}</span>`:''}
  ${o.postponeDate?`<b>مؤجل إلى</b><span>${o.postponeDate}</span>`:''}
  ${Array.isArray(o.customerTransfers)&&o.customerTransfers.length?`<b>آخر تحويل</b><span>${htmlEscape(o.customerTransfers[o.customerTransfers.length-1].label||'')}</span>`:''}
+ ${(db.customerChangeRequests||[]).some(r=>!r.deletedAt&&String(r.orderId)===String(o.id)&&r.status==='pending')?`<b>تغيير الزبون</b><span class="badge">بانتظار استقبال الموزع</span>`:''}
  </div>
  <h3 style="margin-top:14px">المراحل التي مر بها الطلب</h3>
  ${orderLifecycleSummary(o)}`;
  history.innerHTML=orderLifecycleEntries(o).map(h=>`<div><b>${htmlEscape(h.time)}</b> : ${htmlEscape(h.text)}</div>`).join('')||'لا يوجد سجل';
  remarks.innerHTML=(o.remarks||[]).slice().reverse().map(r=>`<div><b>${r.time}</b> : ${r.text}</div>`).join('')||'لا توجد تعليقات';
  ownerPanelRender();
+ const changeBtn=document.getElementById('customerChangeOwnerBtn');
+ if(changeBtn)changeBtn.style.display=((session&&session.role==='owner')||ownerMode===true)?'inline-block':'none';
  if(o.deletedAt){
    const ownerActionsEl=document.getElementById('ownerActions'); if(ownerActionsEl)ownerActionsEl.style.display='none';
    const assignBox=document.getElementById('ownerAssignBox'); if(assignBox)assignBox.style.display='none';
@@ -2483,9 +2496,13 @@ function openOrder(id){
 function closeDrawer(){overlay.style.display='none';current=null}
 
 function openCustomerTransfer(){
+ const isOwner=(session&&session.role==='owner')||ownerMode===true;
+ if(!isOwner)return alert('إرسال تغيير الزبون متاح للمالك فقط');
  const o=db.orders.find(x=>x.id===current); if(!o||o.deletedAt)return;
- if(session&&session.role==='worker'&&!orderAssignedToWorker(o,session.workerId))return alert('هذا الطلب غير مسند إليك');
  if(isOrderSettled(o)||isOrderReturnArchived(o))return alert('لا يمكن تحويل طلب أُغلق داخل أرشيف الدفع أو الرجوع');
+ if(activeReturnRefKeys().has(orderUniqueKey(o)))return alert('لا يمكن تغيير الزبون أثناء وجود طلب رجوع مفتوح');
+ if(!o.worker)return alert('يجب إسناد الطلب إلى موزع أولاً');
+ if((db.customerChangeRequests||[]).some(r=>!r.deletedAt&&String(r.orderId)===String(o.id)&&r.status==='pending'))return alert('يوجد تغيير زبون ينتظر استقبال الموزع بالفعل');
  tRecipient.value='';
  tPhone.value='';
  tAddress.value=o.address||'';
@@ -2499,9 +2516,12 @@ function closeCustomerTransfer(){
  const box=document.getElementById('customerTransferBox'); if(box)box.style.display='none';
 }
 async function confirmCustomerTransfer(){
+ const isOwner=(session&&session.role==='owner')||ownerMode===true;
+ if(!isOwner)return alert('إرسال تغيير الزبون متاح للمالك فقط');
  const o=db.orders.find(x=>x.id===current); if(!o||o.deletedAt)return;
- if(session&&session.role==='worker'&&!orderAssignedToWorker(o,session.workerId))return alert('هذا الطلب غير مسند إليك');
  if(isOrderSettled(o)||isOrderReturnArchived(o))return alert('لا يمكن تحويل طلب أُغلق داخل أرشيف الدفع أو الرجوع');
+ if(activeReturnRefKeys().has(orderUniqueKey(o)))return alert('لا يمكن تغيير الزبون أثناء وجود طلب رجوع مفتوح');
+ if(!o.worker)return alert('يجب إسناد الطلب إلى موزع أولاً');
  const newName=tRecipient.value.trim(),newPhone=tPhone.value.trim(),newAddress=tAddress.value.trim(),newCity=tCity.value.trim();
  const newAmount=+tAmount.value||0;
  if(!newName)return alert('أدخل اسم الزبون الجديد');
@@ -2509,25 +2529,83 @@ async function confirmCustomerTransfer(){
  if(!newAddress)return alert('أدخل عنوان الزبون الجديد');
  const oldName=String(o.recipient||'بدون اسم').trim();
  if(oldName.toLowerCase()===newName.toLowerCase())return alert('اسم الزبون الجديد مطابق للاسم الحالي');
- if(!confirm('تأكيد تحويل الطلب من «'+oldName+'» إلى «'+newName+'» مع الاحتفاظ بنفس الرمز؟'))return;
- const stamp=tm();
- if(!Array.isArray(o.customerTransfers))o.customerTransfers=[];
+ if(!confirm('إرسال تغيير الزبون من «'+oldName+'» إلى «'+newName+'» للموزع؟'))return;
+ const stamp=tm(),now=isoNow();
+ if(!Array.isArray(db.customerChangeRequests))db.customerChangeRequests=[];
  const label='تم تحويل الطلب من «'+oldName+'» إلى «'+newName+'»';
- o.customerTransfers.push({
-   id:'CT-'+Date.now(),time:stamp,label,
+ db.customerChangeRequests.push({
+   id:'CCR-'+Date.now(),orderId:o.id,orderCode:o.clientNo||formatSeq(o.seq),workerId:String(o.worker),
+   workerName:db.workers.find(w=>String(w.id)===String(o.worker))?.name||'',status:'pending',
+   createdAt:now,createdLabel:stamp,modifiedAt:now,modifiedBy:actorName(),label,
    fromRecipient:oldName,fromPhone:o.phone||'',fromAddress:o.address||'',fromCity:o.city||'',fromAmount:+o.amount||0,
    toRecipient:newName,toPhone:newPhone,toAddress:newAddress,toCity:newCity,toAmount:newAmount,
-   changedBy:actorName()
+   requestedBy:actorName()
  });
- o.recipient=newName;o.phone=newPhone;o.address=newAddress;o.city=newCity;o.amount=newAmount;
- o.status='قيد التوزيع';
- o.statusEnteredAt=isoNow();
- o.rejectReason='';o.cancelReason='';o.cancelledAt='';o.postponeDate='';o.returnRequestedAt='';o.returnCompletedAt='';
- appendOrderHistory(o,label+' — نفس رمز الطلب: '+(o.clientNo||formatSeq(o.seq)));
+ appendOrderHistory(o,'أرسل المالك طلب تغيير الزبون من «'+oldName+'» إلى «'+newName+'» للموزع');
  save();
  if(navigator.onLine)await syncNow(true);
  openOrder(current);
- showToast('✅ '+label,4200);
+ showToast('✅ تم إرسال تغيير الزبون للموزع',4200);
+}
+
+function updateCustomerChangeCount(){
+ const el=document.getElementById('customerChangeCount');if(!el)return;
+ if(!Array.isArray(db.customerChangeRequests))db.customerChangeRequests=[];
+ el.textContent=db.customerChangeRequests.filter(r=>r&&!r.deletedAt&&r.status==='pending'&&
+   (session.role!=='worker'||String(r.workerId)===String(session.workerId))).length;
+}
+function renderCustomerChanges(){
+ const el=document.getElementById('customerChangesList');if(!el)return;
+ if(!Array.isArray(db.customerChangeRequests))db.customerChangeRequests=[];
+ const arr=db.customerChangeRequests.filter(r=>r&&!r.deletedAt&&
+   (session.role!=='worker'||String(r.workerId)===String(session.workerId)))
+   .slice().sort((a,b)=>timeValue(b.createdAt||b.modifiedAt)-timeValue(a.createdAt||a.modifiedAt));
+ if(!arr.length){el.innerHTML='<div class="card">لا توجد طلبات تغيير زبون.</div>';updateCustomerChangeCount();return}
+ el.innerHTML=arr.map(r=>{
+   const o=orderById(r.orderId);
+   const pending=r.status==='pending';
+   const action=session.role==='worker'&&pending
+     ? `<button class="btn g" style="margin-top:10px;width:100%" onclick="receiveCustomerChange('${r.id}')">📥 استقبال تغيير الزبون</button>`
+     : '';
+   return `<div class="card" style="margin-top:10px;border-right:5px solid ${pending?'#1882b3':'#168b55'}">
+     <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap">
+       <b>الطلب: <span dir="ltr">${htmlEscape(r.orderCode||o?.clientNo||'—')}</span></b>
+       <span class="badge">${pending?'بانتظار استقبال الموزع':'✓ تم الاستقبال'}</span>
+     </div>
+     <p><b>من:</b> ${htmlEscape(r.fromRecipient||'—')} — <span dir="ltr">${htmlEscape(r.fromPhone||'')}</span><br>
+     <b>إلى:</b> ${htmlEscape(r.toRecipient||'—')} — <span dir="ltr">${htmlEscape(r.toPhone||'')}</span><br>
+     <b>العنوان الجديد:</b> ${htmlEscape(r.toAddress||'—')}، ${htmlEscape(r.toCity||'')}<br>
+     <b>القيمة الجديدة:</b> ${cash(r.toAmount)}<br>
+     <b>الموزع:</b> ${htmlEscape(r.workerName||'—')}<br>
+     <b>تاريخ الإرسال:</b> ${htmlEscape(r.createdLabel||r.createdAt||'—')}
+     ${r.receivedLabel||r.receivedAt?`<br><b>تاريخ الاستقبال:</b> ${htmlEscape(r.receivedLabel||r.receivedAt)}`:''}</p>
+     ${action}
+   </div>`;
+ }).join('');
+ updateCustomerChangeCount();
+}
+async function receiveCustomerChange(requestId){
+ if(!(session&&session.role==='worker'))return alert('زر الاستقبال خاص بالموزع');
+ const r=(db.customerChangeRequests||[]).find(x=>String(x.id)===String(requestId)&&!x.deletedAt);if(!r)return;
+ if(String(r.workerId)!==String(session.workerId))return alert('هذا التغيير غير مخصص لحسابك');
+ if(r.status!=='pending')return alert('تم استقبال هذا التغيير سابقاً');
+ const o=orderById(r.orderId);if(!o)return alert('لم يتم العثور على الطلب');
+ if(!confirm('استقبال تغيير الزبون من «'+(r.fromRecipient||'—')+'» إلى «'+(r.toRecipient||'—')+'»؟'))return;
+ const now=isoNow(),label=tm();
+ if(!Array.isArray(o.customerTransfers))o.customerTransfers=[];
+ o.customerTransfers.push({id:'CT-'+Date.now(),time:label,label:r.label,
+   fromRecipient:r.fromRecipient,fromPhone:r.fromPhone,fromAddress:r.fromAddress,fromCity:r.fromCity,fromAmount:r.fromAmount,
+   toRecipient:r.toRecipient,toPhone:r.toPhone,toAddress:r.toAddress,toCity:r.toCity,toAmount:r.toAmount,
+   changedBy:actorName(),requestId:r.id});
+ o.recipient=r.toRecipient;o.phone=r.toPhone;o.address=r.toAddress;o.city=r.toCity;o.amount=+r.toAmount||0;
+ o.status='قيد التوزيع';o.statusEnteredAt=now;
+ o.rejectReason='';o.cancelReason='';o.cancelledAt='';o.postponeDate='';o.returnRequestedAt='';o.returnCompletedAt='';
+ appendOrderHistory(o,(r.label||('تم تحويل الطلب إلى «'+r.toRecipient+'»'))+' — استقبله الموزع — نفس رمز الطلب');
+ r.status='received';r.receivedAt=now;r.receivedLabel=label;r.receivedBy=actorName();r.modifiedAt=now;r.modifiedBy=actorName();
+ localStorage.setItem(K,JSON.stringify(db));scheduleCloudSync();
+ renderCustomerChanges();render();menu();
+ if(navigator.onLine)await syncNow(true);
+ showToast('✅ تم استقبال تغيير الزبون واعتماد البيانات الجديدة',4200);
 }
 
 function renderReturnCreate(){
@@ -4043,7 +4121,7 @@ function directNavigate(key){
     }else{
       const map={
         home:'list',add:'add',bulk:'bulk',pdfImport:'pdfImport',
-        returnCreate:'returnBatches',returnBatches:'returnBatches',
+        returnCreate:'returnBatches',returnBatches:'returnBatches',customerChanges:'customerChanges',
         deliveryTransfers:'deliveryTransfers',workers:'workers',
         accounts:'accounts',invoices:'invoices',backupSafe:'backupSafe',
         cloudSetup:'cloudSetup',emergencySync:'emergencySync'
@@ -4065,6 +4143,7 @@ function directNavigate(key){
       else if(target==='accounts')accountsRender();
       else if(target==='invoices')invoicesRender();
       else if(target==='returnBatches')renderReturnBatches();
+      else if(target==='customerChanges')renderCustomerChanges();
       else if(target==='deliveryTransfers'){
         deliveryTransferView=session.role==='worker'?'pending':'ready';
         renderDeliveryTransfers();
