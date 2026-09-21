@@ -362,6 +362,8 @@ html[data-view-mode="mobile"] #list.page.on>#orderListCard{
   html[data-view-mode="auto"] #list.page.on{height:auto!important;overflow:visible!important;}
   html[data-view-mode="auto"] #list.page.on>#orderListCard{min-height:240px!important;overflow:auto!important;touch-action:pan-x pan-y!important;}
 }
+/* v148: إبقاء قسم تغيير الزبون ظاهراً دائماً في شريط المالك والموزع */
+aside #customerChangesMenu{display:block!important;visibility:visible!important}
 </style></head>
 <body>
 <div id="loginScreen" class="login-screen">
@@ -369,7 +371,7 @@ html[data-view-mode="mobile"] #list.page.on>#orderListCard{
  <select id="loginWorker"><option value="">اختر حسابك</option></select>
 <input id="loginPin" type="password" inputmode="numeric" placeholder="الرمز السري">
 <div id="loginStatus" style="margin-top:8px;font-weight:700;min-height:22px"></div>
-<div style="margin-top:6px;font-size:12px;opacity:.7">الإصدار 147</div>
+<div style="margin-top:6px;font-size:12px;opacity:.7">الإصدار 148</div>
 <button id="workerLoginBtn" type="button" onclick="workerLogin(event)" class="btn" style="width:100%">دخول الموزع</button>
 <hr>
 <h3>إنشاء حساب موزع</h3>
@@ -1864,7 +1866,21 @@ function updateSidebarActive(){
  const btn=document.querySelector(`aside button[data-menu-key="${sidebarActiveKey}"]`);
  if(btn)btn.classList.add('menu-active');
 }
+function ensureCustomerChangesMenu(){
+ let btn=document.getElementById('customerChangesMenu');
+ if(btn)return btn;
+ const ret=document.getElementById('returnBatchesMenu');
+ const asideEl=document.querySelector('aside');
+ if(!asideEl)return null;
+ btn=document.createElement('button');
+ btn.id='customerChangesMenu';btn.dataset.menuKey='customerChanges';
+ btn.innerHTML='🔄 تغيير الزبون <span id="customerChangeCount" class="badge">0</span>';
+ btn.onclick=()=>go('customerChanges','customerChanges');
+ if(ret)asideEl.insertBefore(btn,ret);else asideEl.appendChild(btn);
+ return btn;
+}
 function menu(){
+ ensureCustomerChangesMenu();
  mergeExistingReturnBatchesV145();
  updateReturnRequestCount();
  const settledIds=settledOrderIdSet();
@@ -2355,7 +2371,7 @@ function render(){
  const searching=!!String(search?.value||'').trim();
  title.textContent=searching?'نتائج البحث في جميع الطلبات':statusDisplayName(filter);
  let a=visibleOrders();
- rows.innerHTML=a.map(o=>`<tr${o.deletedAt?' style="opacity:.78;background:#fff3f3"':''}><td><b dir="ltr">${formatSeq(o.seq)}</b></td><td class=code onclick="openOrder('${o.id}')">${o.clientNo||'—'}${o.deletedAt?'<div><span class="badge" style="background:#b91c1c;color:white">محذوف</span></div>':''}</td><td>${o.recipient}</td><td>${o.address||'—'}${o.city?'، '+o.city:''}</td><td>
+ rows.innerHTML=a.map(o=>`<tr${o.deletedAt?' style="opacity:.78;background:#fff3f3"':''}><td><b dir="ltr">${formatSeq(o.seq)}</b></td><td class=code onclick="openOrder('${o.id}')">${o.clientNo||'—'}${o.deletedAt?'<div><span class="badge" style="background:#b91c1c;color:white">محذوف</span></div>':''}</td><td>${o.recipient}<div style="text-align:center;margin-top:5px">${daysBadge(o)}</div></td><td>${o.address||'—'}${o.city?'، '+o.city:''}</td><td>
 <div dir="ltr" style="direction:ltr;unicode-bidi:bidi-override;display:inline-block">${o.phone}</div>
 <div style="margin-top:4px;display:flex;gap:4px;flex-wrap:wrap">
 <button class="btn g" style="padding:5px 7px;font-size:11px" onclick="contactPhone('${o.phone}')">📞</button>
@@ -2365,7 +2381,7 @@ function render(){
   <b>${cash(o.amount)}</b>
   ${o.worker?`<div style="font-size:11px;margin-top:3px">خصم التوصيل: -${cash(deliveryFeeForOrder(o))}</div>
   <div style="font-size:11px"><b>الصافي: ${cash((+o.amount||0)-deliveryFeeForOrder(o))}</b></div>`:''}
-</td><td><span class=badge>${statusDisplayName(o.status)}</span><br>${daysBadge(o)}</td></tr>`).join('');renderWorkerFinanceSummary()}
+</td><td><span class=badge>${statusDisplayName(o.status)}</span></td></tr>`).join('');renderWorkerFinanceSummary()}
 function orderLifecycleEntries(o){
  const items=[];
  let ix=0;
