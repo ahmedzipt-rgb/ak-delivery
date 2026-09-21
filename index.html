@@ -474,6 +474,28 @@ html[data-lang="fr"] th,html[data-lang="fr"] td{text-align:left}
   position:static!important;top:auto!important;z-index:auto!important;
   box-shadow:none!important;
 }
+
+/* v155: إصلاح جذري لواجهة الموزع على الهاتف: لا ارتفاعات ثابتة ولا تمرير متداخل. */
+@media(max-width:650px){
+  html[data-role="worker"],html[data-role="worker"] body{
+    height:auto!important;min-height:100%!important;max-height:none!important;
+    overflow-x:hidden!important;overflow-y:auto!important;overscroll-behavior:auto!important;
+  }
+  html[data-role="worker"] body{display:block!important;}
+  html[data-role="worker"] #appHeader,html[data-role="worker"] header{position:sticky!important;top:0!important;z-index:50!important;}
+  html[data-role="worker"] .app{display:flex!important;height:auto!important;min-height:calc(100dvh - 58px)!important;max-height:none!important;overflow:visible!important;align-items:flex-start!important;}
+  html[data-role="worker"] aside{flex:0 0 135px!important;width:135px!important;height:auto!important;min-height:calc(100dvh - 58px)!important;max-height:none!important;overflow:visible!important;}
+  html[data-role="worker"] main{flex:1 1 auto!important;min-width:0!important;height:auto!important;min-height:calc(100dvh - 58px)!important;max-height:none!important;overflow:visible!important;}
+  html[data-role="worker"] main>.page.on,html[data-role="worker"] #list.page.on{display:block!important;height:auto!important;min-height:0!important;max-height:none!important;overflow:visible!important;}
+  html[data-role="worker"] #list.page.on>.card,html[data-role="worker"] #workerFinanceSummary,html[data-role="worker"] #orderListCard{position:relative!important;float:none!important;clear:both!important;height:auto!important;min-height:0!important;max-height:none!important;}
+  html[data-role="worker"] #orderListCard{overflow-x:auto!important;overflow-y:visible!important;-webkit-overflow-scrolling:touch!important;contain:none!important;isolation:auto!important;transform:none!important;}
+  html[data-role="worker"] #orderListCard table{display:table!important;min-width:760px!important;width:100%!important;height:auto!important;position:static!important;transform:none!important;contain:none!important;}
+  html[data-role="worker"] #orderListCard thead{display:table-header-group!important;height:auto!important;}
+  html[data-role="worker"] #orderListCard tbody{display:table-row-group!important;height:auto!important;}
+  html[data-role="worker"] #orderListCard tr{display:table-row!important;height:auto!important;}
+  html[data-role="worker"] #orderListCard th,html[data-role="worker"] #orderListCard td{display:table-cell!important;position:static!important;height:auto!important;max-height:none!important;visibility:visible!important;opacity:1!important;clip:auto!important;clip-path:none!important;}
+}
+
 </style></head>
 <body>
 <div id="loginScreen" class="login-screen">
@@ -481,7 +503,7 @@ html[data-lang="fr"] th,html[data-lang="fr"] td{text-align:left}
  <select id="loginWorker"><option value="">اختر حسابك</option></select>
 <input id="loginPin" type="password" inputmode="numeric" placeholder="الرمز السري">
 <div id="loginStatus" style="margin-top:8px;font-weight:700;min-height:22px"></div>
-<div style="margin-top:6px;font-size:12px;opacity:.7">الإصدار 154</div>
+<div style="margin-top:6px;font-size:12px;opacity:.7">الإصدار 155</div>
 <button id="workerLoginBtn" type="button" onclick="workerLogin(event)" class="btn" style="width:100%">دخول الموزع</button>
 <hr>
 <h3>إنشاء حساب موزع</h3>
@@ -1079,7 +1101,7 @@ async function workerLogin(ev){
    if(navigator.onLine){
      setTimeout(async()=>{
        try{
-         await cloudPull(true,true);
+         await cloudPull(true,false);
          const currentWorker=(db.workers||[]).find(x=>String(x.id)===String(session.workerId) && !x.deletedAt);
          if(currentWorker && !currentWorker.blocked && currentWorker.approved!==false){
            try{menu();render();renderWorkers();accountsRender();}catch(e){console.error(e);}
@@ -1131,10 +1153,12 @@ function ownerLogin(ev){
 }
 function logout(){
  session={role:null,workerId:null};ownerMode=false;clearSession();
+ try{document.documentElement.dataset.role='guest';}catch(_){}
  const loginEl=document.getElementById('loginScreen');if(loginEl){loginEl.style.display='flex';loginEl.style.pointerEvents='auto';loginEl.style.visibility='visible';}
  refreshLoginWorkers();
 }
 function applyPermissions(){
+ try{document.documentElement.dataset.role=(session&&session.role)||'guest';}catch(_){}
  let buttons=[...document.querySelectorAll('aside > button')];
  buttons.forEach(b=>b.style.display='block');
  const isWorker=session.role==='worker';
@@ -1504,6 +1528,17 @@ function markAssignedSeen(){
  localStorage.setItem(CLOUD_SEEN_ASSIGNED_KEY,JSON.stringify(assigned));
  updateWorkerNewBadge();
 }
+function cloudDbDigest(d){
+  const pick=(name,fields)=>((d&&Array.isArray(d[name]))?d[name]:[]).map(x=>fields.map(k=>String((x&&x[k])??'')).join('~')).sort().join('|');
+  return [
+    pick('orders',['id','modifiedAt','status','worker','deletedAt','deliveryReceivedAt','returnRequestedAt','returnCompletedAt']),
+    pick('workers',['id','modifiedAt','deletedAt','blocked','approved','rate']),
+    pick('settlements',['id','modifiedAt','confirmedAt','workerId','deletedAt']),
+    pick('deliveryTransfers',['id','modifiedAt','status','receivedAt','workerId','deletedAt']),
+    pick('returnBatches',['id','modifiedAt','confirmedAt','ownerConfirmedAt','workerId','deletedAt']),
+    pick('customerChangeRequests',['id','modifiedAt','status','workerId','deletedAt'])
+  ].join('||');
+}
 async function cloudRequest(action,payload={}){
   let r;
 
@@ -1526,6 +1561,7 @@ async function cloudRequest(action,payload={}){
     const data=Object.assign({},payload||{},{_syncToken:token});
     const expectedOrders=Array.isArray(data.db?.orders)?data.db.orders.length:0;
     const expectedWorkers=Array.isArray(data.db?.workers)?data.db.workers.length:0;
+    const expectedDigest=cloudDbDigest(data.db||{});
     const body=JSON.stringify({key:CLOUD_KEY,action:'save',data:data});
 
     await fetch(CLOUD_URL,{
@@ -1542,8 +1578,9 @@ async function cloudRequest(action,payload={}){
       const cdb=pack&&pack.db;
       const orders=Array.isArray(cdb?.orders)?cdb.orders.length:-1;
       const workers=Array.isArray(cdb?.workers)?cdb.workers.length:-1;
-      if(pack && pack._syncToken===token && orders===expectedOrders && workers===expectedWorkers){
-        return {ok:true,verified:true,token,orders,workers};
+      const sameDigest=!!cdb && cloudDbDigest(cdb)===expectedDigest;
+      if(pack && orders===expectedOrders && workers===expectedWorkers && (pack._syncToken===token || sameDigest)){
+        return {ok:true,verified:true,tokenMatched:pack._syncToken===token,digestMatched:sameDigest,token,orders,workers};
       }
     }
     throw new Error('السحابة لم تؤكد حفظ البيانات');
@@ -1784,14 +1821,17 @@ async function workerRefreshOrders(){
  if(btn){btn.disabled=true;btn.textContent='⏳ جارٍ التحديث';}
  showToast('جارٍ جلب طلباتك من السحابة...');
  try{
-   const ok=await cloudPull(true,true);
+   const pending=localStorage.getItem(CLOUD_PENDING_KEY)==='1';
+   let ok=true;
+   if(pending)ok=await workerCloudPush(true);
+   if(ok)ok=await cloudPull(true,false);
    if(ok){
      markAssignedSeen();
      try{menu();render();}catch(_){}
      showToast('✅ تم تحديث طلباتك من السحابة');
      return true;
    }
-   showToast('تعذر تحديث الطلبات؛ حاول مرة أخرى');
+   showToast('تعذر تحديث الطلبات: '+(localStorage.getItem(CLOUD_LAST_ERROR_KEY)||'تحقق من الاتصال'));
    return false;
  }catch(e){
    showToast('تعذر التحديث: '+(e&&e.message?e.message:'خطأ غير معروف'));
@@ -1814,7 +1854,7 @@ async function syncNow(silent=true){
       // v137: يرفع الموزع تعديلاته أولاً، ثم يجلب النسخة المدمجة المؤكدة.
       // الآن نرفع تغييراته المصرح بها أولاً، ثم نجلب النسخة المدمجة المؤكدة.
       ok=await workerCloudPush(silent);
-      if(ok)ok=await cloudPull(true,true);
+      if(ok)ok=await cloudPull(true,false);
     }else{
       // v131: المالك هو المصدر الآمن الآن؛ لا نجلب القاعدة الفارغة قبل رفع بياناته.
       ok=await cloudPush(silent);
@@ -1840,7 +1880,7 @@ window.addEventListener('online',()=>{
   if(session&&session.role==='worker'){
     showToast('عاد الاتصال بالإنترنت — جارٍ تبادل التحديثات');
     if(localStorage.getItem(CLOUD_PENDING_KEY)==='1')syncNow(true);
-    else cloudPull(true,true);
+    else cloudPull(true,false);
   }else{
     // v135: لا نرفع نسخة المالك تلقائياً عند عودة الاتصال حتى لا تطغى على السحابة.
     updateSyncIndicators();
@@ -1852,13 +1892,13 @@ window.addEventListener('offline',()=>{updateSyncIndicators();showToast('لا ي
 setInterval(()=>{
   if(!navigator.onLine)return;
   if(localStorage.getItem(CLOUD_PENDING_KEY)==='1')syncNow(true);
-  else if(session.role==='worker')cloudPull(true,true);
+  else if(session.role==='worker')cloudPull(true,false);
 },12000);
 // v129: عند رجوع الموزع إلى صفحة التطبيق نجلب الطلبات فوراً.
 document.addEventListener('visibilitychange',()=>{
   if(document.visibilityState==='visible' && navigator.onLine){
     if(localStorage.getItem(CLOUD_PENDING_KEY)==='1')syncNow(true);
-    else if(session.role==='worker')cloudPull(true,true);
+    else if(session.role==='worker')cloudPull(true,false);
   }
 });
 // عند الرجوع إلى التطبيق من الخلفية أو فتح النسخة المثبتة، حدّث طلبات الموزع فوراً.
@@ -4328,7 +4368,7 @@ if(!session || !session.role){
 }
 // v135: التحديث التلقائي عند التشغيل للموزع فقط. المالك يستخدم زري الجلب/الرفع بوضوح.
 setTimeout(()=>{
-  if(navigator.onLine && session && session.role==='worker')cloudPull(true,true);
+  if(navigator.onLine && session && session.role==='worker')cloudPull(true,false);
 },1800);
 
 // v151: واجهة ثنائية اللغة. تبقى القيم والبيانات الداخلية كما هي، وتتغير النصوص المعروضة فقط.
