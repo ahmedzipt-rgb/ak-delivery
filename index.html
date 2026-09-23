@@ -503,7 +503,7 @@ html[data-lang="fr"] th,html[data-lang="fr"] td{text-align:left}
  <select id="loginWorker"><option value="">اختر حسابك</option></select>
 <input id="loginPin" type="password" inputmode="numeric" placeholder="الرمز السري">
 <div id="loginStatus" style="margin-top:8px;font-weight:700;min-height:22px"></div>
-<div style="margin-top:6px;font-size:12px;opacity:.7">الإصدار 170</div>
+<div style="margin-top:6px;font-size:12px;opacity:.7">الإصدار 171</div>
 <button id="workerLoginBtn" type="button" onclick="workerLogin(event)" class="btn" style="width:100%">دخول الموزع</button>
 <hr>
 <h3>إنشاء حساب موزع</h3>
@@ -1975,9 +1975,10 @@ async function cloudPull(silent=false,merge=true){
        for(const k of keep){if(p[k]!==undefined)r[k]=JSON.parse(JSON.stringify(p[k]));}
      }
    }
+   const recoveredReturns=recoverArchivedReturns171();
    const correctedReturns=applyRequestedReturnRemoval165();
    localStorage.setItem(K,JSON.stringify(db));
-   if(correctedReturns)scheduleCloudSync();
+   if(correctedReturns||recoveredReturns)scheduleCloudSync();
    localStorage.setItem('ak_delivery_last_cloud_pull',isoNow());
    localStorage.setItem(CLOUD_LAST_OK_KEY,isoNow());
    cloudPullFailures=0;
@@ -3639,6 +3640,52 @@ async function confirmDeliveryBatchReceived(batchId){
 function ensureReturnBatches(){
  if(!Array.isArray(db.returnBatches))db.returnBatches=[];
 }
+// استعادة تأكيدات الرجوع التي بقيت محفوظة في حزمة مؤرشفة بعد إعادة دمجها.
+function recoverArchivedReturns171(){
+ if(!((session&&session.role==='owner')||ownerMode===true))return false;
+ ensureReturnBatches();
+ let changed=false;
+ const orderIndex=new Map((db.orders||[]).filter(o=>o&&o.id!=null).map(o=>[String(o.id),o]));
+ for(const archive of db.returnBatches.slice()){
+   if(!archive||!archive.deletedAt||!archive.duplicateHidden||
+      !Array.isArray(archive.returnedOrderIds)||!Array.isArray(archive.ownerReceivedOrderIds))continue;
+   const received=new Set(archive.ownerReceivedOrderIds.map(String));
+   const ids=[...new Set(archive.returnedOrderIds.map(String))].filter(id=>received.has(id));
+   if(!ids.length)continue;
+   const recoveredId='RBREC171-'+String(archive.id);
+   if(db.returnBatches.some(b=>String(b.id)===recoveredId))continue;
+   const orders=ids.map(id=>orderIndex.get(id));
+   if(orders.some(o=>!o||o.deletedAt||o.status!=='طلب رجوع'))continue;
+   const activeId=String(orders[0].returnBatchId||'');
+   const active=db.returnBatches.find(b=>b&&!b.deletedAt&&String(b.id)===activeId&&b.status==='pending');
+   if(!active||orders.some(o=>String(o.returnBatchId||'')!==activeId||
+      !(active.orderIds||[]).map(String).includes(String(o.id))))continue;
+   const now=isoNow();
+   const restored={
+     id:recoveredId,code:String(archive.code||'RET')+'-مستلم',
+     workerId:archive.workerId,workerName:archive.workerName,
+     orderIds:ids,count:ids.length,status:'owner_confirmed',
+     returnedOrderIds:ids,ownerReceivedOrderIds:ids,
+     createdAt:archive.createdAt,createdLabel:archive.createdLabel,
+     modifiedAt:now,modifiedBy:'استعادة تأكيدات الرجوع المؤرشفة'
+   };
+   db.returnBatches.push(restored);
+   const moved=new Set(ids);
+   active.orderIds=(active.orderIds||[]).filter(id=>!moved.has(String(id)));
+   active.returnedOrderIds=(active.returnedOrderIds||[]).filter(id=>!moved.has(String(id)));
+   active.ownerReceivedOrderIds=(active.ownerReceivedOrderIds||[]).filter(id=>!moved.has(String(id)));
+   active.count=active.orderIds.length;
+   active.modifiedAt=now;active.modifiedBy='استعادة تأكيدات الرجوع المؤرشفة';
+   if(!active.count)active.deletedAt=now;
+   for(const o of orders){
+     o.status='مرتجع';o.statusEnteredAt=now;
+     o.returnBatchId=recoveredId;o.returnBatchCode=restored.code;
+     appendOrderHistory(o,'استُعيد تأكيد رجوع الموزع واستلام المالك من الحزمة المؤرشفة');
+   }
+   changed=true;
+ }
+ return changed;
+}
 function detachOrderFromPendingReturns(o){
  if(!o)return false;
  ensureReturnBatches();
@@ -3721,6 +3768,10 @@ function toggleReturnArchiveBatch(id){
 }
 function renderReturnBatches(){
  ensureReturnBatches();
+ if(recoverArchivedReturns171()){
+   localStorage.setItem(K,JSON.stringify(db));
+   scheduleCloudSync();
+ }
  if(applyRequestedReturnRemoval165()){
    localStorage.setItem(K,JSON.stringify(db));
    scheduleCloudSync();
