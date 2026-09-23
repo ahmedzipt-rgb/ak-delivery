@@ -2183,7 +2183,6 @@ function ensureCustomerChangesMenu(){
 }
 function menu(){
  ensureCustomerChangesMenu();
- mergeExistingReturnBatchesV145();
  updateReturnRequestCount();
  const deletedCount=document.getElementById('deletedOrdersCount');
  if(deletedCount)deletedCount.textContent=(db.orders||[]).filter(o=>o&&o.deletedAt).length;
@@ -3679,25 +3678,45 @@ function renderReturnBatches(){
  }).join('');
  updateReturnRequestCount();
 }
+var openReturnedBatchId='';
+function toggleReturnedBatch(id){
+ openReturnedBatchId=String(openReturnedBatchId)===String(id)?'':String(id);
+ renderReturnedOrders();
+}
 function renderReturnedOrders(){
  ensureReturnBatches();
  migrateLegacyReturnsV144();
  const el=document.getElementById('returnedOrdersList');if(!el)return;
  const term=String(document.getElementById('returnedOrdersSearch')?.value||'').trim().toLowerCase();
- const entries=returnDisplayModel().flatMap(item=>item.orders.filter(o=>o.status==='مرتجع')
-   .map(o=>({batch:item.batch,order:o})))
-   .filter(({batch,order:o})=>!term||[batch.code,batch.id,o.clientNo,o.seq,o.recipient,o.phone]
-     .some(v=>String(v||'').toLowerCase().includes(term)));
- el.innerHTML=entries.length?entries.map(({batch:b,order:o})=>{
-   const received=!!o.returnOwnerConfirmedAt||b.status==='owner_confirmed'||!!b.ownerConfirmedAt;
+ const groups=returnDisplayModel().map(item=>({batch:item.batch,orders:item.orders.filter(o=>o.status==='مرتجع')}))
+   .filter(item=>item.orders.length&&(!term||String(item.batch.code||item.batch.id||'').toLowerCase().includes(term)||
+     item.orders.some(o=>[o.clientNo,o.seq,o.recipient,o.phone].some(v=>String(v||'').toLowerCase().includes(term)))));
+ el.innerHTML=groups.length?groups.map(item=>{
+   const b=item.batch;
+   const batchMatch=String(b.code||b.id||'').toLowerCase().includes(term);
+   const visible=term&&!batchMatch?item.orders.filter(o=>[o.clientNo,o.seq,o.recipient,o.phone]
+     .some(v=>String(v||'').toLowerCase().includes(term))):item.orders;
+   const opened=!!term||String(openReturnedBatchId)===String(b.id);
+   const receivedCount=item.orders.filter(o=>o.returnOwnerConfirmedAt||b.status==='owner_confirmed'||b.ownerConfirmedAt).length;
+   const lines=visible.map(o=>{
+     const received=!!o.returnOwnerConfirmedAt||b.status==='owner_confirmed'||!!b.ownerConfirmedAt;
+     return `<div style="padding:9px 0;border-bottom:1px solid #eee">
+       <b dir="ltr">${htmlEscape(o.clientNo||o.seq||'—')}</b> — ${htmlEscape(o.recipient||'—')}<br>
+       <span dir="ltr">${htmlEscape(o.phone||'—')}</span> — ${cash(o.amount)}<br>
+       <span class="badge">✓ أكد الموزع رجوع الطلب</span>
+       <span class="badge">${received?'✓ أكد المالك الاستلام':'بانتظار استلام المالك'}</span>
+       ${((session&&session.role==='owner')||ownerMode===true)&&!received?
+         `<button class="btn g" style="display:block;margin-top:9px" onclick="confirmOwnerReturnOrder('${String(b.id).replace(/'/g,'')}','${String(o.id).replace(/'/g,'')}')">✅ تأكيد استلام هذا الطلب</button>`:''}
+     </div>`;
+   }).join('');
    return `<div class="card" style="margin-top:10px">
-     <b dir="ltr">${htmlEscape(o.clientNo||o.seq||'—')}</b> — ${htmlEscape(o.recipient||'—')}<br>
-     <span dir="ltr">${htmlEscape(o.phone||'—')}</span> — ${cash(o.amount)}<br>
-     <small>الحزمة: ${htmlEscape(b.code||b.id)} — الموزع: ${htmlEscape(b.workerName||'—')}</small><br>
-     <span class="badge">✓ أكد الموزع رجوع الطلب</span>
-     <span class="badge">${received?'✓ أكد المالك الاستلام':'بانتظار استلام المالك'}</span>
-     ${((session&&session.role==='owner')||ownerMode===true)&&!received?
-       `<button class="btn g" style="display:block;margin-top:9px" onclick="confirmOwnerReturnOrder('${String(b.id).replace(/'/g,'')}','${String(o.id).replace(/'/g,'')}')">✅ تأكيد استلام هذا الطلب</button>`:''}
+     <div><b>حزمة الرجوع:</b> ${htmlEscape(b.code||b.id)}</div>
+     <p><b>الموزع:</b> ${htmlEscape(b.workerName||'—')}<br>
+     <b>الطلبات التي رجعت:</b> ${item.orders.length}<br>
+     <b>استلمها المالك:</b> ${receivedCount} من ${item.orders.length}<br>
+     <b>تاريخ إرسال الحزمة:</b> ${htmlEscape(b.createdLabel||b.createdAt||'—')}</p>
+     ${!term?`<button class="btn" onclick="toggleReturnedBatch('${String(b.id).replace(/'/g,'')}')">${opened?'إغلاق الطلبات':'فتح '+item.orders.length+' طلبات'}</button>`:''}
+     ${opened?`<div style="margin-top:8px">${lines}</div>`:''}
    </div>`;
  }).join(''):'لا توجد طلبات أرجعها الموزع بعد.';
  updateReturnRequestCount();
@@ -3902,17 +3921,12 @@ function attachOrderToOpenReturnBatch(o){
  if(!wid)throw new Error('يجب إسناد الطلب إلى موزع أولاً');
  const w=db.workers.find(x=>String(x.id)===wid&&!x.deletedAt);
  if(!w)throw new Error('لم يتم العثور على الموزع المسند إليه الطلب');
- let b=db.returnBatches.find(x=>x&&!x.deletedAt&&!x.duplicateHidden&&String(x.workerId)===wid&&x.status==='pending'&&!x.ownerConfirmedAt);
  const now=isoNow(),label=tm();
- if(!b){
-   const suffix=String(Date.now()).slice(-6);
-   b={id:'RB'+Date.now(),code:'RET-'+new Date().toISOString().slice(0,10).replace(/-/g,'')+'-'+suffix,
-      workerId:wid,workerName:w.name,orderIds:[],count:0,status:'pending',
-      createdAt:now,createdLabel:label,modifiedAt:now,modifiedBy:actorName()};
-   db.returnBatches.push(b);
- }
- if(!(b.orderIds||[]).map(String).includes(String(o.id)))b.orderIds=(b.orderIds||[]).concat([o.id]);
- b.count=uniqueIds(b.orderIds).length;b.modifiedAt=now;b.modifiedBy=actorName();
+ const suffix=String(Date.now()).slice(-6)+'-'+Math.random().toString(36).slice(2,6);
+ const b={id:'RB'+Date.now()+'-'+suffix,code:'RET-'+new Date().toISOString().slice(0,10).replace(/-/g,'')+'-'+suffix,
+   workerId:wid,workerName:w.name,orderIds:[o.id],count:1,status:'pending',
+   createdAt:now,createdLabel:label,modifiedAt:now,modifiedBy:actorName()};
+ db.returnBatches.push(b);
  o.returnBatchId=b.id;o.returnBatchCode=b.code;
  return b;
 }
