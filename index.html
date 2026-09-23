@@ -503,7 +503,7 @@ html[data-lang="fr"] th,html[data-lang="fr"] td{text-align:left}
  <select id="loginWorker"><option value="">اختر حسابك</option></select>
 <input id="loginPin" type="password" inputmode="numeric" placeholder="الرمز السري">
 <div id="loginStatus" style="margin-top:8px;font-weight:700;min-height:22px"></div>
-<div style="margin-top:6px;font-size:12px;opacity:.7">الإصدار 169</div>
+<div style="margin-top:6px;font-size:12px;opacity:.7">الإصدار 170</div>
 <button id="workerLoginBtn" type="button" onclick="workerLogin(event)" class="btn" style="width:100%">دخول الموزع</button>
 <hr>
 <h3>إنشاء حساب موزع</h3>
@@ -1144,7 +1144,7 @@ function ownerLogin(ev){
       setTimeout(async()=>{
         try{
           if(localStorage.getItem(CLOUD_PENDING_KEY)==='1')await syncNow(true);
-          else await cloudPull(true,false);
+          else await cloudPull(true,true);
           safeUIRefresh();
         }catch(e){ console.error('cloudPull',e); }
       },500);
@@ -1671,6 +1671,29 @@ function mergeDatabases(localDb,cloudDb){
     if(out[k]===undefined)out[k]=JSON.parse(JSON.stringify(v));
   }
   out.orders=mergeById(localDb.orders||[],cloudDb.orders||[]);
+  // لا تُرجع لقطة سحابية قديمة طلبًا أقر الموزع رجوعه إلى «طلب رجوع».
+  const previousOrders=new Map((localDb.orders||[]).filter(o=>o&&o.id!=null).map(o=>[String(o.id),o]));
+  for(const order of out.orders){
+    const previous=previousOrders.get(String(order.id));
+    if(previous?.status==='تم التسليم'&&order.status==='قيد التوزيع'&&
+       (previous.pendingStatusSync||previous.lastStatusConfirmedAt)){
+      order.status='تم التسليم';
+      order.statusEnteredAt=previous.statusEnteredAt||order.statusEnteredAt;
+      order.modifiedAt=previous.modifiedAt||order.modifiedAt;
+      order.lastStatusConfirmedAt=previous.lastStatusConfirmedAt||order.lastStatusConfirmedAt;
+      if(Array.isArray(previous.history)&&previous.history.length>(order.history||[]).length)
+        order.history=JSON.parse(JSON.stringify(previous.history));
+    }
+    if(previous?.status!=='مرتجع'||order.status!=='طلب رجوع'||
+       !previous.returnBatchId||String(previous.returnBatchId)!==String(order.returnBatchId))continue;
+    order.status='مرتجع';
+    order.returnCompletedAt=previous.returnCompletedAt||order.returnCompletedAt;
+    order.returnOwnerConfirmedAt=previous.returnOwnerConfirmedAt||order.returnOwnerConfirmedAt;
+    order.returnOwnerConfirmedLabel=previous.returnOwnerConfirmedLabel||order.returnOwnerConfirmedLabel;
+    order.modifiedAt=previous.modifiedAt||order.modifiedAt;
+    if(Array.isArray(previous.history)&&previous.history.length>(order.history||[]).length)
+      order.history=JSON.parse(JSON.stringify(previous.history));
+  }
   out.workers=mergeById(localDb.workers||[],cloudDb.workers||[]);
   out.settlements=mergeUniqueById(localDb.settlements||[],cloudDb.settlements||[]);
   out.returnBatches=mergeById(localDb.returnBatches||[],cloudDb.returnBatches||[]);
@@ -1781,7 +1804,13 @@ async function workerCloudPush(silent=true,retries=0){
         }
         continue;
       }
-      if(timeValue(local.modifiedAt)<=timeValue(remote.modifiedAt))continue;
+      // تأكيد حالة ينتظر الرفع لا يُسقطه طابع زمني أحدث من جهاز آخر.
+      const returnedHere=local.status==='مرتجع'&&remote.status==='طلب رجوع'&&
+        local.returnBatchId&&String(local.returnBatchId)===String(remote.returnBatchId);
+      const deliveredHere=local.status==='تم التسليم'&&remote.status==='قيد التوزيع'&&
+        (local.pendingStatusSync||local.lastStatusConfirmedAt);
+      if(!local.pendingStatusSync&&!returnedHere&&!deliveredHere&&
+         timeValue(local.modifiedAt)<=timeValue(remote.modifiedAt))continue;
       for(const key of workerFields){
         if(local[key]!==undefined)remote[key]=JSON.parse(JSON.stringify(local[key]));
         else if(key in remote)delete remote[key];
@@ -1928,6 +1957,8 @@ async function cloudPull(silent=false,merge=true){
    if(!cloudDb)throw new Error('لا توجد بيانات في السحابة بعد');
    if(typeof createLocalSnapshot==='function'&&!silent)createLocalSnapshot();
    const beforeAssigned=session.role==='worker'?new Set(db.orders.filter(o=>!o.duplicateHidden&&!o.deletedAt&&orderAssignedToWorker(o,session.workerId)).map(o=>String(o.id))):null;
+   // نحفظ شاهدًا محليًا قبل أي جلب قد يغيّر حالة طلب سبق عرضها على الجهاز.
+   if(session.role==='owner'&&cloudDbDigest(db)!==cloudDbDigest(cloudDb))createLocalSnapshot();
    // v159: لا يسمح الجلب السحابي بالكتابة فوق حالة محلية تنتظر التأكيد.
    const pendingStatusOrders=(db.orders||[]).filter(o=>o&&o.pendingStatusSync).map(o=>JSON.parse(JSON.stringify(o)));
    // لا يستبدل الجلب تعديلًا تم على الجهاز أثناء انتظار رد السحابة.
@@ -2071,7 +2102,7 @@ window.addEventListener('online',()=>{
     showToast('عاد الاتصال بالإنترنت — جارٍ جلب التحديثات');
     if(session&&session.role==='owner'){
       if(localStorage.getItem(CLOUD_PENDING_KEY)==='1')syncNow(true);
-      else cloudPull(true,false);
+      else cloudPull(true,true);
     }
   }
 });
@@ -2084,19 +2115,19 @@ setInterval(()=>{
     return;
   }
   const interval=Math.min(30000,(session.role==='worker'?5000:6000)*Math.pow(2,cloudPullFailures));
-  if(Date.now()-cloudLastPullStarted>=interval)cloudPull(true,false);
+  if(Date.now()-cloudLastPullStarted>=interval)cloudPull(true,session.role==='owner');
 },2000);
 document.addEventListener('visibilitychange',()=>{
   if(document.visibilityState==='visible' && navigator.onLine){
     if(localStorage.getItem(CLOUD_PENDING_KEY)==='1')syncNow(true);
     else if(session?.role&&!cloudPullBusy&&Date.now()-cloudLastPullStarted>=2000)
-      cloudPull(true,false);
+      cloudPull(true,session.role==='owner');
   }
 });
 window.addEventListener('pageshow',()=>{
   if(navigator.onLine && session?.role&&!cloudPullBusy&&Date.now()-cloudLastPullStarted>=2000){
     if(localStorage.getItem(CLOUD_PENDING_KEY)==='1')syncNow(true);
-    else cloudPull(true,false);
+    else cloudPull(true,session.role==='owner');
   }
 });
 function save(){
@@ -4938,7 +4969,7 @@ if(!session || !session.role){
 setTimeout(()=>{
   if(navigator.onLine && session?.role&&!cloudPullBusy&&!cloudSyncBusy){
     if(localStorage.getItem(CLOUD_PENDING_KEY)==='1')syncNow(true);
-    else cloudPull(true,false);
+    else cloudPull(true,session.role==='owner');
   }
 },1800);
 
