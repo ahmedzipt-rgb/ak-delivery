@@ -503,7 +503,7 @@ html[data-lang="fr"] th,html[data-lang="fr"] td{text-align:left}
  <select id="loginWorker"><option value="">اختر حسابك</option></select>
 <input id="loginPin" type="password" inputmode="numeric" placeholder="الرمز السري">
 <div id="loginStatus" style="margin-top:8px;font-weight:700;min-height:22px"></div>
-<div style="margin-top:6px;font-size:12px;opacity:.7">الإصدار 156</div>
+<div style="margin-top:6px;font-size:12px;opacity:.7">الإصدار 163</div>
 <button id="workerLoginBtn" type="button" onclick="workerLogin(event)" class="btn" style="width:100%">دخول الموزع</button>
 <hr>
 <h3>إنشاء حساب موزع</h3>
@@ -568,6 +568,7 @@ html[data-lang="fr"] th,html[data-lang="fr"] td{text-align:left}
 <section id=returnBatches class=page><div class=card>
 <h2>↩ طلبات رجوع الطلبات</h2>
 
+<input id="returnBatchSearch" type="search" placeholder="ابحث برمز الطلب أو الاسم أو الهاتف" oninput="renderReturnBatches()" style="margin-bottom:10px">
 <div id=returnBatchesList></div>
 </div></section>
 <section id=customerChanges class=page><div class=card>
@@ -1438,6 +1439,9 @@ const CLOUD_URL='https://script.google.com/macros/s/AKfycbyx_Ux59er_GZ3xO_qhgdFo
 const CLOUD_KEY='AKD-0534-CLOUD';
 let cloudSyncTimer=null;
 let cloudSyncBusy=false;
+let cloudPullBusy=false;
+let cloudLastPullStarted=0;
+let cloudEditGeneration=0;
 const CLOUD_PENDING_KEY='ak_delivery_cloud_pending_v59';
 const CLOUD_LAST_OK_KEY='ak_delivery_last_cloud_ok_v59';
 const CLOUD_LAST_ERROR_KEY='ak_delivery_last_cloud_error_v142';
@@ -1546,13 +1550,13 @@ async function cloudRequest(action,payload={}){
   if(action==='ping'){
     r=await fetch(
       CLOUD_URL+'?key='+encodeURIComponent(CLOUD_KEY)+'&action=ping&_t='+Date.now(),
-      {method:'GET',cache:'no-store'}
+      {method:'GET',cache:'no-store',signal:AbortSignal.timeout(12000)}
     );
 
   }else if(action==='loadAll'){
     r=await fetch(
       CLOUD_URL+'?key='+encodeURIComponent(CLOUD_KEY)+'&action=load&_t='+Date.now()+'-'+Math.random().toString(36).slice(2),
-      {method:'GET',cache:'no-store'}
+      {method:'GET',cache:'no-store',signal:AbortSignal.timeout(20000)}
     );
 
   }else if(action==='saveAll'){
@@ -1562,26 +1566,30 @@ async function cloudRequest(action,payload={}){
     const data=Object.assign({},payload||{},{_syncToken:token});
     const expectedOrders=Array.isArray(data.db?.orders)?data.db.orders.length:0;
     const expectedWorkers=Array.isArray(data.db?.workers)?data.db.workers.length:0;
-    const expectedDigest=cloudDbDigest(data.db||{});
+    const expectedDb=JSON.stringify(data.db||{});
     const body=JSON.stringify({key:CLOUD_KEY,action:'save',data:data});
 
     await fetch(CLOUD_URL,{
       method:'POST',mode:'no-cors',
       headers:{'Content-Type':'text/plain;charset=UTF-8'},
-      body,cache:'no-store'
+      body,cache:'no-store',signal:AbortSignal.timeout(20000)
     });
 
     for(let i=0;i<6;i++){
-      await new Promise(resolve=>setTimeout(resolve,700));
-      const check=await cloudRequest('loadAll',{});
+      await new Promise(resolve=>setTimeout(resolve,[250,400,650,900,1200,1500][i]));
+      let check;
+      try{check=await cloudRequest('loadAll',{});}catch(err){
+        if(i===5)throw err;
+        continue;
+      }
       let pack=check.snapshot ?? check.payload ?? check.data ?? check.value ?? null;
       if(typeof pack==='string'){try{pack=JSON.parse(pack)}catch(_){}}
       const cdb=pack&&pack.db;
       const orders=Array.isArray(cdb?.orders)?cdb.orders.length:-1;
       const workers=Array.isArray(cdb?.workers)?cdb.workers.length:-1;
-      const sameDigest=!!cdb && cloudDbDigest(cdb)===expectedDigest;
-      if(pack && orders===expectedOrders && workers===expectedWorkers && (pack._syncToken===token || sameDigest)){
-        return {ok:true,verified:true,tokenMatched:pack._syncToken===token,digestMatched:sameDigest,token,orders,workers};
+      const sameDb=!!cdb && JSON.stringify(cdb)===expectedDb;
+      if(pack && orders===expectedOrders && workers===expectedWorkers && (pack._syncToken===token || sameDb)){
+        return {ok:true,verified:true,tokenMatched:pack._syncToken===token,dbMatched:sameDb,token,orders,workers};
       }
     }
     throw new Error('السحابة لم تؤكد حفظ البيانات');
@@ -1652,6 +1660,8 @@ async function cloudTest(){
  }catch(e){updateCloudStatus('غير متصل: '+e.message);}
 }
 async function cloudPush(silent=false){
+  const startedGeneration=cloudEditGeneration;
+  let baseGeneration;
   try{
     // v131: جهاز الموزع لا يرفع قاعدة البيانات أبداً؛ يجلب فقط.
     if(session&&session.role==='worker')return false;
@@ -1662,6 +1672,8 @@ async function cloudPush(silent=false){
     // وصل من الموزع قبل لحظات.
     try{
       const latest=await cloudRequest('loadAll',{});
+      if(Object.prototype.hasOwnProperty.call(latest,'generation'))
+        baseGeneration=latest.generation;
       const latestDb=parseCloudDb(latest);
       if(latestDb){
         db=mergeDatabases(db,latestDb);
@@ -1678,12 +1690,14 @@ async function cloudPush(silent=false){
     // حماية من مسح السحابة بقاعدة فارغة.
     if(localOrders===0 && localWorkers===0)throw new Error('تم منع رفع قاعدة فارغة');
 
-    const result=await cloudRequest('saveAll',{db:db,updatedAt:isoNow()});
+    const payload={db:db,updatedAt:isoNow()};
+    if(baseGeneration!==undefined)payload._baseGeneration=baseGeneration;
+    const result=await cloudRequest('saveAll',payload);
     if(!result||!result.verified)throw new Error('لم يتم تأكيد الحفظ');
 
     localStorage.setItem('ak_delivery_last_cloud_push',isoNow());
     localStorage.setItem(CLOUD_LAST_OK_KEY,isoNow());
-    localStorage.removeItem(CLOUD_PENDING_KEY);
+    if(cloudEditGeneration===startedGeneration)localStorage.removeItem(CLOUD_PENDING_KEY);
     localStorage.removeItem(CLOUD_LAST_ERROR_KEY);
     if(!silent)updateCloudStatus('تم رفع '+localOrders+' طلب إلى السحابة ✓');
     else updateSyncIndicators();
@@ -1701,12 +1715,15 @@ async function cloudPush(silent=false){
 // نبدأ دائماً من أحدث نسخة سحابية ثم ندمج الطلبات والسجلات الخاصة بالموزع الحالي.
 async function workerCloudPush(silent=true){
   if(!session||session.role!=='worker')return false;
+  const startedGeneration=cloudEditGeneration;
   try{
     const wid=String(session.workerId||'');
     if(!wid)throw new Error('حساب الموزع غير محدد');
     if(!silent)showToast('جارٍ إرسال تحديثاتك إلى المالك...');
 
     const loaded=await cloudRequest('loadAll',{});
+    const baseGeneration=Object.prototype.hasOwnProperty.call(loaded,'generation')
+      ?loaded.generation:undefined;
     const cloudDb=parseCloudDb(loaded);
     if(!cloudDb)throw new Error('لا توجد قاعدة سحابية للمالك');
     const out=JSON.parse(JSON.stringify(cloudDb));
@@ -1760,10 +1777,12 @@ async function workerCloudPush(silent=true){
     mergeWorkerRows('returnBatches');
     mergeWorkerRows('customerChangeRequests');
 
-    const result=await cloudRequest('saveAll',{db:out,updatedAt:isoNow(),updatedBy:'worker:'+wid});
+    const payload={db:out,updatedAt:isoNow(),updatedBy:'worker:'+wid};
+    if(baseGeneration!==undefined)payload._baseGeneration=baseGeneration;
+    const result=await cloudRequest('saveAll',payload);
     if(!result||!result.verified)throw new Error('لم يتم تأكيد حفظ تحديثات الموزع');
     localStorage.setItem(CLOUD_LAST_OK_KEY,isoNow());
-    localStorage.removeItem(CLOUD_PENDING_KEY);
+    if(cloudEditGeneration===startedGeneration)localStorage.removeItem(CLOUD_PENDING_KEY);
     localStorage.removeItem(CLOUD_LAST_ERROR_KEY);
     if(!silent)showToast('✅ وصلت تحديثاتك إلى المالك');
     return true;
@@ -1776,7 +1795,95 @@ async function workerCloudPush(silent=true){
   }
 }
 
+
+// v159: تنفيذ تغيير حالة الطلب عند الموزع كمعاملة سحابية مستقلة ذات أولوية.
+async function waitForCloudIdle(maxMs=8000){
+  const started=Date.now();
+  while(cloudSyncBusy && Date.now()-started<maxMs){
+    await new Promise(r=>setTimeout(r,160));
+  }
+  return !cloudSyncBusy;
+}
+
+async function workerPushOrderStatusTransaction(orderId,targetStatus){
+  if(!session||session.role!=='worker')return false;
+  const wid=String(session.workerId||'');
+  if(!wid)throw new Error('حساب الموزع غير محدد');
+  const local=db.orders.find(x=>String(x.id)===String(orderId));
+  if(!local)throw new Error('الطلب غير موجود على الجهاز');
+  if(!orderAssignedToWorker(local,wid))throw new Error('هذا الطلب غير مسند إلى هذا الموزع');
+
+  const idle=await waitForCloudIdle();
+  if(!idle)throw new Error('المزامنة مشغولة؛ أعد المحاولة بعد لحظة');
+  const startedGeneration=cloudEditGeneration;
+  cloudSyncBusy=true;
+  try{
+    const loaded=await cloudRequest('loadAll',{});
+    const baseGeneration=Object.prototype.hasOwnProperty.call(loaded,'generation')
+      ?loaded.generation:undefined;
+    const cloudDb=parseCloudDb(loaded);
+    if(!cloudDb)throw new Error('لا توجد قاعدة سحابية للمالك');
+    const out=JSON.parse(JSON.stringify(cloudDb));
+    if(!Array.isArray(out.orders))out.orders=[];
+    let remote=out.orders.find(x=>String(x.id)===String(orderId));
+    if(!remote){
+      remote=JSON.parse(JSON.stringify(local));
+      out.orders.push(remote);
+    }
+
+    // في تغيير الحالة الصريح من الموزع، نعتمد الحالة المحلية حتى لو كان
+    // الطابع الزمني البعيد أحدث بسبب مزامنة آلية حدثت في اللحظة نفسها.
+    const fields=['status','statusEnteredAt','history','remarks','rejectReason','postponeDate',
+      'returnRequestedAt','returnCompletedAt','deliveryReceivedAt','deliveryReceivedLabel',
+      'deliveryReceivedByWorkerId','deliveryReceivedByWorkerName','cancelReason','cancelledAt',
+      'recipient','phone','address','city','amount','customerTransfers'];
+    for(const key of fields){
+      if(local[key]!==undefined)remote[key]=JSON.parse(JSON.stringify(local[key]));
+      else if(key in remote)delete remote[key];
+    }
+    remote.status=targetStatus;
+    remote.statusEnteredAt=local.statusEnteredAt||isoNow();
+    remote.modifiedAt=local.modifiedAt||isoNow();
+    remote.modifiedBy=local.modifiedBy||actorName();
+    remote.lastChangeKind='تغيير حالة مؤكد: '+targetStatus;
+
+    const payload={db:out,updatedAt:isoNow(),updatedBy:'worker-status:'+wid};
+    if(baseGeneration!==undefined)payload._baseGeneration=baseGeneration;
+    const result=await cloudRequest('saveAll',payload);
+    if(!result||!result.verified)throw new Error('لم تؤكد السحابة حفظ الحالة');
+
+    // Recheck the exact order state after the full database write. Another
+    // device can write between the save confirmation and this read.
+    const confirmedRaw=await cloudRequest('loadAll',{});
+    const confirmedDb=parseCloudDb(confirmedRaw);
+    const confirmed=confirmedDb&&Array.isArray(confirmedDb.orders)
+      ? confirmedDb.orders.find(x=>String(x.id)===String(orderId)) : null;
+    if(!confirmed || confirmed.status!==targetStatus){
+      throw new Error('السحابة أعادت حالة مختلفة بعد الحفظ');
+    }
+    db=mergeDatabases(db,confirmedDb);
+    const fresh=db.orders.find(x=>String(x.id)===String(orderId));
+    if(fresh){
+      fresh.status=targetStatus;
+      delete fresh.pendingStatusSync;
+      delete fresh.pendingStatusTarget;
+      fresh.lastStatusConfirmedAt=isoNow();
+    }
+    localStorage.setItem(K,JSON.stringify(db));
+    localStorage.setItem(CLOUD_LAST_OK_KEY,isoNow());
+    if(cloudEditGeneration===startedGeneration)localStorage.removeItem(CLOUD_PENDING_KEY);
+    localStorage.removeItem(CLOUD_LAST_ERROR_KEY);
+    updateSyncIndicators();
+    return true;
+  }finally{
+    cloudSyncBusy=false;
+  }
+}
+
 async function cloudPull(silent=false,merge=true){
+ if(cloudPullBusy)return false;
+ cloudPullBusy=true;
+ cloudLastPullStarted=Date.now();
  try{
    if(!silent)updateCloudStatus('جاري جلب البيانات...');
    const j=await cloudRequest('loadAll',{});
@@ -1784,7 +1891,20 @@ async function cloudPull(silent=false,merge=true){
    if(!cloudDb)throw new Error('لا توجد بيانات في السحابة بعد');
    if(typeof createLocalSnapshot==='function'&&!silent)createLocalSnapshot();
    const beforeAssigned=session.role==='worker'?new Set(db.orders.filter(o=>!o.duplicateHidden&&!o.deletedAt&&orderAssignedToWorker(o,session.workerId)).map(o=>String(o.id))):null;
+   // v159: لا يسمح الجلب السحابي بالكتابة فوق حالة محلية تنتظر التأكيد.
+   const pendingStatusOrders=(db.orders||[]).filter(o=>o&&o.pendingStatusSync).map(o=>JSON.parse(JSON.stringify(o)));
    db=merge?mergeDatabases(db,cloudDb):cloudDb;
+   if(pendingStatusOrders.length){
+     if(!Array.isArray(db.orders))db.orders=[];
+     const idx=new Map(db.orders.map((o,i)=>[String(o.id),i]));
+     for(const p of pendingStatusOrders){
+       const i=idx.get(String(p.id));
+       if(i===undefined){db.orders.push(p);idx.set(String(p.id),db.orders.length-1);continue;}
+       const r=db.orders[i];
+       const keep=['status','statusEnteredAt','history','remarks','rejectReason','postponeDate','returnRequestedAt','returnCompletedAt','cancelReason','cancelledAt','modifiedAt','modifiedBy','lastChangeKind','pendingStatusSync','pendingStatusTarget'];
+       for(const k of keep){if(p[k]!==undefined)r[k]=JSON.parse(JSON.stringify(p[k]));}
+     }
+   }
    localStorage.setItem(K,JSON.stringify(db));
    localStorage.setItem('ak_delivery_last_cloud_pull',isoNow());
    localStorage.setItem(CLOUD_LAST_OK_KEY,isoNow());
@@ -1799,7 +1919,7 @@ async function cloudPull(silent=false,merge=true){
    if(!silent)updateCloudStatus('فشل الجلب: '+e.message);
    updateSyncIndicators();
    return false;
- }
+ }finally{cloudPullBusy=false;}
 }
 
 // v135: الجلب اليدوي لدى المالك يعني اعتماد نسخة السحابة كاملة، لا دمجها
@@ -1849,6 +1969,7 @@ async function syncNow(silent=true){
     return false;
   }
   cloudSyncBusy=true;
+  const startedGeneration=cloudEditGeneration;
   try{
     let ok=false;
     if(session&&session.role==='worker'){
@@ -1863,15 +1984,22 @@ async function syncNow(silent=true){
     }
     if(ok){
       localStorage.setItem(CLOUD_LAST_OK_KEY,isoNow());
-      localStorage.removeItem(CLOUD_PENDING_KEY);
+      if(cloudEditGeneration===startedGeneration)localStorage.removeItem(CLOUD_PENDING_KEY);
       localStorage.removeItem(CLOUD_LAST_ERROR_KEY);
     }
     updateSyncIndicators();
     return ok;
-  }finally{cloudSyncBusy=false;}
+  }finally{
+    cloudSyncBusy=false;
+    if(localStorage.getItem(CLOUD_PENDING_KEY)==='1' && navigator.onLine){
+      clearTimeout(cloudSyncTimer);
+      cloudSyncTimer=setTimeout(()=>syncNow(true),cloudEditGeneration===startedGeneration?12000:1500);
+    }
+  }
 }
 
 function scheduleCloudSync(){
+  cloudEditGeneration++;
   localStorage.setItem(CLOUD_PENDING_KEY,'1');
   updateSyncIndicators();
   clearTimeout(cloudSyncTimer);
@@ -1891,20 +2019,20 @@ window.addEventListener('online',()=>{
 window.addEventListener('offline',()=>{updateSyncIndicators();showToast('لا يوجد إنترنت — سيتم حفظ التغييرات وإرسالها عند عودة الاتصال');});
 // v135: الموزع يجلب دورياً، أما المالك فلا يرفع قاعدة جهازه دورياً.
 setInterval(()=>{
-  if(!navigator.onLine)return;
+  if(!navigator.onLine||document.visibilityState==='hidden'||cloudSyncBusy||cloudPullBusy)return;
   if(localStorage.getItem(CLOUD_PENDING_KEY)==='1')syncNow(true);
-  else if(session.role==='worker')cloudPull(true,false);
-},12000);
+  else if(session.role==='worker'&&Date.now()-cloudLastPullStarted>=10000)cloudPull(true,false);
+},10000);
 // v129: عند رجوع الموزع إلى صفحة التطبيق نجلب الطلبات فوراً.
 document.addEventListener('visibilitychange',()=>{
   if(document.visibilityState==='visible' && navigator.onLine){
     if(localStorage.getItem(CLOUD_PENDING_KEY)==='1')syncNow(true);
-    else if(session.role==='worker')cloudPull(true,false);
+    else if(session.role==='worker'&&!cloudPullBusy&&Date.now()-cloudLastPullStarted>=3000)cloudPull(true,false);
   }
 });
 // عند الرجوع إلى التطبيق من الخلفية أو فتح النسخة المثبتة، حدّث طلبات الموزع فوراً.
 window.addEventListener('pageshow',()=>{
-  if(navigator.onLine && session && session.role==='worker')workerRefreshOrders();
+  if(navigator.onLine && session && session.role==='worker'&&!cloudPullBusy&&Date.now()-cloudLastPullStarted>=3000)workerRefreshOrders();
 });
 function save(){
   dedupeDatabase();
@@ -1953,7 +2081,9 @@ function settledOrderIdSet(){
   return new Set(activeSettlements().flatMap(v=>Array.isArray(v.orderIds)?v.orderIds:[]).map(String));
 }
 function isOrderSettled(o){
-  return !!(o && settledOrderIdSet().has(String(o.id)));
+  // v157: لا تُخْفِ طلباً نشطاً بسبب مرجع تسوية قديم أو خاطئ.
+  // التسوية تعتبر أرشيفاً فقط عندما تكون حالة الطلب نفسها "تم التسليم".
+  return !!(o && o.status==='تم التسليم' && settledOrderIdSet().has(String(o.id)));
 }
 // v144: لا يدخل الطلب أرشيف الرجوع ولا يخرج من العدادات إلا بعد أن يؤكد المالك استلامه.
 function returnedOrderIdSet(){
@@ -1963,7 +2093,8 @@ function returnedOrderIdSet(){
     .flatMap(b=>b.orderIds).map(String));
 }
 function isOrderReturnArchived(o){
-  return !!(o && returnedOrderIdSet().has(String(o.id)));
+  // v157: لا تُخْفِ طلباً عاد إلى حالة عمل نشطة بسبب حزمة رجوع قديمة.
+  return !!(o && ['مرتجع','طلب رجوع'].includes(o.status) && returnedOrderIdSet().has(String(o.id)));
 }
 function workerOrderArchived(o){
  if(!o||session.role!=='worker')return false;
@@ -2035,7 +2166,12 @@ function menu(){
  const settledIds=settledOrderIdSet();
  const returnedIds=returnedOrderIdSet();
  stateMenu.innerHTML=states.filter(s=>s!=='مرتجع').map(s=>{
-   const activeOrders=db.orders.filter(o=>!o.duplicateHidden&&!o.deletedAt&&o.status!=='في الطريق'&&!settledIds.has(String(o.id))&&!returnedIds.has(String(o.id))&&(session.role!=='worker'||(workerCanSeeOrder(o,session.workerId)&&!workerOrderArchived(o))));
+   const activeOrders=db.orders.filter(o=>{
+     if(!o||o.duplicateHidden||o.deletedAt||o.status==='في الطريق')return false;
+     if((isOrderSettled(o)||isOrderReturnArchived(o))&&!orderHasArchiveConflict(o))return false;
+     if(session.role==='worker'&&(!workerCanSeeOrder(o,session.workerId)||(workerOrderArchived(o)&&!orderHasArchiveConflict(o))))return false;
+     return true;
+   });
    const n=s==='الكل'?activeOrders.length:activeOrders.filter(o=>o.status===s).length;
    return `<button data-menu-key="state:${htmlEscape(s)}" onclick="filter='${s}';go('list','state:${s}')">${statusDisplayName(s)} <span class="menu-count">${n}</span></button>`;
  }).join('');
@@ -2048,6 +2184,7 @@ function go(x,menuKey){
 }
 
 var bulkParsed=[];
+var bulkPreviewSource='';
 function parseBulkOrders(txt){
  let text=String(txt||'').replace(/\u00a0/g,' ').replace(/\r/g,'\n').trim();
  if(!text)return [];
@@ -2099,7 +2236,9 @@ function parseBulkOrders(txt){
    let right=text.slice(hit.end,nextStart);
    let chunk=clean(left+' '+hit.code+' '+right);
 
-   const phone=getPhone(chunk);
+   // The order code often contains a long digit run. Never interpret those
+   // digits and the following amount as a customer's phone number.
+   const phone=getPhone(left+' '+right);
    const amount=getAmount(chunk);
 
    // Remove technical fields, leaving mainly city + recipient.
@@ -2149,17 +2288,26 @@ function parseBulkOrders(txt){
 }
 function previewBulk(){
  bulkParsed=parseBulkOrders(bulkText.value);
+ bulkPreviewSource=bulkText.value;
  if(!bulkParsed.length){
  let hasCode=/[A-Za-z][A-Za-z0-9_-]*\d[A-Za-z0-9_-]*/.test(bulkText.value);
  bulkPreview.innerHTML=hasCode?'<b>تم العثور على رمز طلب، لكنه موجود مسبقًا أو لم تكتمل بقية البيانات. جرّب لصق الجدول كاملًا.</b>':'<b>لم أتعرف على أي طلب. الصق السطر أو الجدول كاملًا كما هو.</b>';
  return;
 }
- bulkPreview.innerHTML=`<p>تم التعرف على <b>${bulkParsed.length}</b> طلب.</p><table><tr><th>رمز الطلب</th><th>المستلم</th><th>العنوان</th><th>المدينة</th><th>الهاتف</th><th>القيمة</th></tr>${bulkParsed.map(o=>`<tr><td>${htmlEscape(o.code)}</td><td>${htmlEscape(o.name)}</td><td>${htmlEscape(o.address||'')}</td><td>${htmlEscape(o.city)}</td><td dir=ltr>${htmlEscape(o.phone)}</td><td>${cash(o.amount)}</td></tr>`).join('')}</table>`;
+ const missing=bulkParsed.filter(o=>!o.phone).length;
+ bulkPreview.innerHTML=`<p>تم التعرف على <b>${bulkParsed.length}</b> طلب.</p>${missing?`<p style="color:#a34b00">⚠ رقم الهاتف غير ظاهر في النص المنسوخ لعدد ${missing} طلب. افتح «تفاصيل» الطلب في المصدر وأدخل الرقم أدناه إذا كان متاحًا.</p>`:''}<table><tr><th>رمز الطلب</th><th>المستلم</th><th>العنوان</th><th>المدينة</th><th>الهاتف</th><th>القيمة</th></tr>${bulkParsed.map((o,i)=>`<tr><td>${htmlEscape(o.code)}</td><td>${htmlEscape(o.name)}</td><td>${htmlEscape(o.address||'')}</td><td>${htmlEscape(o.city)}</td><td><input type="tel" inputmode="tel" aria-label="هاتف الطلب ${htmlEscape(o.code)}" value="${htmlEscape(o.phone||'')}" placeholder="أدخل الهاتف إن وجد" oninput="setBulkPhone(${i},this.value)" style="min-width:130px;max-width:180px;direction:ltr"></td><td>${cash(o.amount)}</td></tr>`).join('')}</table>`;
+}
+function setBulkPhone(index,value){
+ if(bulkParsed[index])bulkParsed[index].phone=String(value||'').trim();
 }
 function importBulk(){
  if(session.role!=='owner')return;
- bulkParsed=parseBulkOrders(bulkText.value);
+ if(bulkText.value!==bulkPreviewSource)return alert('تغيّر النص المنسوخ. اضغط معاينة الطلبات مرة أخرى قبل الإضافة.');
  if(!bulkParsed.length)return alert('لم يتم العثور على طلب جديد صالح. قد يكون رمز الطلب موجودًا مسبقًا أو أن النص المنسوخ غير مكتمل.');
+ const invalid=bulkParsed.filter(x=>x.phone && !/^(?:\+?212|0)[\s.\/-]?[5-7](?:[\s.\/-]?\d){8}$/.test(x.phone));
+ if(invalid.length)return alert('تحقق من رقم الهاتف في الطلب: '+invalid[0].code);
+ const missing=bulkParsed.filter(x=>!x.phone);
+ if(missing.length&&!confirm('يوجد '+missing.length+' طلب دون رقم هاتف في النص المنسوخ. هل تريد إضافتها دون رقم؟'))return;
  let startNums=db.orders.map(o=>{let m=String(o.seq||'').match(/^AK(\d+)$/i);return m?+m[1]:(/^\d+$/.test(String(o.seq||''))?+o.seq:0)}),n=(startNums.length?Math.max(...startNums):0);
  let t=tm();
  bulkParsed.forEach((x,i)=>{
@@ -2170,7 +2318,7 @@ function importBulk(){
    db.orders.push(o);
    if(autoW)createPendingDeliveryTransfer(o,autoW,'إرسال تلقائي إلى الموزع '+autoW.name+' — في الطريق');
  });
- localStorage.setItem(K,JSON.stringify(db));bulkText.value='';bulkPreview.innerHTML='';save();alert('تمت إضافة '+bulkParsed.length+' طلبات بنجاح ونقلها إلى قسم في الطريق');go('deliveryTransfers','deliveryTransfers');
+ localStorage.setItem(K,JSON.stringify(db));bulkText.value='';bulkPreviewSource='';bulkPreview.innerHTML='';save();alert('تمت إضافة '+bulkParsed.length+' طلبات بنجاح ونقلها إلى قسم في الطريق');go('deliveryTransfers','deliveryTransfers');
 }
 
 
@@ -2496,6 +2644,102 @@ async function workerConfirmPayment(){
   alert('تم تسجيل تأكيد الدفع على هذا الجهاز، وستتم المزامنة تلقائياً.');
 }
 
+
+/* v159: معاملة مستقلة لحالة الطلب + حماية من الجلب المتداخل + منع الاختفاء الصامت */
+function orderHasArchiveConflict(o){
+  if(!o)return false;
+  const id=String(o.id);
+  const inSettlement=settledOrderIdSet().has(id);
+  const inReturned=returnedOrderIdSet().has(id);
+  const active=!['تم التسليم','مرتجع','طلب رجوع'].includes(o.status);
+  return active && (inSettlement||inReturned);
+}
+function repairActiveOrderVisibility(){
+  let changed=false;
+  for(const o of (db.orders||[])){
+    if(!o||o.deletedAt||o.duplicateHidden)continue;
+    if(orderHasArchiveConflict(o)){
+      if(!o.archiveConflictDetectedAt)o.archiveConflictDetectedAt=isoNow();
+      o.archiveConflict=true;
+      changed=true;
+    }else if(o.archiveConflict){
+      delete o.archiveConflict;
+      changed=true;
+    }
+  }
+  if(changed)localStorage.setItem(K,JSON.stringify(db));
+}
+repairActiveOrderVisibility();
+
+let statusActionBusy=false;
+async function commitOrderStatus(targetStatus){
+  const id=current;
+  const o=db.orders.find(x=>String(x.id)===String(id));
+  if(!o)return false;
+  if(statusActionBusy){showToast('عملية تغيير حالة أخرى قيد التنفيذ');return false;}
+  statusActionBusy=true;
+  const oldStatus=o.status;
+  try{
+    clearTimeout(cloudSyncTimer);
+    o.status=targetStatus;
+    o.statusEnteredAt=isoNow();
+    appendOrderHistory(o,targetStatus);
+    o.pendingStatusSync=true;
+    o.pendingStatusTarget=targetStatus;
+    localStorage.setItem(K,JSON.stringify(db));
+    menu();render();accountsRender();openOrder(id);
+
+    if(!navigator.onLine){
+      localStorage.setItem(CLOUD_PENDING_KEY,'1');
+      showToast('تم الحفظ على الجهاز — بانتظار عودة الإنترنت',4200);
+      return true;
+    }
+
+    // v159: الموزع يرسل تغيير الحالة بمعاملة مستقلة؛ لا يعتمد على المزامنة العامة
+    // التي قد تكون مشغولة أو قد يتداخل معها جلب تلقائي.
+    let ok=false;
+    if(session&&session.role==='worker') ok=await workerPushOrderStatusTransaction(id,targetStatus);
+    else ok=await syncNow(false);
+    let fresh=db.orders.find(x=>String(x.id)===String(id));
+
+    if(ok && fresh && fresh.status===targetStatus){
+      delete fresh.pendingStatusSync;
+      delete fresh.pendingStatusTarget;
+      fresh.lastStatusConfirmedAt=isoNow();
+      localStorage.setItem(K,JSON.stringify(db));
+      showToast('✅ تم حفظ الحالة ومزامنتها بنجاح',3600);
+      menu();render();accountsRender();openOrder(id);
+      return true;
+    }
+
+    // لا نتراجع عن اختيار المستخدم: نحفظه محلياً ونعلّمه كمعلّق للمزامنة.
+    fresh=fresh||o;
+    fresh.status=targetStatus;
+    fresh.statusEnteredAt=fresh.statusEnteredAt||isoNow();
+    fresh.pendingStatusSync=true;
+    fresh.pendingStatusTarget=targetStatus;
+    markOrderChanged(fresh,'حالة معلقة للمزامنة: '+targetStatus);
+    localStorage.setItem(K,JSON.stringify(db));
+    localStorage.setItem(CLOUD_PENDING_KEY,'1');
+    showToast('⚠️ الحالة محفوظة على الجهاز لكن السحابة لم تؤكدها بعد',5000);
+    menu();render();accountsRender();openOrder(id);
+    return false;
+  }catch(e){
+    const fresh=db.orders.find(x=>String(x.id)===String(id))||o;
+    fresh.status=targetStatus;
+    fresh.pendingStatusSync=true;
+    fresh.pendingStatusTarget=targetStatus;
+    markOrderChanged(fresh,'حالة محفوظة محلياً بعد خطأ مزامنة');
+    localStorage.setItem(K,JSON.stringify(db));
+    localStorage.setItem(CLOUD_PENDING_KEY,'1');
+    showToast('⚠️ تعذر تأكيد السحابة؛ التغيير محفوظ محلياً ولن يضيع',5200);
+    menu();render();accountsRender();openOrder(id);
+    return false;
+  }finally{
+    statusActionBusy=false;
+  }
+}
+
 function visibleOrders(){
  const term=String(search?.value||'').trim().toLowerCase();
  return db.orders.filter(o=>{
@@ -2503,7 +2747,9 @@ function visibleOrders(){
    if(session.role==='worker'&&!workerCanSeeOrder(o,session.workerId))return false;
    // الطلبات المدفوعة مؤرشفة بالكامل للموزع، حتى أثناء البحث.
    // تبقى محفوظة ومتاحة للمالك في الحسابات والفواتير والبحث الشامل.
-   if(workerOrderArchived(o))return false;
+   // لا تُخفِ طلباً عاد إلى حالة نشطة بسبب مرجع قديم في تسوية أو إرجاع.
+   // كان هذا هو سبب ظهوره في البحث واختفائه من خانة الحالة.
+   if(workerOrderArchived(o)&&!orderHasArchiveConflict(o))return false;
    const historyText=(Array.isArray(o.history)?o.history:[]).map(h=>`${h&&h.time||''} ${h&&h.text||''}`).join(' ');
    const remarksText=(Array.isArray(o.remarks)?o.remarks:[]).map(r=>`${r&&r.time||''} ${r&&r.text||''}`).join(' ');
    const haystack=(`${o.seq||''} ${o.id||''} ${o.clientNo||''} ${o.recipient||''} ${o.phone||''} ${o.sender||''} ${o.address||''} ${o.city||''} ${o.product||''} ${o.status||''} ${historyText} ${remarksText}`).toLowerCase();
@@ -2511,7 +2757,8 @@ function visibleOrders(){
    if(term)return haystack.includes(term);
    // بدون بحث: لا تعرض الطلبات المحذوفة ولا الطلبات التي أغلقت داخل حزمة تسوية مالية.
    // تبقى الطلبات المسواة محفوظة ويمكن العثور عليها بالبحث الشامل وفتح تفاصيلها كاملة.
-   if(o.deletedAt||isOrderSettled(o)||isOrderReturnArchived(o))return false;
+   if(o.deletedAt)return false;
+   if((isOrderSettled(o)||isOrderReturnArchived(o))&&!orderHasArchiveConflict(o))return false;
    if(o.status==='في الطريق')return false;
    return filter==='الكل'||o.status===filter;
  });
@@ -2530,7 +2777,7 @@ function render(){
   <b>${cash(o.amount)}</b>
   ${o.worker?`<div style="font-size:11px;margin-top:3px">خصم التوصيل: -${cash(deliveryFeeForOrder(o))}</div>
   <div style="font-size:11px"><b>الصافي: ${cash((+o.amount||0)-deliveryFeeForOrder(o))}</b></div>`:''}
-</td><td><span class=badge>${statusDisplayName(o.status)}</span></td></tr>`}catch(e){console.error('order row',o&&o.id,e);return ''}}).join('');
+</td><td><span class=badge>${statusDisplayName(o.status)}</span>${o.pendingStatusSync?'<div style="margin-top:4px;font-size:11px;color:#b26a00;font-weight:700">⏳ بانتظار تأكيد السحابة</div>':''}${orderHasArchiveConflict(o)?'<div style="margin-top:4px;font-size:11px;color:#b42318;font-weight:700">⚠ تعارض أرشيف قديم — الطلب نشط</div>':''}</td></tr>`}catch(e){console.error('order row',o&&o.id,e);return ''}}).join('');
  if(!a.length)rows.innerHTML='<tr><td colspan="8" style="text-align:center;padding:28px;color:#697681;font-weight:700;background:#f4f6f8">لا توجد طلبات في هذا القسم</td></tr>';
  else if(!rows.querySelector('tr'))rows.innerHTML='<tr><td colspan="8" style="text-align:center;padding:28px;color:#b42318;font-weight:700">تعذر عرض بيانات الطلبات؛ يرجى تحديث الصفحة</td></tr>';
  renderWorkerFinanceSummary()}
@@ -3291,6 +3538,10 @@ function ensureReturnBatches(){
  if(!Array.isArray(db.returnBatches))db.returnBatches=[];
 }
 var openReturnArchiveBatchId='';
+function returnOrderDone(b,o){
+ return (b.returnedOrderIds||[]).map(String).includes(String(o.id)) ||
+   (o.status==='مرتجع' && !!o.returnCompletedAt && String(o.returnBatchId||'')===String(b.id));
+}
 function toggleReturnArchiveBatch(id){
  openReturnArchiveBatchId=String(openReturnArchiveBatchId)===String(id)?'':String(id);
  renderReturnBatches();
@@ -3299,9 +3550,12 @@ function renderReturnBatches(){
  ensureReturnBatches();
  migrateLegacyReturnsV144();
  const el=document.getElementById('returnBatchesList');if(!el)return;
- const model=returnDisplayModel();
+ const term=String(document.getElementById('returnBatchSearch')?.value||'').trim().toLowerCase();
+ const model=returnDisplayModel().filter(item=>!term ||
+   String(item.batch.code||item.batch.id||'').toLowerCase().includes(term) ||
+   item.orders.some(o=>[o.clientNo,o.seq,o.recipient,o.phone].some(v=>String(v||'').toLowerCase().includes(term))));
  if(!model.length){
-   el.innerHTML='لا توجد طلبات إرجاع مرسلة ومسجلة بعد.';
+   el.innerHTML=term?'لا توجد طلبات مطابقة للبحث.':'لا توجد طلبات إرجاع مرسلة ومسجلة بعد.';
    updateReturnRequestCount();
    return;
  }
@@ -3311,9 +3565,15 @@ function renderReturnBatches(){
    const ownerDone=b.status==='owner_confirmed'||!!b.ownerConfirmedAt;
    const ids=uniqueIds(b.orderIds||[]).map(String);
    const orders=db.orders.filter(o=>ids.includes(String(o.id)));
-   const opened=String(openReturnArchiveBatchId)===String(b.id);
-   const orderLines=orders.map(o=>`<div style="padding:6px 0;border-bottom:1px solid #eee">
+   const opened=!!term||String(openReturnArchiveBatchId)===String(b.id);
+   const visibleOrders=term && !String(b.code||b.id||'').toLowerCase().includes(term)
+     ? orders.filter(o=>[o.clientNo,o.seq,o.recipient,o.phone].some(v=>String(v||'').toLowerCase().includes(term)))
+     : orders;
+   const orderLines=visibleOrders.map(o=>`<div style="padding:8px 0;border-bottom:1px solid #eee">
      <b>رمز الطلب:</b> <b dir="ltr" style="direction:ltr;display:inline-block">${htmlEscape(o.clientNo||'—')}</b> — ${htmlEscape(o.recipient||'—')} — ${cash(o.amount)} — ${daysBadge(o)}
+     ${session.role==='worker'&&!workerDone ? returnOrderDone(b,o)
+       ? '<span class="badge">✓ تم تنفيذ الرجوع</span>'
+       : `<button class="btn g" style="display:block;margin-top:7px" onclick="confirmReturnOrder('${String(b.id).replace(/'/g,'')}','${String(o.id).replace(/'/g,'')}')">✓ تأكيد إرجاع هذا الطلب</button>` : ''}
    </div>`).join('');
 
    let stateText='حزمة مفتوحة — بانتظار تنفيذ الموزع';
@@ -3325,7 +3585,7 @@ function renderReturnBatches(){
 
    let action='';
    if(session.role==='worker'&&!workerDone){
-     action=`<button class="btn g" style="margin-top:10px" onclick="confirmReturnBatch('${b.id}')">✓ تأكيد تنفيذ الإرجاع (${ids.length} طلبات)</button>`;
+     action=`<span class="badge" style="display:inline-block;margin-top:10px">تم إرجاع ${orders.filter(o=>returnOrderDone(b,o)).length} من ${ids.length} طلبات</span>`;
    }else if(((session&&session.role==='owner')||ownerMode===true)&&workerDone&&!ownerDone){
      action=`<button class="btn g" style="margin-top:10px" onclick="confirmOwnerReturnReceipt('${b.id}')">✅ تأكيد استلام الإرجاع (${ids.length} طلبات)</button>`;
    }
@@ -3340,7 +3600,7 @@ function renderReturnBatches(){
      <b>تاريخ الإرسال:</b> ${htmlEscape(b.createdLabel||b.createdAt||'—')}
      ${workerDone?`<br><b>تاريخ إرجاع الموزع:</b> ${htmlEscape(b.confirmedLabel||b.confirmedAt||'—')}`:''}
      ${ownerDone?`<br><b>تأكيد استلام المالك:</b> ${htmlEscape(b.ownerConfirmedLabel||b.ownerConfirmedAt||'—')}`:''}</p>
-     <button class="btn" style="margin-top:8px" onclick="toggleReturnArchiveBatch('${String(b.id).replace(/'/g,'')}')">${opened?'إغلاق الطلبات':'فتح '+ids.length+' طلبات'}</button>
+     ${!term?`<button class="btn" style="margin-top:8px" onclick="toggleReturnArchiveBatch('${String(b.id).replace(/'/g,'')}')">${opened?'إغلاق الطلبات':'فتح '+ids.length+' طلبات'}</button>`:''}
      ${opened?`<div style="margin-top:8px">${orderLines}</div>`:''}
      ${action}
    </div>`;
@@ -3394,6 +3654,39 @@ async function sendReturnBatches(){
    if(ok)return alert('تم إرسال طلبات الإرجاع للموزعين وحفظها في السحابة ✓');
  }
  alert('تم إرسال طلبات الإرجاع وستتم مزامنتها تلقائياً.');
+}
+async function confirmReturnOrder(batchId,orderId){
+ if(!(session&&session.role==='worker'))return alert('هذه العملية للموزع فقط');
+ ensureReturnBatches();
+ const b=db.returnBatches.find(x=>String(x.id)===String(batchId)&&!x.deletedAt);
+ if(!b||String(b.workerId)!==String(session.workerId))return alert('هذه الحزمة ليست مخصصة لحسابك');
+ if(b.status==='completed'||b.status==='owner_confirmed'||b.confirmedAt)return alert('هذه الحزمة مكتملة بالفعل');
+ const ids=uniqueIds(b.orderIds||[]).map(String);
+ if(!ids.includes(String(orderId)))return alert('الطلب غير موجود في هذه الحزمة');
+ const o=db.orders.find(x=>String(x.id)===String(orderId));
+ if(!o||!orderAssignedToWorker(o,session.workerId))return alert('هذا الطلب ليس مخصصًا لحسابك');
+ if(returnOrderDone(b,o))return alert('تم تأكيد هذا الطلب سابقًا');
+ if(!confirm('تأكيد أنك أرجعت الطلب '+(o.clientNo||o.seq||'')+' إلى المالك؟'))return;
+ const now=isoNow(), label=tm();
+ o.status='مرتجع';
+ o.statusEnteredAt=now;
+ o.returnCompletedAt=label;
+ appendOrderHistory(o,'أكد الموزع تنفيذ طلب الإرجاع '+(b.code||b.id));
+ b.returnedOrderIds=uniqueIds([...(b.returnedOrderIds||[]),o.id]);
+ b.modifiedAt=now;
+ b.modifiedBy=actorName();
+ if(ids.every(id=>b.returnedOrderIds.map(String).includes(id))){
+   b.status='completed';
+   b.confirmedAt=now;
+   b.confirmedLabel=label;
+ }
+ localStorage.setItem(K,JSON.stringify(db));
+ render();menu();renderReturnBatches();
+ if(navigator.onLine){
+   const ok=await syncNow();
+   if(ok)return alert('تم تأكيد إرجاع الطلب وحفظه في السحابة ✓');
+ }
+ alert('تم تأكيد إرجاع الطلب على هذا الجهاز وستتم مزامنته تلقائيًا.');
 }
 async function confirmReturnBatch(batchId){
  if(!(session&&session.role==='worker'))return alert('هذه العملية للموزع فقط');
@@ -3695,7 +3988,7 @@ function postponeOrder(){
  appendOrderHistory(o,'مؤجل إلى: '+d);
  save(); openOrder(current);
 }
-function statusSet(s){let o=db.orders.find(x=>x.id===current);if(!o)return;o.status=s;o.statusEnteredAt=isoNow();appendOrderHistory(o,s);save();openOrder(current)}function remarkAdd(){let o=db.orders.find(x=>x.id===current),t=remark.value.trim();if(!o||!t)return;if(!Array.isArray(o.remarks))o.remarks=[];o.remarks.push({time:tm(),text:t+' — بواسطة '+actorName()});markOrderChanged(o,'تعليق');remark.value='';save();openOrder(current)}
+async function statusSet(s){return commitOrderStatus(s)}function remarkAdd(){let o=db.orders.find(x=>x.id===current),t=remark.value.trim();if(!o||!t)return;if(!Array.isArray(o.remarks))o.remarks=[];o.remarks.push({time:tm(),text:t+' — بواسطة '+actorName()});markOrderChanged(o,'تعليق');remark.value='';save();openOrder(current)}
 function workerRegister(){
  let name=regName.value.trim(),pin=regPin.value,pc=regPinConfirm.value;
  if(name.length<2)return alert('اختر اسماً واضحاً');
@@ -3943,6 +4236,7 @@ function printSettlementInvoice(){
  body{font-family:Arial,Tahoma;padding:26px;color:#111}.head{text-align:center;border-bottom:2px solid #222;padding-bottom:10px}table{width:100%;border-collapse:collapse;margin-top:18px}td,th{border:1px solid #aaa;padding:8px;text-align:center}.summary{margin-top:18px;border:2px solid #222;padding:12px;font-size:17px;line-height:1.9}.sign{display:flex;justify-content:space-between;gap:30px;margin-top:55px}.sign>div{width:44%;text-align:center;border-top:1px solid #333;padding-top:8px}@page{size:A4;margin:13mm}
  
 
+/* v157: إصلاح جذري لحالات الطلب + حماية من الأرشيف القديم + تأكيد المزامنة. */
 /* v156: إبقاء كل ما فوق خط الطلبات ثابتاً في الهاتف وسطح المكتب، من دون sticky داخل الجدول. */
 html,html[data-view-mode="desktop"],html[data-view-mode="mobile"],html[data-view-mode="auto"]{
   height:100%!important;min-height:100%!important;max-height:100%!important;overflow:hidden!important;
