@@ -503,7 +503,7 @@ html[data-lang="fr"] th,html[data-lang="fr"] td{text-align:left}
  <select id="loginWorker"><option value="">اختر حسابك</option></select>
 <input id="loginPin" type="password" inputmode="numeric" placeholder="الرمز السري">
 <div id="loginStatus" style="margin-top:8px;font-weight:700;min-height:22px"></div>
-<div style="margin-top:6px;font-size:12px;opacity:.7">الإصدار 172</div>
+<div style="margin-top:6px;font-size:12px;opacity:.7">الإصدار 173</div>
 <button id="workerLoginBtn" type="button" onclick="workerLogin(event)" class="btn" style="width:100%">دخول الموزع</button>
 <hr>
 <h3>إنشاء حساب موزع</h3>
@@ -1554,7 +1554,7 @@ function markAssignedSeen(){
 function cloudDbDigest(d){
   const pick=(name,fields)=>((d&&Array.isArray(d[name]))?d[name]:[]).map(x=>fields.map(k=>String((x&&x[k])??'')).join('~')).sort().join('|');
   return [
-    pick('orders',['id','modifiedAt','status','worker','deletedAt','deliveryReceivedAt','returnRequestedAt','returnCompletedAt']),
+    pick('orders',['id','modifiedAt','status','statusChangedAtV173','statusEventIdV173','worker','deletedAt','deliveryReceivedAt','returnRequestedAt','returnCompletedAt']),
     pick('workers',['id','modifiedAt','deletedAt','blocked','approved','rate']),
     pick('settlements',['id','modifiedAt','confirmedAt','workerId','deletedAt']),
     pick('deliveryTransfers',['id','modifiedAt','status','receivedAt','workerId','deletedAt']),
@@ -1663,6 +1663,58 @@ function mergeUniqueById(a=[],b=[]){
   return [...m.values()];
 }
 
+
+/* v173 Stable: durable per-order status outbox and deterministic status merge */
+const STATUS_OUTBOX_KEY='ak_delivery_status_outbox_v173';
+function readStatusOutbox(){
+  try{const q=JSON.parse(localStorage.getItem(STATUS_OUTBOX_KEY)||'[]');return Array.isArray(q)?q:[]}catch(_){return []}
+}
+function writeStatusOutbox(q){
+  try{localStorage.setItem(STATUS_OUTBOX_KEY,JSON.stringify((q||[]).slice(-200)))}catch(_){}
+}
+function statusStampV173(o){
+  if(!o)return 0;
+  return timeValue(o.statusChangedAtV173)||timeValue(o.statusEnteredAt)||timeValue(o.modifiedAt)||0;
+}
+function statusTieV173(o){return String(o?.statusEventIdV173||'')}
+function statusIsNewerV173(a,b){
+  const ta=statusStampV173(a),tb=statusStampV173(b);
+  if(ta!==tb)return ta>tb;
+  return statusTieV173(a)>statusTieV173(b);
+}
+function statusEventFieldsV173(dst,src){
+  if(!dst||!src)return;
+  const fields=['status','statusEnteredAt','statusChangedAtV173','statusEventIdV173','history','remarks',
+    'rejectReason','postponeDate','returnRequestedAt','returnCompletedAt','deliveryReceivedAt','deliveryReceivedLabel',
+    'deliveryReceivedByWorkerId','deliveryReceivedByWorkerName','cancelReason','cancelledAt','recipient','phone','address',
+    'city','amount','customerTransfers','modifiedAt','modifiedBy','lastChangeKind','pendingStatusSync','pendingStatusTarget'];
+  for(const k of fields){if(src[k]!==undefined)dst[k]=JSON.parse(JSON.stringify(src[k]));}
+}
+function enqueueStatusEventV173(o,targetStatus){
+  if(!o||o.id==null)return null;
+  const q=readStatusOutbox().filter(e=>String(e.orderId)!==String(o.id));
+  const ev={orderId:String(o.id),status:targetStatus,statusEnteredAt:o.statusEnteredAt,
+    statusChangedAtV173:o.statusChangedAtV173,statusEventIdV173:o.statusEventIdV173,createdAt:isoNow()};
+  q.push(ev);writeStatusOutbox(q);return ev;
+}
+function removeStatusEventV173(orderId,eventId){
+  writeStatusOutbox(readStatusOutbox().filter(e=>!(String(e.orderId)===String(orderId)&&(!eventId||String(e.statusEventIdV173)===String(eventId)))));
+}
+function applyStatusOutboxV173(){
+  const q=readStatusOutbox();
+  if(!Array.isArray(db?.orders)||!q.length)return 0;
+  let n=0;
+  for(const ev of q){
+    const o=db.orders.find(x=>String(x.id)===String(ev.orderId));if(!o)continue;
+    if(o.status===ev.status&&String(o.statusEventIdV173||'')===String(ev.statusEventIdV173||''))continue;
+    o.status=ev.status;o.statusEnteredAt=ev.statusEnteredAt||o.statusEnteredAt||isoNow();
+    o.statusChangedAtV173=ev.statusChangedAtV173||o.statusChangedAtV173||isoNow();
+    o.statusEventIdV173=ev.statusEventIdV173||o.statusEventIdV173;
+    o.pendingStatusSync=true;o.pendingStatusTarget=ev.status;n++;
+  }
+  if(n){localStorage.setItem(K,JSON.stringify(db));localStorage.setItem(CLOUD_PENDING_KEY,'1');}
+  return n;
+}
 function mergeDatabases(localDb,cloudDb){
   if(!cloudDb)return localDb;
   const out=JSON.parse(JSON.stringify(cloudDb));
@@ -1671,28 +1723,26 @@ function mergeDatabases(localDb,cloudDb){
     if(out[k]===undefined)out[k]=JSON.parse(JSON.stringify(v));
   }
   out.orders=mergeById(localDb.orders||[],cloudDb.orders||[]);
-  // لا تُرجع لقطة سحابية قديمة طلبًا أقر الموزع رجوعه إلى «طلب رجوع».
-  const previousOrders=new Map((localDb.orders||[]).filter(o=>o&&o.id!=null).map(o=>[String(o.id),o]));
+  const lm=new Map((localDb.orders||[]).filter(o=>o&&o.id!=null).map(o=>[String(o.id),o]));
+  const cm=new Map((cloudDb.orders||[]).filter(o=>o&&o.id!=null).map(o=>[String(o.id),o]));
+  const pending=new Map(readStatusOutbox().map(e=>[String(e.orderId),e]));
   for(const order of out.orders){
-    const previous=previousOrders.get(String(order.id));
-    if(previous?.status==='تم التسليم'&&order.status==='قيد التوزيع'&&
-       (previous.pendingStatusSync||previous.lastStatusConfirmedAt)){
-      order.status='تم التسليم';
-      order.statusEnteredAt=previous.statusEnteredAt||order.statusEnteredAt;
-      order.modifiedAt=previous.modifiedAt||order.modifiedAt;
-      order.lastStatusConfirmedAt=previous.lastStatusConfirmedAt||order.lastStatusConfirmedAt;
-      if(Array.isArray(previous.history)&&previous.history.length>(order.history||[]).length)
-        order.history=JSON.parse(JSON.stringify(previous.history));
+    const id=String(order.id), l=lm.get(id), c=cm.get(id), ev=pending.get(id);
+    if(ev&&l){statusEventFieldsV173(order,l);order.status=ev.status;order.pendingStatusSync=true;order.pendingStatusTarget=ev.status;continue;}
+    if(l&&c&&String(l.status)!==String(c.status)){
+      const winner=statusIsNewerV173(l,c)?l:c;
+      statusEventFieldsV173(order,winner);
+    }else if(l&&c){
+      if(statusIsNewerV173(l,c))statusEventFieldsV173(order,l);
+      else if(statusIsNewerV173(c,l))statusEventFieldsV173(order,c);
     }
-    if(previous?.status!=='مرتجع'||order.status!=='طلب رجوع'||
-       !previous.returnBatchId||String(previous.returnBatchId)!==String(order.returnBatchId))continue;
-    order.status='مرتجع';
-    order.returnCompletedAt=previous.returnCompletedAt||order.returnCompletedAt;
-    order.returnOwnerConfirmedAt=previous.returnOwnerConfirmedAt||order.returnOwnerConfirmedAt;
-    order.returnOwnerConfirmedLabel=previous.returnOwnerConfirmedLabel||order.returnOwnerConfirmedLabel;
-    order.modifiedAt=previous.modifiedAt||order.modifiedAt;
-    if(Array.isArray(previous.history)&&previous.history.length>(order.history||[]).length)
-      order.history=JSON.parse(JSON.stringify(previous.history));
+    const previous=l;
+    if(previous?.status==='مرتجع'&&order.status==='طلب رجوع'&&previous.returnBatchId&&String(previous.returnBatchId)===String(order.returnBatchId)){
+      order.status='مرتجع';order.returnCompletedAt=previous.returnCompletedAt||order.returnCompletedAt;
+      order.returnOwnerConfirmedAt=previous.returnOwnerConfirmedAt||order.returnOwnerConfirmedAt;
+      order.returnOwnerConfirmedLabel=previous.returnOwnerConfirmedLabel||order.returnOwnerConfirmedLabel;
+      order.modifiedAt=previous.modifiedAt||order.modifiedAt;
+    }
   }
   out.workers=mergeById(localDb.workers||[],cloudDb.workers||[]);
   out.settlements=mergeUniqueById(localDb.settlements||[],cloudDb.settlements||[]);
@@ -1700,7 +1750,7 @@ function mergeDatabases(localDb,cloudDb){
   out.deliveryBatches=mergeById(localDb.deliveryBatches||[],cloudDb.deliveryBatches||[]);
   out.deliveryTransfers=mergeById(localDb.deliveryTransfers||[],cloudDb.deliveryTransfers||[]);
   out.customerChangeRequests=mergeById(localDb.customerChangeRequests||[],cloudDb.customerChangeRequests||[]);
-  const prevDb=db; db=out; dedupeDatabase(); const cleaned=db; db=prevDb;
+  const prevDb=db;db=out;dedupeDatabase();const cleaned=db;db=prevDb;
   return cleaned;
 }
 async function cloudTest(){
@@ -1790,7 +1840,7 @@ async function workerCloudPush(silent=true,retries=0){
     const workerFields=['status','history','remarks','rejectReason','postponeDate','returnRequestedAt',
       'returnCompletedAt','deliveryReceivedAt','deliveryReceivedLabel','deliveryReceivedByWorkerId',
       'deliveryReceivedByWorkerName','recipient','phone','address','city','amount','customerTransfers',
-      'cancelReason','cancelledAt','statusEnteredAt','modifiedAt','modifiedBy','lastChangeKind'];
+      'cancelReason','cancelledAt','statusEnteredAt','statusChangedAtV173','statusEventIdV173','modifiedAt','modifiedBy','lastChangeKind'];
     for(const local of (db.orders||[])){
       if(!local||local.id==null||!orderAssignedToWorker(local,wid))continue;
       const remote=cloudOrders.get(String(local.id));
@@ -1859,90 +1909,50 @@ async function workerCloudPush(silent=true,retries=0){
 // v159: تنفيذ تغيير حالة الطلب عند الموزع كمعاملة سحابية مستقلة ذات أولوية.
 async function waitForCloudIdle(maxMs=8000){
   const started=Date.now();
-  while(cloudSyncBusy && Date.now()-started<maxMs){
+  while((cloudSyncBusy||cloudPullBusy) && Date.now()-started<maxMs){
     await new Promise(r=>setTimeout(r,160));
   }
-  return !cloudSyncBusy;
+  return !(cloudSyncBusy||cloudPullBusy);
 }
 
 async function workerPushOrderStatusTransaction(orderId,targetStatus,attempts=0){
   if(!session||session.role!=='worker')return false;
-  const wid=String(session.workerId||'');
-  if(!wid)throw new Error('حساب الموزع غير محدد');
-  const local=db.orders.find(x=>String(x.id)===String(orderId));
-  if(!local)throw new Error('الطلب غير موجود على الجهاز');
+  const wid=String(session.workerId||'');if(!wid)throw new Error('حساب الموزع غير محدد');
+  const local=db.orders.find(x=>String(x.id)===String(orderId));if(!local)throw new Error('الطلب غير موجود على الجهاز');
   if(!orderAssignedToWorker(local,wid))throw new Error('هذا الطلب غير مسند إلى هذا الموزع');
-
-  const idle=await waitForCloudIdle();
-  if(!idle)throw new Error('المزامنة مشغولة؛ أعد المحاولة بعد لحظة');
-  const startedGeneration=cloudEditGeneration;
+  const idle=await waitForCloudIdle(12000);if(!idle)throw new Error('المزامنة مشغولة؛ أعد المحاولة بعد لحظة');
   cloudSyncBusy=true;
-  let retryConflict=false;
   try{
     const loaded=await cloudRequest('loadAll',{});
-    const baseGeneration=Object.prototype.hasOwnProperty.call(loaded,'generation')
-      ?loaded.generation:undefined;
-    const cloudDb=parseCloudDb(loaded);
-    if(!cloudDb)throw new Error('لا توجد قاعدة سحابية للمالك');
-    const out=JSON.parse(JSON.stringify(cloudDb));
-    if(!Array.isArray(out.orders))out.orders=[];
+    const baseGeneration=Object.prototype.hasOwnProperty.call(loaded,'generation')?loaded.generation:undefined;
+    const cloudDb=parseCloudDb(loaded);if(!cloudDb)throw new Error('لا توجد قاعدة سحابية للمالك');
+    const out=JSON.parse(JSON.stringify(cloudDb));if(!Array.isArray(out.orders))out.orders=[];
     let remote=out.orders.find(x=>String(x.id)===String(orderId));
-    if(!remote){
-      remote=JSON.parse(JSON.stringify(local));
-      out.orders.push(remote);
-    }
-
-    // في تغيير الحالة الصريح من الموزع، نعتمد الحالة المحلية حتى لو كان
-    // الطابع الزمني البعيد أحدث بسبب مزامنة آلية حدثت في اللحظة نفسها.
-    const fields=['status','statusEnteredAt','history','remarks','rejectReason','postponeDate',
-      'returnRequestedAt','returnCompletedAt','deliveryReceivedAt','deliveryReceivedLabel',
-      'deliveryReceivedByWorkerId','deliveryReceivedByWorkerName','cancelReason','cancelledAt',
-      'recipient','phone','address','city','amount','customerTransfers'];
-    for(const key of fields){
-      if(local[key]!==undefined)remote[key]=JSON.parse(JSON.stringify(local[key]));
-      else if(key in remote)delete remote[key];
-    }
+    if(!remote){remote=JSON.parse(JSON.stringify(local));out.orders.push(remote);}
+    statusEventFieldsV173(remote,local);
     remote.status=targetStatus;
     remote.statusEnteredAt=local.statusEnteredAt||isoNow();
-    remote.modifiedAt=local.modifiedAt||isoNow();
-    remote.modifiedBy=local.modifiedBy||actorName();
-    remote.lastChangeKind='تغيير حالة مؤكد: '+targetStatus;
-
-    const payload={db:out,updatedAt:isoNow(),updatedBy:'worker-status:'+wid};
+    remote.statusChangedAtV173=local.statusChangedAtV173||isoNow();
+    remote.statusEventIdV173=local.statusEventIdV173||('ST173-'+Date.now()+'-'+Math.random().toString(36).slice(2,8));
+    remote.modifiedAt=local.modifiedAt||isoNow();remote.modifiedBy=local.modifiedBy||actorName();
+    remote.lastChangeKind='تغيير حالة v173: '+targetStatus;
+    const payload={db:out,updatedAt:isoNow(),updatedBy:'worker-status-v173:'+wid};
     if(baseGeneration!==undefined)payload._baseGeneration=baseGeneration;
-    const result=await cloudRequest('saveAll',payload);
-    if(!result||!result.verified)throw new Error('لم تؤكد السحابة حفظ الحالة');
-
-    // Recheck the exact order state after the full database write. Another
-    // device can write between the save confirmation and this read.
-    const confirmedRaw=await cloudRequest('loadAll',{});
-    const confirmedDb=parseCloudDb(confirmedRaw);
-    const confirmed=confirmedDb&&Array.isArray(confirmedDb.orders)
-      ? confirmedDb.orders.find(x=>String(x.id)===String(orderId)) : null;
-    if(!confirmed || confirmed.status!==targetStatus){
+    const result=await cloudRequest('saveAll',payload);if(!result||!result.verified)throw new Error('لم تؤكد السحابة حفظ الحالة');
+    const check=await cloudRequest('loadAll',{}), confirmedDb=parseCloudDb(check);
+    const confirmed=confirmedDb?.orders?.find(x=>String(x.id)===String(orderId));
+    if(!confirmed||confirmed.status!==targetStatus||String(confirmed.statusEventIdV173||'')!==String(remote.statusEventIdV173||''))
       throw new Error('السحابة أعادت حالة مختلفة بعد الحفظ');
-    }
     db=mergeDatabases(db,confirmedDb);
     const fresh=db.orders.find(x=>String(x.id)===String(orderId));
-    if(fresh){
-      fresh.status=targetStatus;
-      delete fresh.pendingStatusSync;
-      delete fresh.pendingStatusTarget;
-      fresh.lastStatusConfirmedAt=isoNow();
-    }
-    localStorage.setItem(K,JSON.stringify(db));
-    localStorage.setItem(CLOUD_LAST_OK_KEY,isoNow());
-    if(cloudEditGeneration===startedGeneration)localStorage.removeItem(CLOUD_PENDING_KEY);
-    localStorage.removeItem(CLOUD_LAST_ERROR_KEY);
-    updateSyncIndicators();
-    return true;
+    if(fresh){fresh.status=targetStatus;fresh.lastStatusConfirmedAt=isoNow();delete fresh.pendingStatusSync;delete fresh.pendingStatusTarget;}
+    removeStatusEventV173(orderId,remote.statusEventIdV173);
+    localStorage.setItem(K,JSON.stringify(db));localStorage.setItem(CLOUD_LAST_OK_KEY,isoNow());
+    localStorage.removeItem(CLOUD_LAST_ERROR_KEY);updateSyncIndicators();return true;
   }catch(e){
-    if(e&&e.code==='cloud_conflict'&&attempts<2)retryConflict=true;
-    else throw e;
-  }finally{
-    cloudSyncBusy=false;
-  }
-  if(retryConflict)return workerPushOrderStatusTransaction(orderId,targetStatus,attempts+1);
+    if(e&&e.code==='cloud_conflict'&&attempts<3){cloudSyncBusy=false;await new Promise(r=>setTimeout(r,250*(attempts+1)));return workerPushOrderStatusTransaction(orderId,targetStatus,attempts+1);}
+    throw e;
+  }finally{cloudSyncBusy=false;}
 }
 
 async function cloudPull(silent=false,merge=true){
@@ -1975,6 +1985,7 @@ async function cloudPull(silent=false,merge=true){
        for(const k of keep){if(p[k]!==undefined)r[k]=JSON.parse(JSON.stringify(p[k]));}
      }
    }
+   applyStatusOutboxV173();
    const recoveredReturns=recoverArchivedReturns171();
    const correctedReturns=applyRequestedReturnRemoval165();
    localStorage.setItem(K,JSON.stringify(db));
@@ -2131,6 +2142,16 @@ window.addEventListener('pageshow',()=>{
     else cloudPull(true,session.role==='owner');
   }
 });
+async function retryStatusOutboxV173(){
+  if(!navigator.onLine||!session||session.role!=='worker'||cloudSyncBusy||cloudPullBusy)return;
+  const ev=readStatusOutbox()[0];if(!ev)return;
+  const o=db.orders.find(x=>String(x.id)===String(ev.orderId));if(!o){removeStatusEventV173(ev.orderId,ev.statusEventIdV173);return;}
+  try{await workerPushOrderStatusTransaction(ev.orderId,ev.status)}catch(_){}
+}
+setInterval(retryStatusOutboxV173,5000);
+window.addEventListener('online',()=>setTimeout(retryStatusOutboxV173,500));
+applyStatusOutboxV173();
+
 function save(){
   dedupeDatabase();
   localStorage.setItem(K,JSON.stringify(db));
@@ -2776,71 +2797,37 @@ repairActiveOrderVisibility();
 
 let statusActionBusy=false;
 async function commitOrderStatus(targetStatus){
-  const id=current;
-  const o=db.orders.find(x=>String(x.id)===String(id));
-  if(!o)return false;
+  const id=current,o=db.orders.find(x=>String(x.id)===String(id));if(!o)return false;
   if(statusActionBusy){showToast('عملية تغيير حالة أخرى قيد التنفيذ');return false;}
   statusActionBusy=true;
-  const oldStatus=o.status;
   try{
     clearTimeout(cloudSyncTimer);
-    o.status=targetStatus;
-    o.statusEnteredAt=isoNow();
-    appendOrderHistory(o,targetStatus);
-    o.pendingStatusSync=true;
-    o.pendingStatusTarget=targetStatus;
-    localStorage.setItem(K,JSON.stringify(db));
+    const now=isoNow();
+    o.status=targetStatus;o.statusEnteredAt=now;o.statusChangedAtV173=now;
+    o.statusEventIdV173='ST173-'+Date.now()+'-'+Math.random().toString(36).slice(2,8);
+    appendOrderHistory(o,targetStatus);o.pendingStatusSync=true;o.pendingStatusTarget=targetStatus;
+    enqueueStatusEventV173(o,targetStatus);
+    localStorage.setItem(K,JSON.stringify(db));localStorage.setItem(CLOUD_PENDING_KEY,'1');
     menu();render();accountsRender();openOrder(id);
-
-    if(!navigator.onLine){
-      localStorage.setItem(CLOUD_PENDING_KEY,'1');
-      showToast('تم الحفظ على الجهاز — بانتظار عودة الإنترنت',4200);
-      return true;
-    }
-
-    // v159: الموزع يرسل تغيير الحالة بمعاملة مستقلة؛ لا يعتمد على المزامنة العامة
-    // التي قد تكون مشغولة أو قد يتداخل معها جلب تلقائي.
+    if(!navigator.onLine){showToast('✅ تم الحفظ على الجهاز — سيُرسل تلقائياً عند عودة الإنترنت',4800);return true;}
     let ok=false;
-    if(session&&session.role==='worker') ok=await workerPushOrderStatusTransaction(id,targetStatus);
+    if(session?.role==='worker')ok=await workerPushOrderStatusTransaction(id,targetStatus);
     else ok=await syncNow(false);
-    let fresh=db.orders.find(x=>String(x.id)===String(id));
-
-    if(ok && fresh && fresh.status===targetStatus){
-      delete fresh.pendingStatusSync;
-      delete fresh.pendingStatusTarget;
-      fresh.lastStatusConfirmedAt=isoNow();
-      localStorage.setItem(K,JSON.stringify(db));
-      showToast('✅ تم حفظ الحالة ومزامنتها بنجاح',3600);
-      menu();render();accountsRender();openOrder(id);
-      return true;
+    const fresh=db.orders.find(x=>String(x.id)===String(id));
+    if(ok&&fresh?.status===targetStatus){
+      delete fresh.pendingStatusSync;delete fresh.pendingStatusTarget;fresh.lastStatusConfirmedAt=isoNow();
+      removeStatusEventV173(id,fresh.statusEventIdV173||o.statusEventIdV173);
+      localStorage.setItem(K,JSON.stringify(db));showToast('✅ تم حفظ الحالة ومزامنتها بنجاح',3800);
+      menu();render();accountsRender();openOrder(id);return true;
     }
-
-    // لا نتراجع عن اختيار المستخدم: نحفظه محلياً ونعلّمه كمعلّق للمزامنة.
-    fresh=fresh||o;
-    fresh.status=targetStatus;
-    fresh.statusEnteredAt=fresh.statusEnteredAt||isoNow();
-    fresh.pendingStatusSync=true;
-    fresh.pendingStatusTarget=targetStatus;
-    markOrderChanged(fresh,'حالة معلقة للمزامنة: '+targetStatus);
-    localStorage.setItem(K,JSON.stringify(db));
-    localStorage.setItem(CLOUD_PENDING_KEY,'1');
-    showToast('⚠️ الحالة محفوظة على الجهاز لكن السحابة لم تؤكدها بعد',5000);
-    menu();render();accountsRender();openOrder(id);
-    return false;
+    localStorage.setItem(CLOUD_PENDING_KEY,'1');showToast('⚠️ الحالة محفوظة محلياً وستعاد محاولة إرسالها تلقائياً',5200);return false;
   }catch(e){
     const fresh=db.orders.find(x=>String(x.id)===String(id))||o;
-    fresh.status=targetStatus;
-    fresh.pendingStatusSync=true;
-    fresh.pendingStatusTarget=targetStatus;
-    markOrderChanged(fresh,'حالة محفوظة محلياً بعد خطأ مزامنة');
-    localStorage.setItem(K,JSON.stringify(db));
-    localStorage.setItem(CLOUD_PENDING_KEY,'1');
-    showToast('⚠️ تعذر تأكيد السحابة؛ التغيير محفوظ محلياً ولن يضيع',5200);
-    menu();render();accountsRender();openOrder(id);
-    return false;
-  }finally{
-    statusActionBusy=false;
-  }
+    fresh.status=targetStatus;fresh.pendingStatusSync=true;fresh.pendingStatusTarget=targetStatus;
+    enqueueStatusEventV173(fresh,targetStatus);localStorage.setItem(K,JSON.stringify(db));localStorage.setItem(CLOUD_PENDING_KEY,'1');
+    localStorage.setItem(CLOUD_LAST_ERROR_KEY,e?.message||'فشل مزامنة الحالة');
+    showToast('⚠️ التغيير محفوظ ولن يضيع — ستتم إعادة الإرسال تلقائياً',5200);return false;
+  }finally{statusActionBusy=false;}
 }
 
 function visibleOrders(){
@@ -5148,272 +5135,5 @@ document.addEventListener('DOMContentLoaded',function(){
 })();
 </script>
 
-<script>
-/* AK Delivery v172 — durable status sync repair */
-(function(){
-  const STATUS_INTENTS_KEY='akd_status_intents_v172';
-  const oldMergeDatabases=mergeDatabases;
-  const oldCloudPull=cloudPull;
 
-  function readStatusIntents(){
-    try{
-      const x=JSON.parse(localStorage.getItem(STATUS_INTENTS_KEY)||'{}');
-      return x&&typeof x==='object'?x:{};
-    }catch(_){return {}}
-  }
-  function writeStatusIntents(x){
-    try{localStorage.setItem(STATUS_INTENTS_KEY,JSON.stringify(x||{}));}catch(_){}
-  }
-  function statusStamp(o){
-    if(!o)return 0;
-    return timeValue(o.statusChangedAtV172)||timeValue(o.statusEnteredAt)||timeValue(o.modifiedAt)||0;
-  }
-  function putStatusIntent(o,target){
-    if(!o||o.id==null)return;
-    const m=readStatusIntents();
-    m[String(o.id)]={
-      orderId:String(o.id),
-      status:target,
-      statusEnteredAt:o.statusEnteredAt||isoNow(),
-      statusChangedAtV172:o.statusChangedAtV172||isoNow(),
-      statusRevisionV172:o.statusRevisionV172||('ST-'+Date.now()+'-'+Math.random().toString(36).slice(2,8)),
-      modifiedAt:o.modifiedAt||isoNow()
-    };
-    writeStatusIntents(m);
-  }
-  function clearStatusIntent(id){
-    const m=readStatusIntents();
-    delete m[String(id)];
-    writeStatusIntents(m);
-  }
-  function copyStatusFields(dst,src){
-    if(!dst||!src)return;
-    const fields=['status','statusEnteredAt','statusChangedAtV172','statusRevisionV172',
-      'history','remarks','rejectReason','postponeDate','returnRequestedAt','returnCompletedAt',
-      'deliveryReceivedAt','deliveryReceivedLabel','deliveryReceivedByWorkerId','deliveryReceivedByWorkerName',
-      'cancelReason','cancelledAt','recipient','phone','address','city','amount','customerTransfers',
-      'modifiedAt','modifiedBy','lastChangeKind'];
-    for(const k of fields){
-      if(src[k]!==undefined)dst[k]=JSON.parse(JSON.stringify(src[k]));
-    }
-  }
-  function reapplyDurableStatusIntents(){
-    const intents=readStatusIntents();
-    if(!db||!Array.isArray(db.orders))return 0;
-    let changed=0;
-    for(const it of Object.values(intents)){
-      const o=db.orders.find(x=>String(x.id)===String(it.orderId));
-      if(!o)continue;
-      if(o.status===it.status && statusStamp(o)>=timeValue(it.statusChangedAtV172||it.statusEnteredAt))continue;
-      o.status=it.status;
-      o.statusEnteredAt=it.statusEnteredAt||o.statusEnteredAt||isoNow();
-      o.statusChangedAtV172=it.statusChangedAtV172||o.statusChangedAtV172||isoNow();
-      o.statusRevisionV172=it.statusRevisionV172||o.statusRevisionV172;
-      o.pendingStatusSync=true;
-      o.pendingStatusTarget=it.status;
-      o.modifiedAt=it.modifiedAt||o.modifiedAt||isoNow();
-      changed++;
-    }
-    if(changed){
-      localStorage.setItem(K,JSON.stringify(db));
-      localStorage.setItem(CLOUD_PENDING_KEY,'1');
-    }
-    return changed;
-  }
-
-  mergeDatabases=function(localDb,cloudDb){
-    const out=oldMergeDatabases(localDb,cloudDb);
-    if(!out||!Array.isArray(out.orders)||!cloudDb)return out;
-    const lm=new Map((localDb?.orders||[]).filter(Boolean).map(o=>[String(o.id),o]));
-    const cm=new Map((cloudDb?.orders||[]).filter(Boolean).map(o=>[String(o.id),o]));
-    for(const o of out.orders){
-      const l=lm.get(String(o.id)), c=cm.get(String(o.id));
-      if(!l||!c)continue;
-      if(l.pendingStatusSync && l.pendingStatusTarget){
-        copyStatusFields(o,l);
-        o.status=l.pendingStatusTarget;
-        o.pendingStatusSync=true;
-        o.pendingStatusTarget=l.pendingStatusTarget;
-        continue;
-      }
-      if(String(l.status)!==String(c.status)){
-        const ls=statusStamp(l), cs=statusStamp(c);
-        if(cs>=ls)copyStatusFields(o,c);
-        else copyStatusFields(o,l);
-      }else if(statusStamp(c)>statusStamp(l)){
-        copyStatusFields(o,c);
-      }
-    }
-    return out;
-  };
-
-  waitForCloudIdle=async function(maxMs=12000){
-    const started=Date.now();
-    while((cloudSyncBusy||cloudPullBusy) && Date.now()-started<maxMs){
-      await new Promise(r=>setTimeout(r,120));
-    }
-    return !(cloudSyncBusy||cloudPullBusy);
-  };
-
-  workerPushOrderStatusTransaction=async function(orderId,targetStatus){
-    if(!session||session.role!=='worker')return false;
-    const wid=String(session.workerId||'');
-    if(!wid)throw new Error('حساب الموزع غير محدد');
-    const local=db.orders.find(x=>String(x.id)===String(orderId));
-    if(!local)throw new Error('الطلب غير موجود على الجهاز');
-    if(!orderAssignedToWorker(local,wid))throw new Error('هذا الطلب غير مسند إلى هذا الموزع');
-
-    let lastErr=null;
-    for(let attempt=0;attempt<4;attempt++){
-      if(!await waitForCloudIdle())throw new Error('المزامنة مشغولة؛ أعد المحاولة');
-      cloudSyncBusy=true;
-      try{
-        const loaded=await cloudRequest('loadAll',{});
-        const baseGeneration=Object.prototype.hasOwnProperty.call(loaded,'generation')?loaded.generation:undefined;
-        const cloudDb=parseCloudDb(loaded);
-        if(!cloudDb)throw new Error('لا توجد قاعدة سحابية للمالك');
-        const out=JSON.parse(JSON.stringify(cloudDb));
-        if(!Array.isArray(out.orders))out.orders=[];
-        let remote=out.orders.find(x=>String(x.id)===String(orderId));
-        if(!remote){remote=JSON.parse(JSON.stringify(local));out.orders.push(remote);}
-
-        copyStatusFields(remote,local);
-        remote.status=targetStatus;
-        remote.statusEnteredAt=local.statusEnteredAt||isoNow();
-        remote.statusChangedAtV172=local.statusChangedAtV172||isoNow();
-        remote.statusRevisionV172=local.statusRevisionV172||('ST-'+Date.now()+'-'+Math.random().toString(36).slice(2,8));
-        remote.modifiedAt=local.modifiedAt||isoNow();
-        remote.modifiedBy=local.modifiedBy||actorName();
-        remote.lastChangeKind='تغيير حالة v172: '+targetStatus;
-
-        const payload={db:out,updatedAt:isoNow(),updatedBy:'worker-status-v172:'+wid};
-        if(baseGeneration!==undefined)payload._baseGeneration=baseGeneration;
-        const result=await cloudRequest('saveAll',payload);
-        if(!result||!result.verified)throw new Error('لم تؤكد السحابة حفظ الحالة');
-
-        const confirmedRaw=await cloudRequest('loadAll',{});
-        const confirmedDb=parseCloudDb(confirmedRaw);
-        const confirmed=confirmedDb?.orders?.find(x=>String(x.id)===String(orderId));
-        if(!confirmed || confirmed.status!==targetStatus ||
-           String(confirmed.statusRevisionV172||'')!==String(remote.statusRevisionV172||'')){
-          throw new Error('السحابة لم تُرجع نفس حالة الطلب المؤكدة');
-        }
-
-        db=mergeDatabases(db,confirmedDb);
-        const fresh=db.orders.find(x=>String(x.id)===String(orderId));
-        if(fresh){
-          fresh.status=targetStatus;
-          fresh.statusChangedAtV172=confirmed.statusChangedAtV172;
-          fresh.statusRevisionV172=confirmed.statusRevisionV172;
-          fresh.lastStatusConfirmedAt=isoNow();
-          delete fresh.pendingStatusSync;
-          delete fresh.pendingStatusTarget;
-        }
-        localStorage.setItem(K,JSON.stringify(db));
-        clearStatusIntent(orderId);
-        localStorage.setItem(CLOUD_LAST_OK_KEY,isoNow());
-        localStorage.removeItem(CLOUD_LAST_ERROR_KEY);
-        localStorage.removeItem(CLOUD_PENDING_KEY);
-        updateSyncIndicators();
-        return true;
-      }catch(e){
-        lastErr=e;
-      }finally{
-        cloudSyncBusy=false;
-      }
-      if(!(lastErr&&lastErr.code==='cloud_conflict') || attempt===3)break;
-      await new Promise(r=>setTimeout(r,250*(attempt+1)));
-    }
-    throw lastErr||new Error('فشل مزامنة حالة الطلب');
-  };
-
-  commitOrderStatus=async function(targetStatus){
-    const id=current;
-    const o=db.orders.find(x=>String(x.id)===String(id));
-    if(!o)return false;
-    if(statusActionBusy){showToast('عملية تغيير حالة أخرى قيد التنفيذ');return false;}
-    statusActionBusy=true;
-    try{
-      clearTimeout(cloudSyncTimer);
-      const now=isoNow();
-      o.status=targetStatus;
-      o.statusEnteredAt=now;
-      o.statusChangedAtV172=now;
-      o.statusRevisionV172='ST-'+Date.now()+'-'+Math.random().toString(36).slice(2,8);
-      appendOrderHistory(o,targetStatus);
-      o.pendingStatusSync=true;
-      o.pendingStatusTarget=targetStatus;
-      putStatusIntent(o,targetStatus);
-      localStorage.setItem(K,JSON.stringify(db));
-      localStorage.setItem(CLOUD_PENDING_KEY,'1');
-      menu();render();accountsRender();openOrder(id);
-
-      if(!navigator.onLine){
-        showToast('✅ تم الحفظ على الجهاز — سيُرسل تلقائياً عند عودة الإنترنت',5000);
-        return true;
-      }
-
-      let ok=false;
-      if(session?.role==='worker')ok=await workerPushOrderStatusTransaction(id,targetStatus);
-      else ok=await syncNow(false);
-      const fresh=db.orders.find(x=>String(x.id)===String(id));
-      if(ok && fresh?.status===targetStatus){
-        delete fresh.pendingStatusSync;
-        delete fresh.pendingStatusTarget;
-        clearStatusIntent(id);
-        fresh.lastStatusConfirmedAt=isoNow();
-        localStorage.setItem(K,JSON.stringify(db));
-        showToast('✅ تم حفظ الحالة ووصلت إلى السحابة',3800);
-        menu();render();accountsRender();openOrder(id);
-        return true;
-      }
-      putStatusIntent(fresh||o,targetStatus);
-      localStorage.setItem(CLOUD_PENDING_KEY,'1');
-      showToast('⚠️ الحالة محفوظة محلياً وستعاد محاولة إرسالها تلقائياً',5200);
-      return false;
-    }catch(e){
-      const fresh=db.orders.find(x=>String(x.id)===String(id))||o;
-      fresh.status=targetStatus;
-      fresh.pendingStatusSync=true;
-      fresh.pendingStatusTarget=targetStatus;
-      putStatusIntent(fresh,targetStatus);
-      localStorage.setItem(K,JSON.stringify(db));
-      localStorage.setItem(CLOUD_PENDING_KEY,'1');
-      localStorage.setItem(CLOUD_LAST_ERROR_KEY,e?.message||'فشل مزامنة الحالة');
-      showToast('⚠️ التغيير محفوظ ولن يضيع — ستتم إعادة الإرسال تلقائياً',5200);
-      return false;
-    }finally{
-      statusActionBusy=false;
-    }
-  };
-
-  cloudPull=async function(silent=false,merge=true){
-    const ok=await oldCloudPull(silent,merge);
-    const n=reapplyDurableStatusIntents();
-    if(n){try{menu();render();accountsRender();refreshActiveCloudPage();}catch(_){}}
-    return ok;
-  };
-
-  async function retryDurableStatusIntents(){
-    if(!navigator.onLine||!session||session.role!=='worker'||cloudSyncBusy||cloudPullBusy)return;
-    const intents=readStatusIntents();
-    for(const it of Object.values(intents)){
-      const o=db.orders.find(x=>String(x.id)===String(it.orderId));
-      if(!o)continue;
-      try{
-        o.status=it.status;
-        o.pendingStatusSync=true;
-        o.pendingStatusTarget=it.status;
-        const ok=await workerPushOrderStatusTransaction(it.orderId,it.status);
-        if(ok)clearStatusIntent(it.orderId);
-      }catch(_){}
-      break;
-    }
-  }
-
-  reapplyDurableStatusIntents();
-  setInterval(retryDurableStatusIntents,4000);
-  window.addEventListener('online',()=>setTimeout(retryDurableStatusIntents,350));
-})();
-</script>
 </body></html>
