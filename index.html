@@ -529,11 +529,11 @@ html[data-lang="fr"] th,html[data-lang="fr"] td{text-align:left}
 </header>
 <div id="runtimeDiag" style="display:none;position:fixed;bottom:8px;left:8px;right:8px;z-index:10000;background:#7f1d1d;color:#fff;padding:9px 12px;border-radius:8px;font-size:12px;direction:ltr;text-align:left;max-height:34vh;overflow:auto"></div>
 <div id="syncToast" style="display:none;position:fixed;top:72px;left:50%;transform:translateX(-50%);z-index:9999;background:#222;color:#fff;padding:9px 14px;border-radius:10px;font-size:13px;max-width:90%;text-align:center"></div>
-<div class=app><aside><h3>القائمة</h3><button data-menu-key="home" onclick="go('list','home')">🏠 الرئيسية</button><button data-menu-key="add" onclick="go('add','add')">➕ طلب جديد</button><button data-menu-key="bulk" onclick="go('bulk','bulk')">📋 لصق طلبات دفعة واحدة</button><button data-menu-key="pdfImport" onclick="go('pdfImport','pdfImport')">📄 استيراد PDF</button><div id=stateMenu></div><button id="customerChangesMenu" data-menu-key="customerChanges" onclick="go('customerChanges','customerChanges')">🔄 تغيير الزبون <span id="customerChangeCount" class="badge">0</span></button><button id="returnBatchesMenu" data-menu-key="returnBatches" onclick="go('returnBatches','returnBatches')">↩ طلبات رجوع الطلبات <span id="returnBatchCount" class="badge">0</span></button><button id="deliveryTransfersMenu" data-menu-key="deliveryTransfers" onclick="go('deliveryTransfers','deliveryTransfers')">🚚 في الطريق <span id="deliveryTransferCount" class="badge transit-badge">0</span></button><button data-menu-key="workers" onclick="go('workers','workers')">👤 الموزعون</button><button data-menu-key="accounts" onclick="go('accounts','accounts')">💰 الحسابات</button><button data-menu-key="invoices" onclick="go('invoices','invoices')">🧾 الفواتير</button><button data-menu-key="backupSafe" onclick="go('backupSafe','backupSafe')">🛡️ النسخ الاحتياطي</button><button data-menu-key="cloudSetup" onclick="go('cloudSetup','cloudSetup')">☁️ المزامنة السحابية</button><button data-menu-key="emergencySync" onclick="go('emergencySync','emergencySync')">🔄 مزامنة الموزع</button></aside><main>
+<div class=app><aside><h3>القائمة</h3><button data-menu-key="home" onclick="go('list','home')">🏠 الرئيسية</button><button data-menu-key="deletedOrders" onclick="go('deletedOrders','deletedOrders')">🗑️ المحذوفات <span id="deletedOrdersCount" class="badge">0</span></button><button data-menu-key="add" onclick="go('add','add')">➕ طلب جديد</button><button data-menu-key="bulk" onclick="go('bulk','bulk')">📋 لصق طلبات دفعة واحدة</button><button data-menu-key="pdfImport" onclick="go('pdfImport','pdfImport')">📄 استيراد PDF</button><div id=stateMenu></div><button id="customerChangesMenu" data-menu-key="customerChanges" onclick="go('customerChanges','customerChanges')">🔄 تغيير الزبون <span id="customerChangeCount" class="badge">0</span></button><button id="returnBatchesMenu" data-menu-key="returnBatches" onclick="go('returnBatches','returnBatches')">↩ طلبات رجوع الطلبات <span id="returnBatchCount" class="badge">0</span></button><button id="deliveryTransfersMenu" data-menu-key="deliveryTransfers" onclick="go('deliveryTransfers','deliveryTransfers')">🚚 في الطريق <span id="deliveryTransferCount" class="badge transit-badge">0</span></button><button data-menu-key="workers" onclick="go('workers','workers')">👤 الموزعون</button><button data-menu-key="accounts" onclick="go('accounts','accounts')">💰 الحسابات</button><button data-menu-key="invoices" onclick="go('invoices','invoices')">🧾 الفواتير</button><button data-menu-key="backupSafe" onclick="go('backupSafe','backupSafe')">🛡️ النسخ الاحتياطي</button><button data-menu-key="cloudSetup" onclick="go('cloudSetup','cloudSetup')">☁️ المزامنة السحابية</button><button data-menu-key="emergencySync" onclick="go('emergencySync','emergencySync')">🔄 مزامنة الموزع</button></aside><main>
 <section id=list class="page on"><div class=card><h2 id=title>قيد التوزيع</h2>
 <div class=grid>
 <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
-  <input id=search style="flex:1;min-width:190px" placeholder="بحث في جميع الطلبات حتى المحذوفة" oninput="render()" onkeydown="if(event.key==='Enter'){event.preventDefault();runOrderSearch()}">
+  <input id=search style="flex:1;min-width:190px" placeholder="بحث في الطلبات الحالية" oninput="render()" onkeydown="if(event.key==='Enter'){event.preventDefault();runOrderSearch()}">
   <button type="button" class="btn" onclick="runOrderSearch()">🔎 بحث</button>
   <button type="button" class="btn gr" onclick="clearOrderSearch()">مسح</button>
 </div>
@@ -560,6 +560,7 @@ html[data-lang="fr"] th,html[data-lang="fr"] td{text-align:left}
 <div id=pdfImportStatus class="pdf-import-note"></div>
 <div id=pdfImportPreview style="margin-top:12px"></div>
 </div></section>
+<section id=deletedOrders class=page><div class=card><h2>🗑️ المحذوفات</h2><input id=deletedOrdersSearch type=search placeholder="ابحث برمز الطلب أو الاسم أو الهاتف" oninput="renderDeletedOrders()"><div id=deletedOrdersList></div></div></section>
 <section id=add class=page><div class=card><h2>إضافة طلب جديد</h2><form onsubmit="add(event)"><div class=grid><input id=seq type=text placeholder="رقم الترتيب" readonly><input id=sender placeholder="اسم الزبون المرسل" required><input id=clientNo placeholder="رمز الطلب المرسل من الزبون"><input id=recipient placeholder="اسم المستلم" required><input id=phone placeholder="الهاتف" required><input id=address placeholder="العنوان"><input id=city placeholder="المدينة" value="وجدة"><input id=product placeholder="المنتج"><input id=amount type=number step=.01 placeholder="القيمة">
 <div>
   <label style="display:block;font-weight:700;margin:0 0 5px">إسناد الطلب إلى الموزع</label>
@@ -1167,7 +1168,7 @@ function applyPermissions(){
  if(isWorker){
    buttons.forEach(b=>{
      const key=String(b.dataset.menuKey||'');
-     if(['add','bulk','pdfImport','workers','accounts','invoices','backupSafe','cloudSetup','emergencySync'].includes(key))b.style.display='none';
+     if(['deletedOrders','add','bulk','pdfImport','workers','accounts','invoices','backupSafe','cloudSetup','emergencySync'].includes(key))b.style.display='none';
    });
  }
  const ownerMini=document.getElementById('ownerCloudMini');
@@ -1273,7 +1274,7 @@ function returnDisplayModel(){
   return batches.map(b=>{
     const orders=[];
     for(const raw of uniqueIds(b.orderIds||[])){
-      const o=orderById(raw); if(!o)continue;
+      const o=orderById(raw); if(!o||o.deletedAt||!['طلب رجوع','مرتجع'].includes(o.status))continue;
       const k=orderUniqueKey(o); if(!k||seen.has(k))continue;
       seen.add(k); orders.push(o);
     }
@@ -1285,7 +1286,7 @@ function activeReturnRefKeys(){
   for(const b of (db.returnBatches||[])){
     if(!b||b.deletedAt||b.duplicateHidden)continue;
     for(const id of uniqueIds(b.orderIds||[])){
-      const o=orderById(id); if(!o)continue;
+      const o=orderById(id); if(!o||o.deletedAt||!['طلب رجوع','مرتجع'].includes(o.status))continue;
       const k=orderUniqueKey(o); if(k)keys.add(k);
     }
   }
@@ -1327,8 +1328,7 @@ function dedupeDatabase(){
     t.deletedAt=t.deletedAt||now;t.duplicateHidden=true;t.duplicateOf=String(transferOwner.get(key).id||'');t.modifiedAt=now;t.modifiedBy='النظام - منع تكرار سجل الإرسال';changed=true;
   }
 
-  // حزم الإرجاع: لا نحذف ولا نعدل orderIds هنا إطلاقاً.
-  // منع التكرار يتم في العرض والإنشاء اعتماداً على رمز الطلب كمرجع ثابت.
+  // حزم الإرجاع: احتفظ بالحزم المكتملة، وأصلح روابط المحذوفات في الحزم المفتوحة.
   const rank={owner_confirmed:3,completed:2,pending:1};
   const owner=new Map();
   const batches=db.returnBatches.filter(b=>b&&!b.deletedAt&&!b.duplicateHidden).slice().sort((a,b)=>{
@@ -1337,15 +1337,29 @@ function dedupeDatabase(){
   });
   for(const b of batches){
     for(const raw of uniqueIds(b.orderIds||[])){
-      const o=orderById(raw); if(!o)continue;
+      const o=orderById(raw); if(!o||o.deletedAt||!['طلب رجوع','مرتجع'].includes(o.status))continue;
       const key=orderUniqueKey(o); if(!key||owner.has(key))continue;
       owner.set(key,b);
     }
   }
 
+  // الطلب المحذوف سابقاً قد يظل داخل الحزمة، ويمنع اكتمال عدادها.
+  for(const b of db.returnBatches){
+    if(!b||b.deletedAt||b.status!=='pending')continue;
+    const oldIds=uniqueIds(b.orderIds||[]);
+    const kept=oldIds.filter(id=>{const o=orderById(id);return o&&!o.deletedAt;});
+    if(kept.length===oldIds.length)continue;
+    b.orderIds=kept;
+    b.returnedOrderIds=uniqueIds(b.returnedOrderIds||[]).filter(id=>kept.map(String).includes(String(id)));
+    b.count=kept.length;
+    b.modifiedAt=now;b.modifiedBy='النظام - إصلاح حذف طلب الرجوع';
+    if(!kept.length)b.deletedAt=now;
+    changed=true;
+  }
+
   // أصلح ربط كل طلب بحزمته الفعلية إن وُجدت.
   for(const o of db.orders){
-    if(!o||o.deletedAt)continue;
+    if(!o||o.deletedAt||!['طلب رجوع','مرتجع'].includes(o.status))continue;
     const key=orderUniqueKey(o);
     const b=key?owner.get(key):null;
     if(b){
@@ -1905,7 +1919,9 @@ async function cloudPull(silent=false,merge=true){
        for(const k of keep){if(p[k]!==undefined)r[k]=JSON.parse(JSON.stringify(p[k]));}
      }
    }
+   const correctedReturns=applyRequestedReturnRemoval165();
    localStorage.setItem(K,JSON.stringify(db));
+   if(correctedReturns)scheduleCloudSync();
    localStorage.setItem('ak_delivery_last_cloud_pull',isoNow());
    localStorage.setItem(CLOUD_LAST_OK_KEY,isoNow());
    if(session.role==='worker'&&beforeAssigned){
@@ -2163,6 +2179,8 @@ function menu(){
  ensureCustomerChangesMenu();
  mergeExistingReturnBatchesV145();
  updateReturnRequestCount();
+ const deletedCount=document.getElementById('deletedOrdersCount');
+ if(deletedCount)deletedCount.textContent=(db.orders||[]).filter(o=>o&&o.deletedAt).length;
  const settledIds=settledOrderIdSet();
  const returnedIds=returnedOrderIdSet();
  stateMenu.innerHTML=states.filter(s=>s!=='مرتجع').map(s=>{
@@ -2743,7 +2761,7 @@ async function commitOrderStatus(targetStatus){
 function visibleOrders(){
  const term=String(search?.value||'').trim().toLowerCase();
  return db.orders.filter(o=>{
-   if(o.duplicateHidden)return false;
+   if(o.duplicateHidden||o.deletedAt)return false;
    if(session.role==='worker'&&!workerCanSeeOrder(o,session.workerId))return false;
    // الطلبات المدفوعة مؤرشفة بالكامل للموزع، حتى أثناء البحث.
    // تبقى محفوظة ومتاحة للمالك في الحسابات والفواتير والبحث الشامل.
@@ -2753,7 +2771,7 @@ function visibleOrders(){
    const historyText=(Array.isArray(o.history)?o.history:[]).map(h=>`${h&&h.time||''} ${h&&h.text||''}`).join(' ');
    const remarksText=(Array.isArray(o.remarks)?o.remarks:[]).map(r=>`${r&&r.time||''} ${r&&r.text||''}`).join(' ');
    const haystack=(`${o.seq||''} ${o.id||''} ${o.clientNo||''} ${o.recipient||''} ${o.phone||''} ${o.sender||''} ${o.address||''} ${o.city||''} ${o.product||''} ${o.status||''} ${historyText} ${remarksText}`).toLowerCase();
-   // عند وجود بحث: ابحث في كل سجل الطلبات بلا استثناء، بما فيها المحذوفة وكل الحالات.
+   // البحث في الطلبات الحالية؛ المحذوفات تظهر في صفحتها المستقلة فقط.
    if(term)return haystack.includes(term);
    // بدون بحث: لا تعرض الطلبات المحذوفة ولا الطلبات التي أغلقت داخل حزمة تسوية مالية.
    // تبقى الطلبات المسواة محفوظة ويمكن العثور عليها بالبحث الشامل وفتح تفاصيلها كاملة.
@@ -3537,6 +3555,76 @@ async function confirmDeliveryBatchReceived(batchId){
 function ensureReturnBatches(){
  if(!Array.isArray(db.returnBatches))db.returnBatches=[];
 }
+function detachOrderFromPendingReturns(o){
+ if(!o)return false;
+ ensureReturnBatches();
+ const now=isoNow();
+ let changed=false;
+ for(const b of db.returnBatches){
+   if(!b||b.deletedAt||b.status!=='pending')continue;
+   const before=uniqueIds(b.orderIds||[]);
+   const kept=before.filter(id=>String(id)!==String(o.id));
+   if(kept.length===before.length)continue;
+   b.orderIds=kept;
+   b.returnedOrderIds=uniqueIds(b.returnedOrderIds||[]).filter(id=>String(id)!==String(o.id));
+   b.count=kept.length;
+   b.modifiedAt=now;b.modifiedBy=actorName();
+   if(!kept.length)b.deletedAt=now;
+   changed=true;
+ }
+ return changed;
+}
+function statusBeforeReturn(o){
+ const direct=String(o.returnPreviousStatus||'').trim();
+ if(direct&&direct!=='طلب رجوع'&&direct!=='مرتجع')return direct;
+ const h=(o.history||[]).slice().reverse().find(x=>String(x.text||'').includes('الحالة السابقة:'));
+ const previous=String(h?.text||'').match(/الحالة السابقة:\s*([^—\n]+)/)?.[1]?.trim();
+ return previous&&previous!=='طلب رجوع'&&previous!=='مرتجع'?previous:'قيد التوزيع';
+}
+function applyRequestedReturnRemoval165(){
+ if(!((session&&session.role==='owner')||ownerMode===true))return false;
+ const requested=new Set(['MP100566598','MP100568750','MP100568970']);
+ let changed=false;
+ for(const o of (db.orders||[])){
+   if(!o||!requested.has(normOrderCode(o.clientNo))||o.returnRemoval165At)continue;
+   const active=(db.returnBatches||[]).filter(b=>b&&!b.deletedAt&&
+     (b.orderIds||[]).map(String).includes(String(o.id)));
+   // لا نغيّر سجلاً أقفله المالك بالفعل.
+   if(active.some(b=>b.status!=='pending'))continue;
+   const wasReturn=active.length>0||o.status==='طلب رجوع'||(o.status==='مرتجع'&&!!o.returnBatchId);
+   if(wasReturn){
+     detachOrderFromPendingReturns(o);
+     if(!o.deletedAt){
+       o.status=statusBeforeReturn(o);
+       o.statusEnteredAt=isoNow();
+     }
+     delete o.returnBatchId;delete o.returnBatchCode;delete o.returnRequestedAt;delete o.returnCompletedAt;
+     delete o.returnOwnerConfirmedAt;delete o.returnOwnerConfirmedLabel;
+     appendOrderHistory(o,'أزال المالك طلب الرجوع بناءً على طلب تصحيح الرموز الثلاثة');
+     changed=true;
+   }
+   o.returnRemoval165At=isoNow();
+   markOrderChanged(o,'تصحيح إزالة طلب الرجوع');
+   changed=true;
+ }
+ return changed;
+}
+async function removeOrderFromReturnBatch(orderId){
+ if(!((session&&session.role==='owner')||ownerMode===true))return alert('هذه العملية للمالك فقط');
+ const o=orderById(orderId);if(!o||o.deletedAt)return alert('الطلب غير موجود');
+ const open=(db.returnBatches||[]).some(b=>b&&!b.deletedAt&&b.status==='pending'&&(b.orderIds||[]).map(String).includes(String(o.id)));
+ if(!open)return alert('لا يمكن إزالة طلب من حزمة تسلّمها الموزع أو أكد المالك استلامها');
+ if(!confirm('إزالة '+(o.clientNo||o.seq||'الطلب')+' من حزمة الرجوع؟ سيبقى الطلب في قائمة الطلبات.'))return;
+ detachOrderFromPendingReturns(o);
+ o.status=statusBeforeReturn(o);
+ o.statusEnteredAt=isoNow();
+ delete o.returnBatchId;delete o.returnBatchCode;delete o.returnRequestedAt;delete o.returnCompletedAt;
+ delete o.returnOwnerConfirmedAt;delete o.returnOwnerConfirmedLabel;
+ appendOrderHistory(o,'أزال المالك الطلب من حزمة الرجوع');
+ save();renderReturnBatches();
+ if(navigator.onLine){const ok=await syncNow(true);if(ok)return showToast('✅ أزيل الطلب من الرجوع وحُفظ في السحابة',4200);}
+ showToast('أزيل الطلب محلياً؛ ستتم مزامنته عند الاتصال',4200);
+}
 var openReturnArchiveBatchId='';
 function returnOrderDone(b,o){
  return (b.returnedOrderIds||[]).map(String).includes(String(o.id)) ||
@@ -3548,6 +3636,10 @@ function toggleReturnArchiveBatch(id){
 }
 function renderReturnBatches(){
  ensureReturnBatches();
+ if(applyRequestedReturnRemoval165()){
+   localStorage.setItem(K,JSON.stringify(db));
+   scheduleCloudSync();
+ }
  migrateLegacyReturnsV144();
  const el=document.getElementById('returnBatchesList');if(!el)return;
  const term=String(document.getElementById('returnBatchSearch')?.value||'').trim().toLowerCase();
@@ -3576,6 +3668,7 @@ function renderReturnBatches(){
      ${session.role==='worker'&&!workerDone ? returnOrderDone(b,o)
        ? '<span class="badge">✓ تم تنفيذ الرجوع</span>'
        : `<button class="btn g" style="display:block;margin-top:7px" onclick="confirmReturnOrder('${String(b.id).replace(/'/g,'')}','${String(o.id).replace(/'/g,'')}')">✓ تأكيد إرجاع هذا الطلب</button>` : ''}
+     ${((session&&session.role==='owner')||ownerMode===true)&&!workerDone ? `<button class="btn r" style="display:block;margin-top:7px" onclick="removeOrderFromReturnBatch('${String(o.id).replace(/'/g,'')}')">إزالة من حزمة الرجوع</button>` : ''}
    </div>`).join('');
 
    let stateText='حزمة مفتوحة — بانتظار تنفيذ الموزع';
@@ -3879,6 +3972,7 @@ async function requestReturn(){
  if(!o.worker)return alert('يجب إسناد الطلب إلى موزع قبل طلب الرجوع');
  if(!confirm('إرسال طلب رجوع هذا الطلب إلى الموزع؟'))return;
  let previous=o.status;
+ o.returnPreviousStatus=previous;
  o.status='طلب رجوع';
  o.statusEnteredAt=isoNow();
  o.returnRequestedAt=tm();
@@ -3919,9 +4013,38 @@ function deleteCurrentOrder(){
  if(!isOwner)return alert('حذف الطلبات متاح للمالك فقط');
  const o=db.orders.find(x=>x.id===current); if(!o)return;
  if(!confirm('هل تريد حذف هذا الطلب؟ سيختفي من القوائم ويُزامن الحذف مع الأجهزة الأخرى.'))return;
+ detachOrderFromPendingReturns(o);
  o.deletedAt=isoNow(); o.deletedBy=actorName();
  appendOrderHistory(o,'حذف الطلب');
- save(); closeDrawer(); showToast('تم حذف الطلب');
+ save(); closeDrawer(); renderReturnBatches(); showToast('تم نقل الطلب إلى المحذوفات');
+}
+function renderDeletedOrders(){
+ if(!((session&&session.role==='owner')||ownerMode===true))return;
+ const el=document.getElementById('deletedOrdersList');if(!el)return;
+ const term=String(document.getElementById('deletedOrdersSearch')?.value||'').trim().toLowerCase();
+ const list=(db.orders||[]).filter(o=>o&&o.deletedAt&&
+   (!term||[o.clientNo,o.seq,o.recipient,o.phone].some(v=>String(v||'').toLowerCase().includes(term))))
+   .slice().sort((a,b)=>timeValue(b.deletedAt)-timeValue(a.deletedAt));
+ el.innerHTML=list.length?list.map(o=>`<div class="card" style="margin-top:10px">
+   <b dir="ltr">${htmlEscape(o.clientNo||o.seq||'—')}</b> — ${htmlEscape(o.recipient||'—')}<br>
+   <span dir="ltr">${htmlEscape(o.phone||'—')}</span> — ${cash(o.amount)}<br>
+   <small>حُذف: ${htmlEscape(o.deletedAt||'—')} — ${htmlEscape(o.deletedBy||'—')}</small><br>
+   <button class="btn g" style="margin-top:8px" onclick="restoreDeletedOrder('${String(o.id).replace(/'/g,'')}')">↩ استعادة الطلب</button>
+ </div>`).join(''):'لا توجد طلبات محذوفة مطابقة.';
+}
+async function restoreDeletedOrder(id){
+ if(!((session&&session.role==='owner')||ownerMode===true))return alert('الاستعادة للمالك فقط');
+ const o=orderById(id);if(!o||!o.deletedAt)return alert('الطلب غير موجود في المحذوفات');
+ if(!confirm('استعادة الطلب '+(o.clientNo||o.seq||'')+' إلى قيد التوزيع؟'))return;
+ detachOrderFromPendingReturns(o);
+ delete o.deletedAt;delete o.deletedBy;
+ delete o.returnBatchId;delete o.returnBatchCode;delete o.returnRequestedAt;delete o.returnCompletedAt;
+ delete o.returnOwnerConfirmedAt;delete o.returnOwnerConfirmedLabel;
+ o.status='قيد التوزيع';o.statusEnteredAt=isoNow();
+ appendOrderHistory(o,'استعاد المالك الطلب من المحذوفات إلى قيد التوزيع');
+ save();renderDeletedOrders();renderReturnBatches();
+ if(navigator.onLine){const ok=await syncNow(true);if(ok)return showToast('✅ استُعيد الطلب وحُفظ في السحابة',4200);}
+ showToast('استُعيد الطلب محلياً؛ ستتم مزامنته عند الاتصال',4200);
 }
 function restoreToDelivery(){
  const isOwner=(session&&session.role==='owner')||ownerMode===true;
@@ -3930,13 +4053,16 @@ function restoreToDelivery(){
  let previous=o.status;
  if(previous==='قيد التوزيع')return;
  if(!confirm('إعادة هذا الطلب من «'+previous+'» إلى «قيد التوزيع»؟'))return;
+ if((db.returnBatches||[]).some(b=>b&&!b.deletedAt&&b.status!=='pending'&&(b.orderIds||[]).map(String).includes(String(o.id))))return alert('الطلب ضمن حزمة رجوع مكتملة؛ لا يمكن إزالته بهذه الطريقة');
+ detachOrderFromPendingReturns(o);
+ delete o.returnBatchId;delete o.returnBatchCode;delete o.returnRequestedAt;delete o.returnCompletedAt;
  o.status='قيد التوزيع';
  o.statusEnteredAt=isoNow();
  o.rejectReason='';
  o.postponeDate='';
  if(!o.history)o.history=[];
  appendOrderHistory(o,'أعاد المالك الطلب من «'+previous+'» إلى «قيد التوزيع»');
- save();menu();render();accountsRender();openOrder(current);
+ save();menu();render();renderReturnBatches();accountsRender();openOrder(current);
 }
 
 function rejectOrder(){
@@ -4637,7 +4763,7 @@ function directNavigate(key){
       target='list';
     }else{
       const map={
-        home:'list',add:'add',bulk:'bulk',pdfImport:'pdfImport',
+        home:'list',deletedOrders:'deletedOrders',add:'add',bulk:'bulk',pdfImport:'pdfImport',
         returnCreate:'returnBatches',returnBatches:'returnBatches',customerChanges:'customerChanges',
         deliveryTransfers:'deliveryTransfers',workers:'workers',
         accounts:'accounts',invoices:'invoices',backupSafe:'backupSafe',
@@ -4648,7 +4774,7 @@ function directNavigate(key){
       if(key==='home')filter='الكل';
     }
     if(!target)return false;
-    if(session.role==='worker'&&['add','bulk','pdfImport','returnCreate','workers','accounts','invoices','backupSafe','cloudSetup','emergencySync'].includes(target))return false;
+    if(session.role==='worker'&&['deletedOrders','add','bulk','pdfImport','returnCreate','workers','accounts','invoices','backupSafe','cloudSetup','emergencySync'].includes(target))return false;
 
     sidebarActiveKey=key==='returnCreate'?'returnBatches':key;
     document.querySelectorAll('main > .page').forEach(p=>p.classList.remove('on'));
@@ -4662,6 +4788,7 @@ function directNavigate(key){
       else if(target==='accounts')accountsRender();
       else if(target==='invoices')invoicesRender();
       else if(target==='returnBatches')renderReturnBatches();
+      else if(target==='deletedOrders')renderDeletedOrders();
       else if(target==='customerChanges')renderCustomerChanges();
       else if(target==='deliveryTransfers'){
         deliveryTransferView=session.role==='worker'?'pending':'ready';
