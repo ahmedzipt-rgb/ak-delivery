@@ -3565,6 +3565,8 @@ function renderReturnBatches(){
    const ownerDone=b.status==='owner_confirmed'||!!b.ownerConfirmedAt;
    const ids=uniqueIds(b.orderIds||[]).map(String);
    const orders=db.orders.filter(o=>ids.includes(String(o.id)));
+   const returnedCount=orders.filter(o=>returnOrderDone(b,o)).length;
+   const allReturned=ids.length>0&&returnedCount===ids.length;
    const opened=!!term||String(openReturnArchiveBatchId)===String(b.id);
    const visibleOrders=term && !String(b.code||b.id||'').toLowerCase().includes(term)
      ? orders.filter(o=>[o.clientNo,o.seq,o.recipient,o.phone].some(v=>String(v||'').toLowerCase().includes(term)))
@@ -3585,9 +3587,13 @@ function renderReturnBatches(){
 
    let action='';
    if(session.role==='worker'&&!workerDone){
-     action=`<span class="badge" style="display:inline-block;margin-top:10px">تم إرجاع ${orders.filter(o=>returnOrderDone(b,o)).length} من ${ids.length} طلبات</span>`;
+     action=`<span class="badge" style="display:inline-block;margin-top:10px">تم إرجاع ${returnedCount} من ${ids.length} طلبات</span>
+       <button class="btn g" style="display:block;margin-top:10px" ${allReturned?'':'disabled title="أكد إرجاع جميع الطلبات أولًا"'} onclick="confirmReturnBatch('${String(b.id).replace(/'/g,'')}')">✓ تأكيد تسليم الحزمة للمالك (${ids.length} طلبات)</button>`;
    }else if(((session&&session.role==='owner')||ownerMode===true)&&workerDone&&!ownerDone){
-     action=`<button class="btn g" style="margin-top:10px" onclick="confirmOwnerReturnReceipt('${b.id}')">✅ تأكيد استلام الإرجاع (${ids.length} طلبات)</button>`;
+     action=`<button class="btn g" style="margin-top:10px" onclick="confirmOwnerReturnReceipt('${String(b.id).replace(/'/g,'')}')">✅ تأكيد استلام الحزمة من الموزع (${ids.length} طلبات)</button>`;
+   }else if(((session&&session.role==='owner')||ownerMode===true)&&!workerDone){
+     action=`<span class="badge" style="display:inline-block;margin-top:10px">تم إرجاع ${returnedCount} من ${ids.length} طلبات</span>
+       <button class="btn g" style="display:block;margin-top:10px" disabled title="بانتظار تأكيد تسليم الموزع">✅ تأكيد استلام الحزمة من الموزع (${ids.length} طلبات)</button>`;
    }
 
    return `<div class="card" style="margin-top:10px">
@@ -3675,11 +3681,6 @@ async function confirmReturnOrder(batchId,orderId){
  b.returnedOrderIds=uniqueIds([...(b.returnedOrderIds||[]),o.id]);
  b.modifiedAt=now;
  b.modifiedBy=actorName();
- if(ids.every(id=>b.returnedOrderIds.map(String).includes(id))){
-   b.status='completed';
-   b.confirmedAt=now;
-   b.confirmedLabel=label;
- }
  localStorage.setItem(K,JSON.stringify(db));
  render();menu();renderReturnBatches();
  if(navigator.onLine){
@@ -3691,22 +3692,16 @@ async function confirmReturnOrder(batchId,orderId){
 async function confirmReturnBatch(batchId){
  if(!(session&&session.role==='worker'))return alert('هذه العملية للموزع فقط');
  ensureReturnBatches();
- const b=db.returnBatches.find(x=>String(x.id)===String(batchId));if(!b)return;
+ const b=db.returnBatches.find(x=>String(x.id)===String(batchId)&&!x.deletedAt);if(!b)return;
  if(String(b.workerId)!==String(session.workerId))return alert('هذه الحزمة ليست مخصصة لحسابك');
  if(b.status==='completed'||b.status==='owner_confirmed'||b.confirmedAt)return alert('تم تأكيد تنفيذ هذه الحزمة سابقاً وهي بانتظار المالك أو مقفلة');
 
- const ids=(b.orderIds||[]).map(String);
- if(!confirm('تأكيد أنك أعدت جميع الطلبات المطلوبة للمالك وعددها '+ids.length+' طلبات؟'))return;
+ const ids=uniqueIds(b.orderIds||[]).map(String);
+ const orders=ids.map(id=>db.orders.find(o=>String(o.id)===id));
+ if(!ids.length||orders.some(o=>!o||!returnOrderDone(b,o)))return alert('أكد إرجاع كل طلب في الحزمة قبل تأكيد تسليمها للمالك');
+ if(!confirm('تأكيد تسليم الحزمة كاملة إلى المالك وعددها '+ids.length+' طلبات؟'))return;
 
  const now=isoNow(), label=tm();
- for(const o of db.orders){
-   if(ids.includes(String(o.id))){
-     o.status='مرتجع';
-     o.statusEnteredAt=now;
-     o.returnCompletedAt=label;
-     appendOrderHistory(o,'أكد الموزع تنفيذ طلب الإرجاع '+(b.code||b.id));
-   }
- }
  b.status='completed';
  b.confirmedAt=now;
  b.confirmedLabel=label;
