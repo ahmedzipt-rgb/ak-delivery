@@ -503,7 +503,7 @@ html[data-lang="fr"] th,html[data-lang="fr"] td{text-align:left}
  <select id="loginWorker"><option value="">اختر حسابك</option></select>
 <input id="loginPin" type="password" inputmode="numeric" placeholder="الرمز السري">
 <div id="loginStatus" style="margin-top:8px;font-weight:700;min-height:22px"></div>
-<div style="margin-top:6px;font-size:12px;opacity:.7">الإصدار 175</div>
+<div style="margin-top:6px;font-size:12px;opacity:.7">الإصدار 176</div>
 <button id="workerLoginBtn" type="button" onclick="workerLogin(event)" class="btn" style="width:100%">دخول الموزع</button>
 <hr>
 <h3>إنشاء حساب موزع</h3>
@@ -1979,7 +1979,7 @@ async function workerPushOrderStatusTransaction(orderId,targetStatus,attempts=0)
     remote.lastChangeKind='تغيير حالة v175: '+targetStatus;
     delete remote.pendingStatusSync;
     delete remote.pendingStatusTarget;
-    const payload={db:stripTransientSyncFlagsV175(out),updatedAt:isoNow(),updatedBy:'worker-status-v175:'+wid};
+    const payload={db:stripTransientSyncFlagsV175(out),updatedAt:isoNow(),updatedBy:'worker-status-v176:'+wid};
     if(baseGeneration!==undefined)payload._baseGeneration=baseGeneration;
 
     // v174: نؤكد حالة الطلب نفسه، لا تطابق قاعدة البيانات كاملة.
@@ -2029,6 +2029,7 @@ async function cloudPull(silent=false,merge=true){
    const j=await cloudRequest('loadAll',{});
    const cloudDb=parseCloudDb(j);
    if(!cloudDb)throw new Error('لا توجد بيانات في السحابة بعد');
+   const beforeDigestV176=cloudDbDigest(db);
    if(typeof createLocalSnapshot==='function'&&!silent)createLocalSnapshot();
    const beforeAssigned=session.role==='worker'?new Set(db.orders.filter(o=>!o.duplicateHidden&&!o.deletedAt&&orderAssignedToWorker(o,session.workerId)).map(o=>String(o.id))):null;
    // نحفظ شاهدًا محليًا قبل أي جلب قد يغيّر حالة طلب سبق عرضها على الجهاز.
@@ -2066,7 +2067,9 @@ async function cloudPull(silent=false,merge=true){
    reconcilePendingWithCloudV175(cloudDb);
    const recoveredReturns=recoverArchivedReturns171();
    const correctedReturns=applyRequestedReturnRemoval165();
-   localStorage.setItem(K,JSON.stringify(db));
+   const afterDigestV176=cloudDbDigest(db);
+   const uiChangedV176=beforeDigestV176!==afterDigestV176||!!correctedReturns||!!recoveredReturns;
+   if(uiChangedV176)localStorage.setItem(K,JSON.stringify(db));
    if(correctedReturns||recoveredReturns)scheduleCloudSync();
    localStorage.setItem('ak_delivery_last_cloud_pull',isoNow());
    localStorage.setItem(CLOUD_LAST_OK_KEY,isoNow());
@@ -2076,7 +2079,7 @@ async function cloudPull(silent=false,merge=true){
       if(fresh.length)showToast('🔔 لديك '+fresh.length+' طلب جديد');
    }
    if(!silent)updateCloudStatus('تم جلب البيانات من السحابة ✓'); else updateSyncIndicators();
-   menu();render();renderWorkers();accountsRender();refreshLoginWorkers();refreshActiveCloudPage();
+   if(uiChangedV176){menu();render();renderWorkers();accountsRender();refreshLoginWorkers();refreshActiveCloudPage();}
    return true;
  }catch(e){
    cloudPullFailures=Math.min(cloudPullFailures+1,4);
@@ -2204,7 +2207,7 @@ setInterval(()=>{
     if(!cloudSyncTimer)syncNow(true);
     return;
   }
-  const interval=Math.min(30000,(session.role==='worker'?5000:6000)*Math.pow(2,cloudPullFailures));
+  const interval=Math.min(30000,(session.role==='worker'?7000:8000)*Math.pow(2,cloudPullFailures));
   if(Date.now()-cloudLastPullStarted>=interval)cloudPull(true,session.role==='owner');
 },2000);
 document.addEventListener('visibilitychange',()=>{
@@ -2367,13 +2370,14 @@ function menu(){
  if(deletedCount)deletedCount.textContent=(db.orders||[]).filter(o=>o&&o.deletedAt).length;
  const settledIds=settledOrderIdSet();
  const returnedIds=returnedOrderIdSet();
+ const activeOrders=(db.orders||[]).filter(o=>{
+   if(!o||o.duplicateHidden||o.deletedAt||o.status==='في الطريق')return false;
+   const archived=(o.status==='تم التسليم'&&settledIds.has(String(o.id)))||(['مرتجع','طلب رجوع'].includes(o.status)&&returnedIds.has(String(o.id)));
+   if(archived&&!orderHasArchiveConflict(o))return false;
+   if(session.role==='worker'&&!workerCanSeeOrder(o,session.workerId))return false;
+   return true;
+ });
  stateMenu.innerHTML=states.filter(s=>s!=='مرتجع').map(s=>{
-   const activeOrders=db.orders.filter(o=>{
-     if(!o||o.duplicateHidden||o.deletedAt||o.status==='في الطريق')return false;
-     if((isOrderSettled(o)||isOrderReturnArchived(o))&&!orderHasArchiveConflict(o))return false;
-     if(session.role==='worker'&&(!workerCanSeeOrder(o,session.workerId)||(workerOrderArchived(o)&&!orderHasArchiveConflict(o))))return false;
-     return true;
-   });
    const n=s==='الكل'?activeOrders.length:activeOrders.filter(o=>o.status===s).length;
    return `<button data-menu-key="state:${htmlEscape(s)}" onclick="filter='${s}';go('list','state:${s}')">${statusDisplayName(s)} <span class="menu-count">${n}</span></button>`;
  }).join('');
@@ -2910,23 +2914,20 @@ async function commitOrderStatus(targetStatus){
 
 function visibleOrders(){
  const term=String(search?.value||'').trim().toLowerCase();
+ const settledIds=settledOrderIdSet();
+ const returnedIds=returnedOrderIdSet();
  return db.orders.filter(o=>{
    if(o.duplicateHidden||o.deletedAt)return false;
    if(session.role==='worker'&&!workerCanSeeOrder(o,session.workerId))return false;
-   // الطلبات المدفوعة مؤرشفة بالكامل للموزع، حتى أثناء البحث.
-   // تبقى محفوظة ومتاحة للمالك في الحسابات والفواتير والبحث الشامل.
-   // لا تُخفِ طلباً عاد إلى حالة نشطة بسبب مرجع قديم في تسوية أو إرجاع.
-   // كان هذا هو سبب ظهوره في البحث واختفائه من خانة الحالة.
-   if(workerOrderArchived(o)&&!orderHasArchiveConflict(o))return false;
-   const historyText=(Array.isArray(o.history)?o.history:[]).map(h=>`${h&&h.time||''} ${h&&h.text||''}`).join(' ');
-   const remarksText=(Array.isArray(o.remarks)?o.remarks:[]).map(r=>`${r&&r.time||''} ${r&&r.text||''}`).join(' ');
-   const haystack=(`${o.seq||''} ${o.id||''} ${o.clientNo||''} ${o.recipient||''} ${o.phone||''} ${o.sender||''} ${o.address||''} ${o.city||''} ${o.product||''} ${o.status||''} ${historyText} ${remarksText}`).toLowerCase();
-   // البحث في الطلبات الحالية؛ المحذوفات تظهر في صفحتها المستقلة فقط.
-   if(term)return haystack.includes(term);
-   // بدون بحث: لا تعرض الطلبات المحذوفة ولا الطلبات التي أغلقت داخل حزمة تسوية مالية.
-   // تبقى الطلبات المسواة محفوظة ويمكن العثور عليها بالبحث الشامل وفتح تفاصيلها كاملة.
-   if(o.deletedAt)return false;
-   if((isOrderSettled(o)||isOrderReturnArchived(o))&&!orderHasArchiveConflict(o))return false;
+   const archived=(o.status==='تم التسليم'&&settledIds.has(String(o.id)))||(['مرتجع','طلب رجوع'].includes(o.status)&&returnedIds.has(String(o.id)));
+   if(session.role==='worker'&&archived&&!orderHasArchiveConflict(o))return false;
+   if(term){
+     const historyText=(Array.isArray(o.history)?o.history:[]).map(h=>`${h&&h.time||''} ${h&&h.text||''}`).join(' ');
+     const remarksText=(Array.isArray(o.remarks)?o.remarks:[]).map(r=>`${r&&r.time||''} ${r&&r.text||''}`).join(' ');
+     const haystack=(`${o.seq||''} ${o.id||''} ${o.clientNo||''} ${o.recipient||''} ${o.phone||''} ${o.sender||''} ${o.address||''} ${o.city||''} ${o.product||''} ${o.status||''} ${historyText} ${remarksText}`).toLowerCase();
+     return haystack.includes(term);
+   }
+   if(archived&&!orderHasArchiveConflict(o))return false;
    if(o.status==='في الطريق')return false;
    return filter==='الكل'||o.status===filter;
  });
@@ -5173,7 +5174,7 @@ const akNativeAlert=window.alert.bind(window),akNativeConfirm=window.confirm.bin
 window.alert=m=>akNativeAlert(akTranslateString(m));
 window.confirm=m=>akNativeConfirm(akTranslateString(m));
 window.prompt=(m,d)=>akNativePrompt(akTranslateString(m),d);
-const akLangObserver=new MutationObserver(list=>{for(const m of list){m.addedNodes.forEach(n=>{if(n.nodeType===1)akTranslateElement(n);else if(n.nodeType===3&&n.parentElement&&!['SCRIPT','STYLE','TEXTAREA'].includes(n.parentElement.tagName)){const v=akTranslateString(n.nodeValue);if(v!==n.nodeValue)n.nodeValue=v;}});}});
+const akLangObserver=new MutationObserver(list=>{if(appLanguage!=='fr')return;for(const m of list){m.addedNodes.forEach(n=>{if(n.nodeType===1)akTranslateElement(n);else if(n.nodeType===3&&n.parentElement&&!['SCRIPT','STYLE','TEXTAREA'].includes(n.parentElement.tagName)){const v=akTranslateString(n.nodeValue);if(v!==n.nodeValue)n.nodeValue=v;}});}});
 akLangObserver.observe(document.body,{childList:true,subtree:true});
 applyAppLanguage(appLanguage,false);
 
