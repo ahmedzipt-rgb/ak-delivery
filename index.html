@@ -876,26 +876,28 @@ function createLocalSnapshot(){
   let payload=fullBackupPayload();
   payload.snapshotId=Date.now();
   snaps.unshift(payload);
-  snaps=snaps.slice(0,10);
+  snaps=snaps.slice(0,3);
   try{
     localStorage.setItem(SNAP_KEY,JSON.stringify(snaps));
     localStorage.setItem('delivery_last_snapshot_v45',new Date().toISOString());
   }catch(e){
     // If storage is full, keep fewer snapshots.
-    try{localStorage.setItem(SNAP_KEY,JSON.stringify(snaps.slice(0,5)))}catch(_){}
+    try{localStorage.setItem(SNAP_KEY,JSON.stringify(snaps.slice(0,2)))}catch(_){}
   }
   updateBackupStatus();
 }
 function scheduleAutoSnapshot(){
   clearTimeout(snapshotTimer);
-  snapshotTimer=setTimeout(createLocalSnapshot,1200);
+  const last=Date.parse(localStorage.getItem('delivery_last_snapshot_v45')||'')||0;
+  if(Date.now()-last<300000)return;
+  snapshotTimer=setTimeout(createLocalSnapshot,1500);
 }
 function restoreSnapshot(id){
   if(!((session&&session.role==='owner')||ownerMode===true))return alert('هذه الصلاحية للمالك فقط');
   let snap=getSnapshots().find(x=>String(x.snapshotId)===String(id)); if(!snap)return;
   if(!confirm('استعادة هذه اللقطة المحلية؟ سيتم حفظ لقطة من الوضع الحالي أولاً.'))return;
   let current=fullBackupPayload(); current.snapshotId=Date.now();
-  let snaps=getSnapshots(); snaps.unshift(current); localStorage.setItem(SNAP_KEY,JSON.stringify(snaps.slice(0,10)));
+  let snaps=getSnapshots(); snaps.unshift(current); localStorage.setItem(SNAP_KEY,JSON.stringify(snaps.slice(0,3)));
   db=snap.data; localStorage.setItem(K,JSON.stringify(db)); location.reload();
 }
 function deleteSnapshot(id){
@@ -5333,8 +5335,9 @@ function scanIntegrityV180(){
       if(!orderIds.has(String(id)))issues.push({kind:'return',text:'حزمة رجوع تشير إلى طلب غير موجود: '+(b.code||b.id)});
     }
     if((b.status==='owner_confirmed'||b.ownerConfirmedAt)){
-      const open=(b.orderIds||[]).map(id=>orders.find(o=>String(o?.id)===String(id))).filter(o=>o&&!o.deletedAt&&!o.returnOwnerConfirmedAt);
-      if(open.length)issues.push({kind:'return',text:'حزمة مؤكدة لدى المالك وبداخلها '+open.length+' طلب غير مؤكد فردياً: '+(b.code||b.id)});
+      const open=(b.orderIds||[]).map(id=>orders.find(o=>String(o?.id)===String(id)))
+        .filter(o=>o&&!o.deletedAt&&o.status==='مرتجع'&&!o.returnOwnerConfirmedAt);
+      if(open.length)issues.push({kind:'return',text:'حزمة مؤكدة لدى المالك وبداخلها '+open.length+' طلب مرتجع غير مؤكد فردياً: '+(b.code||b.id)});
     }
   }
   for(const t of transfers.filter(x=>x&&!x.deletedAt)){
@@ -5373,6 +5376,100 @@ function fmtTimeV180(v){
   try{return new Date(v).toLocaleString('ar-MA')}catch(_){return String(v)}
 }
 
+
+/* ---------- إصلاح اتساق الرجوع القديم + تخفيف التخزين ---------- */
+const AK180_RETURN_REPAIR_KEY='ak_delivery_return_consistency_repair_180b';
+const AK180_STORAGE_TRIM_KEY='ak_delivery_snapshot_trim_180b';
+
+function trimSnapshotsV180(){
+  try{
+    const snaps=getSnapshots();
+    if(snaps.length>3){
+      localStorage.setItem(SNAP_KEY,JSON.stringify(snaps.slice(0,3)));
+      akLogV180('storage','تم تقليص اللقطات المحلية القديمة',snaps.length+' → 3');
+    }
+    localStorage.setItem(AK180_STORAGE_TRIM_KEY,'done');
+    return true;
+  }catch(e){
+    akLogV180('storage-error','تعذر تقليص اللقطات المحلية',e.message);
+    return false;
+  }
+}
+
+function repairReturnConsistencyV180(){
+  const isOwner=(session&&session.role==='owner')||ownerMode===true;
+  if(!isOwner||localStorage.getItem(AK180_RETURN_REPAIR_KEY)==='done')return {changed:false,confirmed:0,deduped:0};
+  ensureReturnBatches();
+  // نسخة أمان من الحالة الحالية. بعد ذلك تبقى أحدث 3 لقطات فقط لتجنب امتلاء التخزين.
+  try{createLocalSnapshot();}catch(_){}
+  trimSnapshotsV180();
+
+  const now=isoNow(), label=tm();
+  const byId=new Map((db.orders||[]).filter(o=>o&&o.id!=null).map(o=>[String(o.id),o]));
+  let changed=false, confirmed=0, deduped=0;
+
+  // إذا كان معرف الطلب موجوداً في ownerReceivedOrderIds فهذا دليل صريح قديم على استلام المالك.
+  for(const b of (db.returnBatches||[])){
+    if(!b||b.deletedAt||b.duplicateHidden)continue;
+    const received=new Set((b.ownerReceivedOrderIds||[]).map(String));
+    if(b.status==='owner_confirmed'||b.ownerConfirmedAt){
+      for(const id of (b.orderIds||[]))received.add(String(id));
+    }
+    if(!received.size)continue;
+    b.ownerReceivedOrderIds=[...received];
+    for(const id of received){
+      const o=byId.get(String(id));
+      // لا نغيّر حالة الطلب. نكمل فقط سجل الاستلام إذا كانت حالته الحالية مرتجع.
+      if(!o||o.deletedAt||o.status!=='مرتجع'||o.returnOwnerConfirmedAt)continue;
+      o.returnOwnerConfirmedAt=b.ownerConfirmedAt||b.modifiedAt||now;
+      o.returnOwnerConfirmedLabel=b.ownerConfirmedLabel||b.modifiedAt||label;
+      o.modifiedAt=now;
+      o.modifiedBy='النظام - إصلاح اتساق استلام الرجوع 180';
+      if(!Array.isArray(o.history))o.history=[];
+      if(!o.history.some(h=>String(h&&h.text||'').includes('استكمال سجل استلام المالك'))){
+        o.history.push({time:label,text:'استكمال سجل استلام المالك من بيانات حزمة الرجوع القديمة — إصلاح 180'});
+      }
+      confirmed++;changed=true;
+    }
+  }
+
+  // نخفي فقط الحزم المتطابقة تماماً؛ لا نمس الحزم الجزئية أو التاريخ المختلف.
+  const groups=new Map();
+  const active=(db.returnBatches||[]).filter(b=>b&&!b.deletedAt&&!b.duplicateHidden);
+  for(const b of active){
+    const ids=[...(b.orderIds||[])].map(String).sort();
+    const returned=[...(b.returnedOrderIds||[])].map(String).sort();
+    const received=[...(b.ownerReceivedOrderIds||[])].map(String).sort();
+    const sig=[String(b.code||''),String(b.workerId||''),String(b.status||''),ids.join(','),returned.join(','),received.join(',')].join('|');
+    if(!groups.has(sig))groups.set(sig,[]);
+    groups.get(sig).push(b);
+  }
+  for(const list of groups.values()){
+    if(list.length<2)continue;
+    list.sort((a,b)=>timeValue(b.modifiedAt||b.createdAt)-timeValue(a.modifiedAt||a.createdAt));
+    const keep=list[0];
+    for(const old of list.slice(1)){
+      old.duplicateHidden=true;
+      old.deletedAt=old.deletedAt||now;
+      old.duplicateOf=String(keep.id||'');
+      old.modifiedAt=now;
+      old.modifiedBy='النظام - دمج حزمة رجوع مطابقة 180';
+      deduped++;changed=true;
+    }
+  }
+
+  if(changed){
+    persistDbV180('return-consistency-repair');
+    scheduleCloudSync();
+    akLogV180('repair','إصلاح اتساق الرجوع القديم','تأكيدات '+confirmed+'، حزم مطابقة '+deduped);
+  }else{
+    akLogV180('repair','فحص اتساق الرجوع: لا حاجة لتعديل');
+  }
+  localStorage.setItem(AK180_RETURN_REPAIR_KEY,'done');
+  return {changed,confirmed,deduped};
+}
+
+
 /* ---------- صفحة صحة النظام ---------- */
 function renderSystemHealthV180(){
   const issues=scanIntegrityV180();
@@ -5393,7 +5490,7 @@ function renderSystemHealthV180(){
       <div><b>الطلبات النشطة</b><h2>${active.length}</h2></div>
       <div><b>مشاكل سلامة البيانات</b><h2>${issues.length}</h2></div>
       <div><b>أحداث مزامنة معلقة</b><h2>${outbox.length}</h2></div>
-      <div><b>مساحة التخزين المحلية</b><h2 style="font-size:18px">${fmtBytesV180(storage)}</h2></div>
+      <div><b>مساحة التخزين المحلية</b><h2 style="font-size:18px">${fmtBytesV180(storage)}</h2>${storage>5*1024*1024?'<small style="color:#b45309">⚠ مرتفعة — يتم الاحتفاظ بأحدث 3 لقطات فقط</small>':''}</div>
     </div>`;
 
   const sh=document.getElementById('syncHealthV180');
@@ -5579,5 +5676,17 @@ setInterval(()=>{
 
 akLogV180('boot','تشغيل AK Delivery 180 Stable');
 try{updateCloudReadWriteStatusV180();}catch(_){}
+setTimeout(()=>{
+  try{
+    trimSnapshotsV180();
+    const r=repairReturnConsistencyV180();
+    if(r&&r.changed){
+      requestUiRefreshV180();
+      try{renderReturnedOrders();renderReturnBatches();}catch(_){}
+      showToast('✅ تم إصلاح اتساق سجلات الرجوع القديمة بأمان',4200);
+    }
+    try{renderSystemHealthV180();}catch(_){}
+  }catch(e){akLogV180('repair-error','تعذر إصلاح الاتساق القديم',e.message)}
+},900);
 </script>
 </body></html>
