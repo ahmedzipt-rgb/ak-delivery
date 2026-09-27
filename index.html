@@ -2922,6 +2922,8 @@ async function commitOrderStatus(targetStatus){
   try{
     clearTimeout(cloudSyncTimer);
     const now=isoNow();
+    o.previousStatusBeforeChangeV180=o.status;
+    o.previousStatusChangedAtV180=now;
     o.status=targetStatus;o.statusEnteredAt=now;o.statusChangedAtV173=now;
     o.statusEventIdV173='ST173-'+Date.now()+'-'+Math.random().toString(36).slice(2,8);
     appendOrderHistory(o,targetStatus);o.pendingStatusSync=true;o.pendingStatusTarget=targetStatus;
@@ -4263,12 +4265,45 @@ function confirmReturnDone(){
  closeDrawer();go('returnBatches');
  confirmReturnOrder(b.id,o.id);
 }
+
+function previousStatusForUndoV180(o){
+ if(!o)return '';
+ const direct=String(o.previousStatusBeforeChangeV180||'').trim();
+ if(direct && direct!==o.status)return direct;
+ const known=['قيد التوزيع','تعذر الاتصال','مؤجل','مبرمج','تم التسليم','رفض','ملغى','مرتجع','طلب رجوع','في الطريق'];
+ let skippedCurrent=false;
+ for(const h of (o.history||[]).slice().reverse()){
+   const t=String(h&&h.text||'').trim();
+   let hit='';
+   for(const st of known){
+     if(t===st || t.startsWith(st+' —') || t.startsWith(st+' — السبب:') || t.startsWith(st+' إلى:')){
+       hit=st;break;
+     }
+   }
+   if(!hit)continue;
+   if(!skippedCurrent && hit===o.status){skippedCurrent=true;continue;}
+   if(hit!==o.status)return hit;
+ }
+ return '';
+}
+function canUndoStatusV180(o,target){
+ if(!o||!target)return {ok:false,msg:'لا توجد حالة سابقة واضحة لهذا الطلب'};
+ // إذا كان الطلب دخل تسوية مالية نهائية، يسمح فقط بالرجوع إلى تم التسليم.
+ if(isOrderSettled(o) && target!=='تم التسليم')
+   return {ok:false,msg:'هذا الطلب داخل تسوية مالية نهائية؛ يمكن فقط استعادة حالة «تم التسليم»'};
+ // إذا أكد المالك استلام المرتجع نهائياً، يسمح فقط بالرجوع إلى مرتجع.
+ if(isOrderReturnArchived(o) && target!=='مرتجع')
+   return {ok:false,msg:'هذا الطلب أُغلق كمرتجع لدى المالك؛ يمكن فقط استعادة حالة «مرتجع»'};
+ return {ok:true};
+}
+
 function renderOwnerRestore(o){
  let box=document.getElementById('ownerRestoreBox');
  if(!box)return;
  const isOwner=(session&&session.role==='owner')||ownerMode===true;
- if(isOwner && o && o.status!=='قيد التوزيع'){
-   box.innerHTML=`<button class="btn g" style="width:100%;font-size:16px" onclick="restoreToDelivery()">↩ إعادة إلى قيد التوزيع</button>`;
+ const prev=isOwner&&o?previousStatusForUndoV180(o):'';
+ if(isOwner && o && prev){
+   box.innerHTML=`<button class="btn g" style="width:100%;font-size:16px" onclick="restoreToDelivery()">↩ التراجع إلى الحالة السابقة: ${htmlEscape(statusDisplayName(prev))}</button>`;
  }else box.innerHTML='';
 }
 
@@ -4315,23 +4350,59 @@ async function restoreDeletedOrder(id){
  if(navigator.onLine){const ok=await syncNow(true);if(ok)return showToast('✅ استُعيد الطلب وحُفظ في السحابة',4200);}
  showToast('استُعيد الطلب محلياً؛ ستتم مزامنته عند الاتصال',4200);
 }
-function restoreToDelivery(){
+async function restoreToDelivery(){
  const isOwner=(session&&session.role==='owner')||ownerMode===true;
  if(!isOwner)return alert('هذه الصلاحية للمالك فقط');
- let o=db.orders.find(x=>x.id===current);if(!o)return;
- let previous=o.status;
- if(previous==='قيد التوزيع')return;
- if(!confirm('إعادة هذا الطلب من «'+previous+'» إلى «قيد التوزيع»؟'))return;
- if((db.returnBatches||[]).some(b=>b&&!b.deletedAt&&b.status!=='pending'&&(b.orderIds||[]).map(String).includes(String(o.id))))return alert('الطلب ضمن حزمة رجوع مكتملة؛ لا يمكن إزالته بهذه الطريقة');
- detachOrderFromPendingReturns(o);
- delete o.returnBatchId;delete o.returnBatchCode;delete o.returnRequestedAt;delete o.returnCompletedAt;
- o.status='قيد التوزيع';
- o.statusEnteredAt=isoNow();
- o.rejectReason='';
- o.postponeDate='';
- if(!o.history)o.history=[];
- appendOrderHistory(o,'أعاد المالك الطلب من «'+previous+'» إلى «قيد التوزيع»');
- save();menu();render();renderReturnBatches();accountsRender();openOrder(current);
+ const id=current;
+ let o=db.orders.find(x=>String(x.id)===String(id));if(!o)return;
+ const from=String(o.status||''), target=previousStatusForUndoV180(o);
+ if(!target)return alert('تعذر تحديد الحالة السابقة لهذا الطلب من السجل');
+ const guard=canUndoStatusV180(o,target);
+ if(!guard.ok)return alert(guard.msg);
+ if(!confirm('التراجع عن آخر تغيير للحالة؟\nمن «'+statusDisplayName(from)+'» إلى «'+statusDisplayName(target)+'»'))return;
+
+ createLocalSnapshot();
+
+ // تنظيف آثار الحالة التي نتراجع عنها فقط.
+ if(from==='رفض')o.rejectReason='';
+ if(from==='مؤجل')o.postponeDate='';
+ if(from==='ملغى'){delete o.cancelReason;delete o.cancelledAt;}
+ if(from==='طلب رجوع'){
+   detachOrderFromPendingReturns(o);
+   delete o.returnBatchId;delete o.returnBatchCode;delete o.returnRequestedAt;
+ }
+ // لا نفك أرشيف رجوع نهائي تلقائياً.
+ if(from==='مرتجع' && !isOrderReturnArchived(o)){
+   detachOrderFromPendingReturns(o);
+   delete o.returnBatchId;delete o.returnBatchCode;delete o.returnCompletedAt;
+   delete o.returnOwnerConfirmedAt;delete o.returnOwnerConfirmedLabel;
+ }
+
+ const now=isoNow();
+ o.previousStatusBeforeChangeV180=from;
+ o.previousStatusChangedAtV180=now;
+ o.status=target;
+ o.statusEnteredAt=now;
+ o.statusChangedAtV173=now;
+ o.statusEventIdV173='UNDO180-'+Date.now()+'-'+Math.random().toString(36).slice(2,8);
+ appendOrderHistory(o,'تراجع المالك عن آخر تغيير للحالة: من «'+from+'» إلى «'+target+'»');
+
+ persistDbV180('owner-status-undo');
+ localStorage.setItem(CLOUD_PENDING_KEY,'1');
+ scheduleCloudSync();
+ requestUiRefreshV180();
+ try{renderReturnBatches();renderReturnedOrders();}catch(_){}
+ openOrder(id);
+
+ if(navigator.onLine){
+   const ok=await syncNow(true);
+   if(ok){
+     showToast('✅ عادت الحالة السابقة وحُفظ التصحيح في السحابة',4200);
+     return true;
+   }
+ }
+ showToast('✅ عادت الحالة السابقة محلياً وسيعاد إرسالها للسحابة تلقائياً',4800);
+ return true;
 }
 
 function rejectOrder(){
@@ -4969,7 +5040,14 @@ function saveEdit(){
   }else{
     o.status=eStatus.value||previousStatus||'قيد التوزيع';
   }
-  if(o.status!==previousStatus)o.statusEnteredAt=isoNow();
+  if(o.status!==previousStatus){
+    const now=isoNow();
+    o.previousStatusBeforeChangeV180=previousStatus;
+    o.previousStatusChangedAtV180=now;
+    o.statusEnteredAt=now;
+    o.statusChangedAtV173=now;
+    o.statusEventIdV173='EDIT180-'+Date.now()+'-'+Math.random().toString(36).slice(2,8);
+  }
   o.ownerNote=eOwnerNote.value.trim();
   // يسجل وقت ومنفذ التعديل للمزامنة دون كشف الملاحظة الداخلية للموزع.
   markOrderChanged(o,'تعديل إداري');
