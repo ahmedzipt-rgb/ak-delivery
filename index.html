@@ -503,7 +503,7 @@ html[data-lang="fr"] th,html[data-lang="fr"] td{text-align:left}
  <select id="loginWorker"><option value="">اختر حسابك</option></select>
 <input id="loginPin" type="password" inputmode="numeric" placeholder="الرمز السري">
 <div id="loginStatus" style="margin-top:8px;font-weight:700;min-height:22px"></div>
-<div style="margin-top:6px;font-size:12px;opacity:.7">الإصدار 177</div>
+<div style="margin-top:6px;font-size:12px;opacity:.7">الإصدار 180</div>
 <button id="workerLoginBtn" type="button" onclick="workerLogin(event)" class="btn" style="width:100%">دخول الموزع</button>
 <hr>
 <h3>إنشاء حساب موزع</h3>
@@ -529,11 +529,11 @@ html[data-lang="fr"] th,html[data-lang="fr"] td{text-align:left}
 </header>
 <div id="runtimeDiag" style="display:none;position:fixed;bottom:8px;left:8px;right:8px;z-index:10000;background:#7f1d1d;color:#fff;padding:9px 12px;border-radius:8px;font-size:12px;direction:ltr;text-align:left;max-height:34vh;overflow:auto"></div>
 <div id="syncToast" style="display:none;position:fixed;top:72px;left:50%;transform:translateX(-50%);z-index:9999;background:#222;color:#fff;padding:9px 14px;border-radius:10px;font-size:13px;max-width:90%;text-align:center"></div>
-<div class=app><aside><h3>القائمة</h3><button data-menu-key="home" onclick="go('list','home')">🏠 الرئيسية</button><button data-menu-key="deletedOrders" onclick="go('deletedOrders','deletedOrders')">🗑️ المحذوفات <span id="deletedOrdersCount" class="badge">0</span></button><button data-menu-key="add" onclick="go('add','add')">➕ طلب جديد</button><button data-menu-key="bulk" onclick="go('bulk','bulk')">📋 لصق طلبات دفعة واحدة</button><button data-menu-key="pdfImport" onclick="go('pdfImport','pdfImport')">📄 استيراد PDF</button><div id=stateMenu></div><button id="customerChangesMenu" data-menu-key="customerChanges" onclick="go('customerChanges','customerChanges')">🔄 تغيير الزبون <span id="customerChangeCount" class="badge">0</span></button><button id="returnBatchesMenu" data-menu-key="returnBatches" onclick="go('returnBatches','returnBatches')">↩ طلبات رجوع الطلبات <span id="returnBatchCount" class="badge">0</span></button><button id="returnedOrdersMenu" data-menu-key="returnedOrders" onclick="go('returnedOrders','returnedOrders')">✅ تم إرجاع الطلب <span id="returnedOrdersCount" class="badge">0</span></button><button id="deliveryTransfersMenu" data-menu-key="deliveryTransfers" onclick="go('deliveryTransfers','deliveryTransfers')">🚚 في الطريق <span id="deliveryTransferCount" class="badge transit-badge">0</span></button><button data-menu-key="workers" onclick="go('workers','workers')">👤 الموزعون</button><button data-menu-key="accounts" onclick="go('accounts','accounts')">💰 الحسابات</button><button data-menu-key="invoices" onclick="go('invoices','invoices')">🧾 الفواتير</button><button data-menu-key="backupSafe" onclick="go('backupSafe','backupSafe')">🛡️ النسخ الاحتياطي</button><button data-menu-key="cloudSetup" onclick="go('cloudSetup','cloudSetup')">☁️ المزامنة السحابية</button><button data-menu-key="emergencySync" onclick="go('emergencySync','emergencySync')">🔄 مزامنة الموزع</button></aside><main>
+<div class=app><aside><h3>القائمة</h3><button data-menu-key="home" onclick="go('list','home')">🏠 الرئيسية</button><button data-menu-key="deletedOrders" onclick="go('deletedOrders','deletedOrders')">🗑️ المحذوفات <span id="deletedOrdersCount" class="badge">0</span></button><button data-menu-key="add" onclick="go('add','add')">➕ طلب جديد</button><button data-menu-key="bulk" onclick="go('bulk','bulk')">📋 لصق طلبات دفعة واحدة</button><button data-menu-key="pdfImport" onclick="go('pdfImport','pdfImport')">📄 استيراد PDF</button><div id=stateMenu></div><button id="customerChangesMenu" data-menu-key="customerChanges" onclick="go('customerChanges','customerChanges')">🔄 تغيير الزبون <span id="customerChangeCount" class="badge">0</span></button><button id="returnBatchesMenu" data-menu-key="returnBatches" onclick="go('returnBatches','returnBatches')">↩ طلبات رجوع الطلبات <span id="returnBatchCount" class="badge">0</span></button><button id="returnedOrdersMenu" data-menu-key="returnedOrders" onclick="go('returnedOrders','returnedOrders')">✅ تم إرجاع الطلب <span id="returnedOrdersCount" class="badge">0</span></button><button id="deliveryTransfersMenu" data-menu-key="deliveryTransfers" onclick="go('deliveryTransfers','deliveryTransfers')">🚚 في الطريق <span id="deliveryTransferCount" class="badge transit-badge">0</span></button><button data-menu-key="workers" onclick="go('workers','workers')">👤 الموزعون</button><button data-menu-key="accounts" onclick="go('accounts','accounts')">💰 الحسابات</button><button data-menu-key="invoices" onclick="go('invoices','invoices')">🧾 الفواتير</button><button data-menu-key="systemHealth" onclick="go('systemHealth','systemHealth')">🩺 صحة النظام <span id="healthIssueCount" class="badge">0</span></button><button data-menu-key="backupSafe" onclick="go('backupSafe','backupSafe')">🛡️ النسخ الاحتياطي</button><button data-menu-key="cloudSetup" onclick="go('cloudSetup','cloudSetup')">☁️ المزامنة السحابية</button><button data-menu-key="emergencySync" onclick="go('emergencySync','emergencySync')">🔄 مزامنة الموزع</button></aside><main>
 <section id=list class="page on"><div class=card><h2 id=title>قيد التوزيع</h2>
 <div class=grid>
 <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
-  <input id=search style="flex:1;min-width:190px" placeholder="بحث في الطلبات الحالية" oninput="render()" onkeydown="if(event.key==='Enter'){event.preventDefault();runOrderSearch()}">
+  <input id=search style="flex:1;min-width:190px" placeholder="بحث في الطلبات الحالية" oninput="debouncedRenderV180()" onkeydown="if(event.key==='Enter'){event.preventDefault();runOrderSearch()}">
   <button type="button" class="btn" onclick="runOrderSearch()">🔎 بحث</button>
   <button type="button" class="btn gr" onclick="clearOrderSearch()">مسح</button>
 </div>
@@ -605,6 +605,36 @@ html[data-lang="fr"] th,html[data-lang="fr"] td{text-align:left}
 
 
 
+
+<section id="systemHealth" class="page">
+  <div class="card">
+    <h2>🩺 صحة النظام — AK Delivery 180</h2>
+    <div id="healthSummaryV180">جارٍ الفحص...</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">
+      <button class="btn g" onclick="renderSystemHealthV180()">🔄 تحديث الفحص</button>
+      <button class="btn" onclick="runSelfTestsV180()">🧪 تشغيل الاختبارات</button>
+      <button class="btn gr" onclick="copyDiagnosticsV180()">📋 نسخ التشخيص</button>
+      <button class="btn gr" onclick="downloadDiagnosticsV180()">⬇️ تنزيل سجل التشخيص</button>
+    </div>
+  </div>
+  <div class="card">
+    <h3>حالة المزامنة</h3>
+    <div id="syncHealthV180"></div>
+  </div>
+  <div class="card">
+    <h3>فحص سلامة البيانات</h3>
+    <div id="integrityHealthV180"></div>
+  </div>
+  <div class="card">
+    <h3>آخر العمليات والأخطاء</h3>
+    <div id="opsLogV180" style="max-height:340px;overflow:auto"></div>
+  </div>
+  <div class="card">
+    <h3>نتيجة الاختبارات الداخلية</h3>
+    <div id="selfTestsV180">لم يتم تشغيل الاختبارات بعد.</div>
+  </div>
+</section>
+
 <section id="cloudSetup" class="page">
 <div class="card">
 <h2>☁️ AK Delivery Cloud</h2>
@@ -615,6 +645,10 @@ html[data-lang="fr"] th,html[data-lang="fr"] td{text-align:left}
 <button class="btn" onclick="cloudPush()">⬆️ رفع البيانات</button>
 </div>
 <div id="cloudStatus" style="margin-top:12px"><b>الحالة:</b> جاهز</div>
+<div id="cloudReadWriteStatusV180" style="margin-top:10px;padding:10px;border:1px solid #e5e7eb;border-radius:8px">
+  <b>القراءة:</b> — &nbsp; | &nbsp; <b>الحفظ:</b> —
+</div>
+
 </div>
 </section>
 <section id=emergencySync class=page>
@@ -842,7 +876,7 @@ function createLocalSnapshot(){
   let payload=fullBackupPayload();
   payload.snapshotId=Date.now();
   snaps.unshift(payload);
-  snaps=snaps.slice(0,20);
+  snaps=snaps.slice(0,10);
   try{
     localStorage.setItem(SNAP_KEY,JSON.stringify(snaps));
     localStorage.setItem('delivery_last_snapshot_v45',new Date().toISOString());
@@ -861,7 +895,7 @@ function restoreSnapshot(id){
   let snap=getSnapshots().find(x=>String(x.snapshotId)===String(id)); if(!snap)return;
   if(!confirm('استعادة هذه اللقطة المحلية؟ سيتم حفظ لقطة من الوضع الحالي أولاً.'))return;
   let current=fullBackupPayload(); current.snapshotId=Date.now();
-  let snaps=getSnapshots(); snaps.unshift(current); localStorage.setItem(SNAP_KEY,JSON.stringify(snaps.slice(0,20)));
+  let snaps=getSnapshots(); snaps.unshift(current); localStorage.setItem(SNAP_KEY,JSON.stringify(snaps.slice(0,10)));
   db=snap.data; localStorage.setItem(K,JSON.stringify(db)); location.reload();
 }
 function deleteSnapshot(id){
@@ -2235,9 +2269,9 @@ applyStatusOutboxV173();
 
 function save(){
   dedupeDatabase();
-  localStorage.setItem(K,JSON.stringify(db));
+  persistDbV180('save');
   scheduleAutoSnapshot();scheduleCloudSync();
-  menu();render();renderWorkers();accountsRender();
+  requestUiRefreshV180();
 }
 
 function updateReturnRequestCount(){
@@ -2937,11 +2971,11 @@ function render(){
  const searching=!!String(search?.value||'').trim();
  title.textContent=searching?'نتائج البحث في جميع الطلبات':statusDisplayName(filter);
  let a=visibleOrders();
- rows.innerHTML=a.map(o=>{try{return `<tr${o.deletedAt?' style="opacity:.78;background:#fff3f3"':''}><td><b dir="ltr">${formatSeq(o.seq)}</b></td><td class=code onclick="openOrder('${o.id}')">${o.clientNo||'—'}${o.deletedAt?'<div><span class="badge" style="background:#b91c1c;color:white">محذوف</span></div>':''}</td><td>${o.recipient||'—'}</td><td>${o.address||'—'}${o.city?'، '+o.city:''}</td><td class="stay-days-col" style="text-align:center">${daysBadge(o)}</td><td>
-<div dir="ltr" style="direction:ltr;unicode-bidi:bidi-override;display:inline-block">${o.phone}</div>
+ rows.innerHTML=a.map(o=>{try{return `<tr${o.deletedAt?' style="opacity:.78;background:#fff3f3"':''}><td><b dir="ltr">${formatSeq(o.seq)}</b></td><td class=code onclick="openOrder('${o.id}')">${o.clientNo||'—'}${o.deletedAt?'<div><span class="badge" style="background:#b91c1c;color:white">محذوف</span></div>':''}</td><td>${htmlEscape(o.recipient||'—')}</td><td>${htmlEscape(o.address||'—')}${o.city?'، '+htmlEscape(o.city):''}</td><td class="stay-days-col" style="text-align:center">${daysBadge(o)}</td><td>
+<div dir="ltr" style="direction:ltr;unicode-bidi:bidi-override;display:inline-block">${htmlEscape(o.phone||"")}</div>
 <div style="margin-top:4px;display:flex;gap:4px;flex-wrap:wrap">
-<button class="btn g" style="padding:5px 7px;font-size:11px" onclick="contactPhone('${o.phone}')">📞</button>
-<button class="btn c" style="padding:5px 7px;font-size:11px" onclick="contactWhatsApp('${o.phone}','${o.recipient}')">💬</button>
+<button class="btn g" style="padding:5px 7px;font-size:11px" onclick="contactPhone(decodeURIComponent('${encodeURIComponent(String(o.phone||''))}'))">📞</button>
+<button class="btn c" style="padding:5px 7px;font-size:11px" onclick="contactWhatsApp(decodeURIComponent('${encodeURIComponent(String(o.phone||''))}'),decodeURIComponent('${encodeURIComponent(String(o.recipient||''))}'))">💬</button>
 </div>
 </td><td>
   <b>${cash(o.amount)}</b>
@@ -4484,7 +4518,10 @@ function exportExcel(){
  if(!data.length)return alert('لا توجد طلبات لتصديرها');
  let headers=['رقم الترتيب','رمز الطلب','المرسل','المستلم','العنوان','المدينة','الهاتف','المنتج','القيمة','الموزع','الحالة','سبب الرفض','مؤجل إلى','تاريخ الإدخال','آخر تعليق'];
  let body=data.map(r=>`<tr><td>${htmlEscape(r.seq)}</td><td>${htmlEscape(r.code)}</td><td>${htmlEscape(r.sender)}</td><td>${htmlEscape(r.recipient)}</td><td>${htmlEscape(r.address)}</td><td>${htmlEscape(r.city)}</td><td style="mso-number-format:'\\@'">${htmlEscape(r.phone)}</td><td>${htmlEscape(r.product)}</td><td>${r.amount}</td><td>${htmlEscape(r.worker)}</td><td>${htmlEscape(r.status)}</td><td>${htmlEscape(r.reject)}</td><td>${htmlEscape(r.postpone)}</td><td>${htmlEscape(r.created)}</td><td>${htmlEscape(r.comment)}</td></tr>`).join('');
- let html=`<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel"><head><meta charset="utf-8"></head><body><table border="1"><tr>${headers.map(h=>`<th>${h}</th>`).join('')}</tr>${body}</table></body></html>`;
+ let html=`<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel"><head><meta charset="utf-8"></head><body><table border="1"><tr>${headers.map(h=>`<th>${h}</th>`).join('')}</tr>${body}</table>
+
+
+</body></html>`;
  let blob=new Blob(['\ufeff',html],{type:'application/vnd.ms-excel;charset=utf-8'});
  let a=document.createElement('a');a.href=URL.createObjectURL(blob);
  a.download='بيانات_الطلبات_'+String(filter).replace(/\s+/g,'_')+'.xls';
@@ -4999,7 +5036,7 @@ function directNavigate(key){
         home:'list',deletedOrders:'deletedOrders',add:'add',bulk:'bulk',pdfImport:'pdfImport',
         returnCreate:'returnBatches',returnBatches:'returnBatches',returnedOrders:'returnedOrders',customerChanges:'customerChanges',
         deliveryTransfers:'deliveryTransfers',workers:'workers',
-        accounts:'accounts',invoices:'invoices',backupSafe:'backupSafe',
+        accounts:'accounts',invoices:'invoices',backupSafe:'backupSafe',systemHealth:'systemHealth',
         cloudSetup:'cloudSetup',emergencySync:'emergencySync'
       };
       target=map[key]||'';
@@ -5007,7 +5044,7 @@ function directNavigate(key){
       if(key==='home')filter='الكل';
     }
     if(!target)return false;
-    if(session.role==='worker'&&['deletedOrders','add','bulk','pdfImport','returnCreate','workers','accounts','invoices','backupSafe','cloudSetup','emergencySync'].includes(target))return false;
+    if(session.role==='worker'&&['deletedOrders','add','bulk','pdfImport','returnCreate','workers','accounts','invoices','backupSafe','systemHealth','cloudSetup','emergencySync'].includes(target))return false;
 
     sidebarActiveKey=key==='returnCreate'?'returnBatches':key;
     document.querySelectorAll('main > .page').forEach(p=>p.classList.remove('on'));
@@ -5029,6 +5066,7 @@ function directNavigate(key){
         renderDeliveryTransfers();
       }
       else if(target==='backupSafe'){updateBackupStatus();showLocalSnapshots();}
+      else if(target==='systemHealth')renderSystemHealthV180();
       else if(target==='emergencySync')renderEmergencySync();
       else if(target==='cloudSetup')updateCloudStatus('جاهز');
     }catch(e){console.error('page render',e);}
@@ -5216,4 +5254,330 @@ document.addEventListener('DOMContentLoaded',function(){
 </script>
 
 
+<script>
+/* AK Delivery 180 Stable — جودة، تشخيص، سلامة بيانات، أداء */
+
+/* ---------- سجل العمليات ---------- */
+const AK180_LOG_KEY='ak_delivery_ops_log_v180';
+const AK180_LAST_READ='ak_delivery_cloud_last_read_v180';
+const AK180_LAST_WRITE='ak_delivery_cloud_last_write_v180';
+let ak180UiFrame=0, ak180SearchTimer=null;
+
+function akLogV180(type,msg,extra){
+  try{
+    const arr=JSON.parse(localStorage.getItem(AK180_LOG_KEY)||'[]');
+    arr.unshift({
+      time:new Date().toISOString(),
+      type:String(type||'info'),
+      msg:String(msg||''),
+      extra:extra==null?'':String(extra)
+    });
+    localStorage.setItem(AK180_LOG_KEY,JSON.stringify(arr.slice(0,50)));
+  }catch(_){}
+}
+function akLogsV180(){
+  try{const x=JSON.parse(localStorage.getItem(AK180_LOG_KEY)||'[]');return Array.isArray(x)?x:[]}catch(_){return []}
+}
+
+/* ---------- حفظ أكثر أماناً ---------- */
+function persistDbV180(reason){
+  try{
+    localStorage.setItem(K,JSON.stringify(db));
+    return true;
+  }catch(e){
+    akLogV180('storage-error','فشل حفظ قاعدة البيانات',e&&e.message);
+    try{runtimeDiag('تعذر حفظ البيانات محلياً: '+(e&&e.message?e.message:'مساحة التخزين ممتلئة'));}catch(_){}
+    return false;
+  }
+}
+function requestUiRefreshV180(){
+  if(ak180UiFrame)return;
+  const raf=window.requestAnimationFrame||function(cb){return setTimeout(cb,16)};
+  ak180UiFrame=raf(()=>{
+    ak180UiFrame=0;
+    try{menu();}catch(e){akLogV180('ui-error','menu',e.message)}
+    try{render();}catch(e){akLogV180('ui-error','render',e.message)}
+    try{renderWorkers();}catch(e){akLogV180('ui-error','renderWorkers',e.message)}
+    try{accountsRender();}catch(e){akLogV180('ui-error','accountsRender',e.message)}
+  });
+}
+function debouncedRenderV180(){
+  clearTimeout(ak180SearchTimer);
+  ak180SearchTimer=setTimeout(()=>{try{render();}catch(e){akLogV180('ui-error','بحث الطلبات',e.message)}},180);
+}
+
+/* ---------- فحص سلامة البيانات: قراءة فقط ---------- */
+function scanIntegrityV180(){
+  const issues=[];
+  const orders=Array.isArray(db?.orders)?db.orders:[];
+  const workers=Array.isArray(db?.workers)?db.workers:[];
+  const returns=Array.isArray(db?.returnBatches)?db.returnBatches:[];
+  const transfers=Array.isArray(db?.deliveryTransfers)?db.deliveryTransfers:[];
+  const settlements=Array.isArray(db?.settlements)?db.settlements:[];
+  const activeOrders=orders.filter(o=>o&&!o.deletedAt&&!o.duplicateHidden);
+  const workerIds=new Set(workers.filter(w=>w&&!w.deletedAt).map(w=>String(w.id)));
+  const orderIds=new Set(orders.filter(Boolean).map(o=>String(o.id)));
+
+  const codeOwner=new Map();
+  for(const o of activeOrders){
+    const code=String(o.clientNo||'').trim().toUpperCase();
+    if(code){
+      if(codeOwner.has(code))issues.push({kind:'duplicate',text:'رمز طلب مكرر: '+code});
+      else codeOwner.set(code,o.id);
+    }
+    if(o.worker&&!workerIds.has(String(o.worker)))
+      issues.push({kind:'worker',text:'طلب مرتبط بموزع غير موجود: '+(o.clientNo||o.seq||o.id)});
+  }
+  for(const b of returns.filter(Boolean)){
+    for(const id of (b.orderIds||[])){
+      if(!orderIds.has(String(id)))issues.push({kind:'return',text:'حزمة رجوع تشير إلى طلب غير موجود: '+(b.code||b.id)});
+    }
+    if((b.status==='owner_confirmed'||b.ownerConfirmedAt)){
+      const open=(b.orderIds||[]).map(id=>orders.find(o=>String(o?.id)===String(id))).filter(o=>o&&!o.deletedAt&&!o.returnOwnerConfirmedAt);
+      if(open.length)issues.push({kind:'return',text:'حزمة مؤكدة لدى المالك وبداخلها '+open.length+' طلب غير مؤكد فردياً: '+(b.code||b.id)});
+    }
+  }
+  for(const t of transfers.filter(x=>x&&!x.deletedAt)){
+    if(t.orderId!=null&&!orderIds.has(String(t.orderId)))issues.push({kind:'transfer',text:'سجل إرسال يشير إلى طلب غير موجود: '+(t.id||'—')});
+  }
+  for(const st of settlements.filter(x=>x&&!x.deletedAt)){
+    for(const id of (st.orderIds||[])){
+      if(!orderIds.has(String(id)))issues.push({kind:'settlement',text:'تسوية تشير إلى طلب غير موجود: '+(st.invoiceNo||st.id||'—')});
+    }
+  }
+  let outbox=[];
+  try{outbox=typeof readStatusOutbox==='function'?readStatusOutbox():[]}catch(_){}
+  for(const ev of outbox){
+    if(!orderIds.has(String(ev.orderId)))issues.push({kind:'sync',text:'حدث مزامنة معلق لطلب غير موجود: '+ev.orderId});
+  }
+  return issues.slice(0,200);
+}
+
+function storageSizeV180(){
+  try{
+    let n=0;
+    for(let i=0;i<localStorage.length;i++){
+      const k=localStorage.key(i),v=localStorage.getItem(k)||'';
+      n+=(String(k).length+v.length)*2;
+    }
+    return n;
+  }catch(_){return 0}
+}
+function fmtBytesV180(n){
+  if(n<1024)return n+' B';
+  if(n<1024*1024)return (n/1024).toFixed(1)+' KB';
+  return (n/1024/1024).toFixed(2)+' MB';
+}
+function fmtTimeV180(v){
+  if(!v)return 'لم يحدث بعد';
+  try{return new Date(v).toLocaleString('ar-MA')}catch(_){return String(v)}
+}
+
+/* ---------- صفحة صحة النظام ---------- */
+function renderSystemHealthV180(){
+  const issues=scanIntegrityV180();
+  const orders=Array.isArray(db?.orders)?db.orders:[];
+  const active=orders.filter(o=>o&&!o.deletedAt&&!o.duplicateHidden);
+  let outbox=[];try{outbox=readStatusOutbox()}catch(_){}
+  const pendingOrders=active.filter(o=>o.pendingStatusSync).length;
+  const localPending=localStorage.getItem(CLOUD_PENDING_KEY)==='1';
+  const lastRead=localStorage.getItem(AK180_LAST_READ)||localStorage.getItem('ak_delivery_last_cloud_pull');
+  const lastWrite=localStorage.getItem(AK180_LAST_WRITE)||localStorage.getItem('ak_delivery_last_cloud_push');
+  const lastOk=localStorage.getItem(CLOUD_LAST_OK_KEY);
+  const lastErr=localStorage.getItem(CLOUD_LAST_ERROR_KEY)||'';
+  const storage=storageSizeV180();
+
+  const hs=document.getElementById('healthSummaryV180');
+  if(hs)hs.innerHTML=
+    `<div class="grid">
+      <div><b>الطلبات النشطة</b><h2>${active.length}</h2></div>
+      <div><b>مشاكل سلامة البيانات</b><h2>${issues.length}</h2></div>
+      <div><b>أحداث مزامنة معلقة</b><h2>${outbox.length}</h2></div>
+      <div><b>مساحة التخزين المحلية</b><h2 style="font-size:18px">${fmtBytesV180(storage)}</h2></div>
+    </div>`;
+
+  const sh=document.getElementById('syncHealthV180');
+  if(sh)sh.innerHTML=
+    `<p><b>الإنترنت:</b> ${navigator.onLine?'متصل':'غير متصل'}</p>
+     <p><b>آخر قراءة سحابية مؤكدة:</b> ${htmlEscape(fmtTimeV180(lastRead))}</p>
+     <p><b>آخر حفظ سحابي مؤكد:</b> ${htmlEscape(fmtTimeV180(lastWrite))}</p>
+     <p><b>آخر اتصال ناجح:</b> ${htmlEscape(fmtTimeV180(lastOk))}</p>
+     <p><b>تغييرات محلية بانتظار المزامنة:</b> ${localPending?'نعم':'لا'}</p>
+     <p><b>طلبات تحمل انتظار حالة:</b> ${pendingOrders}</p>
+     ${lastErr?`<p style="color:#b42318"><b>آخر خطأ:</b> ${htmlEscape(lastErr)}</p>`:''}`;
+
+  const ih=document.getElementById('integrityHealthV180');
+  if(ih)ih.innerHTML=issues.length
+    ?`<div style="color:#9a3412"><b>وجد الفحص ${issues.length} ملاحظة. لم يتم حذف أو تعديل أي بيانات.</b></div>`+
+      issues.slice(0,40).map(x=>`<div style="padding:6px 0;border-bottom:1px solid #eee">⚠ ${htmlEscape(x.text)}</div>`).join('')
+    :'<b style="color:#166534">✓ لم يجد الفحص تعارضات واضحة في بنية البيانات.</b>';
+
+  const lg=document.getElementById('opsLogV180');
+  const logs=akLogsV180();
+  if(lg)lg.innerHTML=logs.length?logs.map(x=>
+    `<div style="padding:6px 0;border-bottom:1px solid #eee"><b>${htmlEscape(fmtTimeV180(x.time))}</b> — ${htmlEscape(x.type)} — ${htmlEscape(x.msg)}${x.extra?' — '+htmlEscape(x.extra):''}</div>`
+  ).join(''):'لا توجد أخطاء أو عمليات مسجلة بعد.';
+
+  const badge=document.getElementById('healthIssueCount');
+  if(badge)badge.textContent=String(issues.length+outbox.length+(lastErr?1:0));
+
+  updateCloudReadWriteStatusV180();
+}
+
+/* ---------- اختبارات داخلية آمنة ---------- */
+function runSelfTestsV180(){
+  const tests=[];
+  const add=(name,ok,detail='')=>tests.push({name,ok:!!ok,detail});
+  try{
+    add('قاعدة الطلبات',Array.isArray(db?.orders));
+    add('قاعدة الموزعين',Array.isArray(db?.workers));
+    add('حزم الرجوع',Array.isArray(db?.returnBatches));
+    add('سجلات الإرسال',Array.isArray(db?.deliveryTransfers));
+    add('دالة الحفظ',typeof save==='function');
+    add('جلب السحابة',typeof cloudPull==='function');
+    add('رفع المالك',typeof cloudPush==='function');
+    add('رفع الموزع',typeof workerCloudPush==='function');
+    add('طابور حالات الموزع',typeof readStatusOutbox==='function');
+    add('تنظيف أعلام الانتظار',typeof stripTransientSyncFlagsV175==='function');
+    add('عنوان السحابة',typeof CLOUD_URL==='string'&&CLOUD_URL.includes('/exec'));
+    add('مفتاح السحابة',typeof CLOUD_KEY==='string'&&CLOUD_KEY.length>5);
+    add('لا توجد معرفات طلب مكررة',
+      new Set((db.orders||[]).filter(Boolean).map(o=>String(o.id))).size===(db.orders||[]).filter(Boolean).length);
+    const issues=scanIntegrityV180();
+    add('فحص سلامة البيانات',issues.length===0,issues.length?('الملاحظات: '+issues.length):'');
+  }catch(e){add('تشغيل الاختبارات',false,e.message)}
+  const failed=tests.filter(t=>!t.ok).length;
+  const el=document.getElementById('selfTestsV180');
+  if(el)el.innerHTML=`<p><b>${failed?'توجد اختبارات تحتاج مراجعة':'جميع الاختبارات الأساسية ناجحة'} — ${tests.length-failed}/${tests.length}</b></p>`+
+    tests.map(t=>`<div style="padding:5px 0">${t.ok?'✅':'❌'} ${htmlEscape(t.name)}${t.detail?' — '+htmlEscape(t.detail):''}</div>`).join('');
+  akLogV180('self-test',failed?'اختبارات تحتاج مراجعة':'الاختبارات الأساسية ناجحة',failed+' فشل');
+  renderSystemHealthV180();
+  return failed===0;
+}
+
+/* ---------- تشخيص قابل للنسخ والتنزيل ---------- */
+function diagnosticsTextV180(){
+  const issues=scanIntegrityV180();
+  let outbox=[];try{outbox=readStatusOutbox()}catch(_){}
+  const payload={
+    app:'AK Delivery 180 Stable',
+    time:new Date().toISOString(),
+    online:navigator.onLine,
+    role:session?.role||null,
+    orders:(db.orders||[]).length,
+    activeOrders:(db.orders||[]).filter(o=>o&&!o.deletedAt&&!o.duplicateHidden).length,
+    workers:(db.workers||[]).filter(w=>w&&!w.deletedAt).length,
+    pendingCloud:localStorage.getItem(CLOUD_PENDING_KEY)==='1',
+    statusOutbox:outbox.length,
+    lastRead:localStorage.getItem(AK180_LAST_READ)||localStorage.getItem('ak_delivery_last_cloud_pull'),
+    lastWrite:localStorage.getItem(AK180_LAST_WRITE)||localStorage.getItem('ak_delivery_last_cloud_push'),
+    lastError:localStorage.getItem(CLOUD_LAST_ERROR_KEY)||null,
+    integrityIssues:issues,
+    logs:akLogsV180()
+  };
+  return JSON.stringify(payload,null,2);
+}
+async function copyDiagnosticsV180(){
+  const txt=diagnosticsTextV180();
+  try{await navigator.clipboard.writeText(txt);showToast('تم نسخ التشخيص ✓');}
+  catch(_){showToast('تعذر النسخ التلقائي — استخدم تنزيل سجل التشخيص');}
+}
+function downloadDiagnosticsV180(){
+  const blob=new Blob([diagnosticsTextV180()],{type:'application/json;charset=utf-8'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);
+  a.download='AK_Delivery_180_Diagnostics_'+safeFileDate()+'.json';
+  document.body.appendChild(a);a.click();a.remove();
+  setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+}
+
+/* ---------- تمييز القراءة عن الحفظ السحابي ---------- */
+function updateCloudReadWriteStatusV180(){
+  const el=document.getElementById('cloudReadWriteStatusV180');if(!el)return;
+  const rd=localStorage.getItem(AK180_LAST_READ)||localStorage.getItem('ak_delivery_last_cloud_pull');
+  const wr=localStorage.getItem(AK180_LAST_WRITE)||localStorage.getItem('ak_delivery_last_cloud_push');
+  el.innerHTML=`<b>القراءة:</b> ${htmlEscape(fmtTimeV180(rd))} &nbsp; | &nbsp; <b>الحفظ:</b> ${htmlEscape(fmtTimeV180(wr))}`;
+}
+
+/* نراقب الوظائف الموجودة من دون تغيير منطقها */
+(function(){
+  try{
+    const originalPull=cloudPull;
+    cloudPull=async function(){
+      const started=Date.now();
+      try{
+        const ok=await originalPull.apply(this,arguments);
+        if(ok){
+          localStorage.setItem(AK180_LAST_READ,new Date().toISOString());
+          akLogV180('cloud-read','تمت قراءة السحابة بنجاح',(Date.now()-started)+'ms');
+        }else akLogV180('cloud-read-fail','فشلت قراءة السحابة');
+        updateCloudReadWriteStatusV180();
+        return ok;
+      }catch(e){akLogV180('cloud-read-error','خطأ في قراءة السحابة',e.message);throw e}
+    };
+  }catch(_){}
+  try{
+    const originalPush=cloudPush;
+    cloudPush=async function(){
+      const started=Date.now();
+      try{
+        const ok=await originalPush.apply(this,arguments);
+        if(ok){
+          localStorage.setItem(AK180_LAST_WRITE,new Date().toISOString());
+          akLogV180('cloud-write','تم حفظ بيانات المالك في السحابة',(Date.now()-started)+'ms');
+        }else akLogV180('cloud-write-fail','فشل حفظ بيانات المالك في السحابة');
+        updateCloudReadWriteStatusV180();
+        return ok;
+      }catch(e){akLogV180('cloud-write-error','خطأ في حفظ السحابة',e.message);throw e}
+    };
+  }catch(_){}
+  try{
+    const originalWorkerPush=workerCloudPush;
+    workerCloudPush=async function(){
+      const started=Date.now();
+      try{
+        const ok=await originalWorkerPush.apply(this,arguments);
+        if(ok){
+          localStorage.setItem(AK180_LAST_WRITE,new Date().toISOString());
+          akLogV180('worker-write','تم حفظ تحديثات الموزع في السحابة',(Date.now()-started)+'ms');
+        }else akLogV180('worker-write-fail','فشل حفظ تحديثات الموزع');
+        updateCloudReadWriteStatusV180();
+        return ok;
+      }catch(e){akLogV180('worker-write-error','خطأ في رفع الموزع',e.message);throw e}
+    };
+  }catch(_){}
+  try{
+    const originalStatusTx=workerPushOrderStatusTransaction;
+    workerPushOrderStatusTransaction=async function(orderId,status){
+      const ok=await originalStatusTx.apply(this,arguments);
+      akLogV180(ok?'status-confirmed':'status-pending',
+        (ok?'تأكدت حالة الطلب سحابياً: ':'تعذر تأكيد حالة الطلب: ')+String(status||''),
+        String(orderId||''));
+      if(ok)localStorage.setItem(AK180_LAST_WRITE,new Date().toISOString());
+      return ok;
+    };
+  }catch(_){}
+})();
+
+/* سجل أخطاء الواجهة بدون إزعاج المستخدم */
+window.addEventListener('error',e=>akLogV180('js-error',e.message||'خطأ برمجي','line '+(e.lineno||'')));
+window.addEventListener('unhandledrejection',e=>akLogV180('promise-error',(e.reason&&e.reason.message)||String(e.reason||'')));
+
+/* تحديث المؤشرات عند تغير الاتصال */
+window.addEventListener('online',()=>akLogV180('network','عاد الاتصال بالإنترنت'));
+window.addEventListener('offline',()=>akLogV180('network','انقطع الاتصال بالإنترنت'));
+
+/* فحص خفيف دوري لا يعدّل البيانات */
+setInterval(()=>{
+  try{
+    const badge=document.getElementById('healthIssueCount');
+    if(badge){
+      let q=[];try{q=readStatusOutbox()}catch(_){}
+      badge.textContent=String(scanIntegrityV180().length+q.length+(localStorage.getItem(CLOUD_LAST_ERROR_KEY)?1:0));
+    }
+  }catch(_){}
+},15000);
+
+akLogV180('boot','تشغيل AK Delivery 180 Stable');
+try{updateCloudReadWriteStatusV180();}catch(_){}
+</script>
 </body></html>
