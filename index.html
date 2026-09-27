@@ -4301,9 +4301,8 @@ function renderOwnerRestore(o){
  let box=document.getElementById('ownerRestoreBox');
  if(!box)return;
  const isOwner=(session&&session.role==='owner')||ownerMode===true;
- const prev=isOwner&&o?previousStatusForUndoV180(o):'';
- if(isOwner && o && prev){
-   box.innerHTML=`<button class="btn g" style="width:100%;font-size:16px" onclick="restoreToDelivery()">↩ التراجع إلى الحالة السابقة: ${htmlEscape(statusDisplayName(prev))}</button>`;
+ if(isOwner && o && o.status!=='قيد التوزيع'){
+   box.innerHTML=`<button class="btn g" style="width:100%;font-size:16px" onclick="restoreToDelivery()">↩ إعادة إلى قيد التوزيع</button>`;
  }else box.innerHTML='';
 }
 
@@ -4355,39 +4354,38 @@ async function restoreToDelivery(){
  if(!isOwner)return alert('هذه الصلاحية للمالك فقط');
  const id=current;
  let o=db.orders.find(x=>String(x.id)===String(id));if(!o)return;
- const from=String(o.status||''), target=previousStatusForUndoV180(o);
- if(!target)return alert('تعذر تحديد الحالة السابقة لهذا الطلب من السجل');
- const guard=canUndoStatusV180(o,target);
- if(!guard.ok)return alert(guard.msg);
- if(!confirm('التراجع عن آخر تغيير للحالة؟\nمن «'+statusDisplayName(from)+'» إلى «'+statusDisplayName(target)+'»'))return;
+ const previous=String(o.status||'');
+ if(previous==='قيد التوزيع')return;
+
+ if(!confirm('إعادة هذا الطلب من «'+statusDisplayName(previous)+'» إلى «قيد التوزيع»؟'))return;
 
  createLocalSnapshot();
 
- // تنظيف آثار الحالة التي نتراجع عنها فقط.
- if(from==='رفض')o.rejectReason='';
- if(from==='مؤجل')o.postponeDate='';
- if(from==='ملغى'){delete o.cancelReason;delete o.cancelledAt;}
- if(from==='طلب رجوع'){
+ // إزالة آثار الحالات المؤقتة عند إعادة الطلب للعمل.
+ if(previous==='رفض')o.rejectReason='';
+ if(previous==='مؤجل')o.postponeDate='';
+ if(previous==='ملغى'){delete o.cancelReason;delete o.cancelledAt;}
+
+ // إذا كان الطلب داخل رجوع مفتوح فقط، نفصله من الرجوع.
+ // لا نحذف السجلات التاريخية للحزم المكتملة.
+ const openReturn=(db.returnBatches||[]).some(b=>b&&!b.deletedAt&&b.status==='pending'&&
+   (b.orderIds||[]).map(String).includes(String(o.id)));
+ if(openReturn){
    detachOrderFromPendingReturns(o);
-   delete o.returnBatchId;delete o.returnBatchCode;delete o.returnRequestedAt;
- }
- // لا نفك أرشيف رجوع نهائي تلقائياً.
- if(from==='مرتجع' && !isOrderReturnArchived(o)){
-   detachOrderFromPendingReturns(o);
-   delete o.returnBatchId;delete o.returnBatchCode;delete o.returnCompletedAt;
+   delete o.returnBatchId;delete o.returnBatchCode;delete o.returnRequestedAt;delete o.returnCompletedAt;
    delete o.returnOwnerConfirmedAt;delete o.returnOwnerConfirmedLabel;
  }
 
  const now=isoNow();
- o.previousStatusBeforeChangeV180=from;
+ o.previousStatusBeforeChangeV180=previous;
  o.previousStatusChangedAtV180=now;
- o.status=target;
+ o.status='قيد التوزيع';
  o.statusEnteredAt=now;
  o.statusChangedAtV173=now;
- o.statusEventIdV173='UNDO180-'+Date.now()+'-'+Math.random().toString(36).slice(2,8);
- appendOrderHistory(o,'تراجع المالك عن آخر تغيير للحالة: من «'+from+'» إلى «'+target+'»');
+ o.statusEventIdV173='RESTORE180-'+Date.now()+'-'+Math.random().toString(36).slice(2,8);
+ appendOrderHistory(o,'أعاد المالك الطلب من «'+previous+'» إلى «قيد التوزيع»');
 
- persistDbV180('owner-status-undo');
+ persistDbV180('restore-to-delivery');
  localStorage.setItem(CLOUD_PENDING_KEY,'1');
  scheduleCloudSync();
  requestUiRefreshV180();
@@ -4397,14 +4395,13 @@ async function restoreToDelivery(){
  if(navigator.onLine){
    const ok=await syncNow(true);
    if(ok){
-     showToast('✅ عادت الحالة السابقة وحُفظ التصحيح في السحابة',4200);
+     showToast('✅ عاد الطلب إلى قيد التوزيع وحُفظ في السحابة',4200);
      return true;
    }
  }
- showToast('✅ عادت الحالة السابقة محلياً وسيعاد إرسالها للسحابة تلقائياً',4800);
+ showToast('✅ عاد الطلب إلى قيد التوزيع محلياً وسيتم إرساله للسحابة تلقائياً',4800);
  return true;
 }
-
 function rejectOrder(){
  let o=db.orders.find(x=>x.id===current); if(!o)return;
  let reason=document.getElementById('rejectReason').value;
