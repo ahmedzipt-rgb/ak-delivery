@@ -524,6 +524,37 @@ html[data-view-mode="mobile"] #overlay > .drawer #detail{
   max-width:none!important;
   overflow:visible!important;
 }
+
+/* v185: تفاصيل الطلب كاملة في العربية والفرنسية */
+html[data-view-mode="desktop"][data-lang="ar"] #overlay > .drawer{
+  left:0!important;right:210px!important;width:auto!important;min-width:0!important;max-width:none!important;
+  direction:rtl!important;text-align:right!important;
+}
+html[data-view-mode="desktop"][data-lang="fr"] #overlay > .drawer{
+  left:210px!important;right:0!important;width:auto!important;min-width:0!important;max-width:none!important;
+  direction:ltr!important;text-align:left!important;
+}
+html[data-view-mode="mobile"] #overlay > .drawer,
+html:not([data-view-mode="desktop"]) #overlay > .drawer{
+  left:0!important;right:0!important;width:100vw!important;min-width:0!important;max-width:100vw!important;
+}
+#overlay > .drawer #detail{
+  display:block!important;width:100%!important;min-width:0!important;max-width:none!important;margin:0!important;padding:0!important;
+  direction:inherit!important;text-align:inherit!important;
+}
+#overlay > .drawer #detail > .info{
+  display:grid!important;width:100%!important;max-width:none!important;min-width:0!important;
+  grid-template-columns:minmax(135px,180px) minmax(0,1fr)!important;
+  gap:9px 14px!important;direction:inherit!important;text-align:inherit!important;align-items:start!important;
+}
+html[data-lang="fr"] #overlay > .drawer #detail > .info{direction:ltr!important;text-align:left!important;}
+html[data-lang="ar"] #overlay > .drawer #detail > .info{direction:rtl!important;text-align:right!important;}
+#overlay > .drawer #detail > .info > b,
+#overlay > .drawer #detail > .info > span{min-width:0!important;max-width:none!important;width:auto!important;overflow-wrap:anywhere!important;}
+#overlay > .drawer .actions{width:100%!important;max-width:none!important;justify-content:flex-start!important;}
+html[data-lang="ar"] #overlay > .drawer .actions{justify-content:flex-start!important;direction:rtl!important;}
+html[data-lang="fr"] #overlay > .drawer .actions{justify-content:flex-start!important;direction:ltr!important;}
+#overlay > .drawer #history,#overlay > .drawer #remarks{width:100%!important;max-width:none!important;}
 </style></head>
 <body>
 <div id="loginScreen" class="login-screen">
@@ -531,7 +562,7 @@ html[data-view-mode="mobile"] #overlay > .drawer #detail{
  <select id="loginWorker"><option value="">اختر حسابك</option></select>
 <input id="loginPin" type="password" inputmode="numeric" placeholder="الرمز السري">
 <div id="loginStatus" style="margin-top:8px;font-weight:700;min-height:22px"></div>
-<div style="margin-top:6px;font-size:12px;opacity:.7">الإصدار 184</div>
+<div style="margin-top:6px;font-size:12px;opacity:.7">الإصدار 185</div>
 <button id="workerLoginBtn" type="button" onclick="workerLogin(event)" class="btn" style="width:100%">دخول الموزع</button>
 <hr>
 <h3>إنشاء حساب موزع</h3>
@@ -3080,21 +3111,28 @@ function orderLifecycleSummary(o){
 function openOrder(id){
  const _drawer=document.querySelector('#overlay > .drawer');
  if(_drawer){
-   // v184: لا نفرض المقاسات القديمة. نضبط اللوحة حسب وضع العرض الفعلي.
-   const mode=document.documentElement.getAttribute('data-view-mode')||'auto';
+   // v185: مكان اللوحة واتجاهها يتبعان اللغة ووضع العرض فعلياً.
+   const root=document.documentElement;
+   const mode=root.getAttribute('data-view-mode')||'auto';
+   const lang=(root.dataset.lang||root.lang||'ar').toLowerCase();
+   const isFr=lang==='fr';
    const desktopMode=(mode==='desktop');
    _drawer.style.setProperty('position','fixed','important');
    _drawer.style.setProperty('top','0','important');
    _drawer.style.setProperty('bottom','0','important');
    if(desktopMode){
-     // اترك القائمة الجانبية ظاهرة، واستعمل كامل المساحة المتبقية للتفاصيل.
-     _drawer.style.setProperty('left','210px','important');
-     _drawer.style.setProperty('right','0','important');
+     // العربية: القائمة يمين، الفرنسية: القائمة يسار.
+     if(isFr){
+       _drawer.style.setProperty('left','210px','important');
+       _drawer.style.setProperty('right','0','important');
+     }else{
+       _drawer.style.setProperty('left','0','important');
+       _drawer.style.setProperty('right','210px','important');
+     }
      _drawer.style.setProperty('width','auto','important');
      _drawer.style.setProperty('min-width','0','important');
      _drawer.style.setProperty('max-width','none','important');
    }else{
-     // في وضع الهاتف تغطي التفاصيل كامل الشاشة بدون قص.
      _drawer.style.setProperty('left','0','important');
      _drawer.style.setProperty('right','0','important');
      _drawer.style.setProperty('width','100vw','important');
@@ -3103,7 +3141,8 @@ function openOrder(id){
    }
    _drawer.style.setProperty('margin','0','important');
    _drawer.style.setProperty('transform','none','important');
-   _drawer.style.setProperty('direction','rtl','important');
+   _drawer.style.setProperty('direction',isFr?'ltr':'rtl','important');
+   _drawer.style.setProperty('text-align',isFr?'left':'right','important');
    _drawer.style.setProperty('overflow-y','auto','important');
    _drawer.style.setProperty('overflow-x','hidden','important');
  }
