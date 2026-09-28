@@ -562,7 +562,7 @@ html[data-lang="fr"] #overlay > .drawer .actions{justify-content:flex-start!impo
  <select id="loginWorker"><option value="">اختر حسابك</option></select>
 <input id="loginPin" type="password" inputmode="numeric" placeholder="الرمز السري">
 <div id="loginStatus" style="margin-top:8px;font-weight:700;min-height:22px"></div>
-<div style="margin-top:6px;font-size:12px;opacity:.7">الإصدار 185</div>
+<div style="margin-top:6px;font-size:12px;opacity:.7">الإصدار 186</div>
 <button id="workerLoginBtn" type="button" onclick="workerLogin(event)" class="btn" style="width:100%">دخول الموزع</button>
 <hr>
 <h3>إنشاء حساب موزع</h3>
@@ -793,7 +793,7 @@ html[data-lang="fr"] #overlay > .drawer .actions{justify-content:flex-start!impo
 <select id=eWorker></select>
 <select id=eStatus>
 <option>في الطريق</option><option>قيد التوزيع</option><option>تعذر الاتصال</option><option>مؤجل</option>
-<option>مبرمج</option><option>تم التسليم</option><option>رفض</option><option>ملغى</option><option>مرتجع</option>
+<option>مبرمج</option><option>موعد ثابت</option><option>تم التسليم</option><option>رفض</option><option>ملغى</option><option>مرتجع</option>
 </select>
 </div>
 <textarea id=eOwnerNote placeholder="ملاحظة داخلية للمالك (لا تظهر للموزع)"></textarea>
@@ -853,7 +853,8 @@ html[data-lang="fr"] #overlay > .drawer .actions{justify-content:flex-start!impo
 <div id="ownerRestoreBox" style="margin-top:10px"></div>
 <div id="ownerDeleteBox" style="margin-top:10px"></div>
 <button id="customerChangeOwnerBtn" class=btn onclick="openCustomerTransfer()">🔄 تغيير الزبون</button>
-<button class=c onclick="statusSet('مبرمج')">برمجة</button></div><h3>سجل حالة التوصيل</h3><div id=history class=log></div><hr><h3>التعليقات</h3><div id=remarks class=log></div><textarea id=remark placeholder="تعليق جديد"></textarea><button class=btn onclick=remarkAdd()>إضافة تعليق</button><button class="btn gr" style="display:block;width:100%;margin-top:18px;padding:12px;font-weight:800" onclick="closeDrawer()">✕ إغلاق تفاصيل الطلب</button></div></div>
+<button class=c onclick="statusSet('مبرمج')">برمجة</button>
+<button class=c onclick="statusSet('موعد ثابت')">📅 موعد ثابت</button></div><h3>سجل حالة التوصيل</h3><div id=history class=log></div><hr><h3>التعليقات</h3><div id=remarks class=log></div><textarea id=remark placeholder="تعليق جديد"></textarea><button class=btn onclick=remarkAdd()>إضافة تعليق</button><button class="btn gr" style="display:block;width:100%;margin-top:18px;padding:12px;font-weight:800" onclick="closeDrawer()">✕ إغلاق تفاصيل الطلب</button></div></div>
 <script>
 let appBootReady=false;
 let ownerMode=false,ownerTapCount=0,ownerTapTimer=null;
@@ -1284,7 +1285,7 @@ function applyPermissions(){
  if(refreshBtn) refreshBtn.style.display=isWorker?'inline-block':'none';
  render();menu();updateSyncIndicators();
 }
-let db=JSON.parse(localStorage.getItem(K)||'null')||{orders:[],workers:[]},filter='قيد التوزيع',current=null,states=['الكل','قيد التوزيع','تعذر الاتصال','مؤجل','مبرمج','تم التسليم','رفض','ملغى','مرتجع'];
+let db=JSON.parse(localStorage.getItem(K)||'null')||{orders:[],workers:[]},filter='قيد التوزيع',current=null,states=['الكل','قيد التوزيع','تعذر الاتصال','مؤجل','مبرمج','موعد ثابت','تم التسليم','رفض','ملغى','مرتجع'];
 if(!Array.isArray(db.returnBatches))db.returnBatches=[];
 if(!Array.isArray(db.deliveryBatches))db.deliveryBatches=[];
 if(!Array.isArray(db.deliveryTransfers))db.deliveryTransfers=[];
@@ -4363,7 +4364,7 @@ function previousStatusForUndoV180(o){
  if(!o)return '';
  const direct=String(o.previousStatusBeforeChangeV180||'').trim();
  if(direct && direct!==o.status)return direct;
- const known=['قيد التوزيع','تعذر الاتصال','مؤجل','مبرمج','تم التسليم','رفض','ملغى','مرتجع','طلب رجوع','في الطريق'];
+ const known=['قيد التوزيع','تعذر الاتصال','مؤجل','مبرمج','موعد ثابت','تم التسليم','رفض','ملغى','مرتجع','طلب رجوع','في الطريق'];
  let skippedCurrent=false;
  for(const h of (o.history||[]).slice().reverse()){
    const t=String(h&&h.text||'').trim();
@@ -5397,7 +5398,7 @@ const AK_LANG_KEY='ak_delivery_language';
 const AK_FR={
  'مسيّر التوصيل':'Gestion des livraisons','خروج':'Déconnexion','القائمة':'Menu','الرئيسية':'Accueil',
  'طلب جديد':'Nouvelle commande','لصق طلبات دفعة واحدة':'Coller plusieurs commandes','استيراد PDF':'Importer PDF',
- 'الكل':'Toutes','قيد التوزيع':'En distribution','تعذر الاتصال':'Injoignable','مؤجل':'Reportée','مبرمج':'Programmée',
+ 'الكل':'Toutes','قيد التوزيع':'En distribution','تعذر الاتصال':'Injoignable','مؤجل':'Reportée','مبرمج':'Programmée','موعد ثابت':'Rendez-vous fixe',
  'تم التسليم':'Livrée','رفض':'Refusée','ملغى':'Annulée','مرتجع':'Retournée','طلب رجوع':'Retour demandé',
  'طلبات رجوع الطلبات':'Demandes de retour','في الطريق':'En route','الموزعون':'Livreurs','الحسابات':'Comptes',
  'الفواتير':'Factures','النسخ الاحتياطي':'Sauvegarde','المزامنة السحابية':'Synchronisation cloud',
