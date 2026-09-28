@@ -1,7 +1,7 @@
 <!doctype html><!-- AK Delivery v115: fixed navigation bars; scroll content only; reduced explanatory text --><html lang="ar" dir="rtl"><head>
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
-<meta http-equiv="Expires" content="0"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><!-- AK Delivery v86: persistent received-order history for distributors and owner -->
+<meta http-equiv="Expires" content="0"><meta charset="utf-8"><meta id="akViewport" name="viewport" content="width=device-width,initial-scale=1"><!-- AK Delivery v86: persistent received-order history for distributors and owner -->
 <title>مسيّر التوصيل</title>
 <style>*{box-sizing:border-box}body{margin:0;font-family:Arial;background:#f4f6f8;color:#222}header{background:#175d79;color:#fff;padding:15px;font-size:21px;font-weight:bold}.app{display:flex;min-height:100vh}aside{width:210px;background:#11191d;color:#ccd4d8;padding:15px 0}aside h3{padding:0 15px;color:white}aside button{width:100%;text-align:right;padding:11px 15px;border:0;background:none;color:inherit}aside button:hover{background:#263238}main{flex:1;padding:14px;overflow:auto}.card{background:white;padding:14px;border-radius:9px;margin-bottom:12px;box-shadow:0 1px 5px #0001}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:8px}input,select,textarea{width:100%;padding:9px;border:1px solid #d6dce1;border-radius:6px}button{cursor:pointer}.btn{border:0;border-radius:5px;padding:8px 11px;color:white;background:#1882b3}table{width:100%;border-collapse:collapse}th,td{padding:9px;border-bottom:1px solid #eee;text-align:right;font-size:13px}.code{color:#1769aa;text-decoration:underline;font-weight:bold;cursor:pointer}.page{display:none}.page.on{display:block}.overlay{display:none;position:fixed;inset:0;background:#0008;z-index:10}.drawer{position:absolute;right:0;top:0;width:min(510px,100%);height:100%;background:white;padding:16px;overflow:auto}.close{float:left;font-size:25px;border:0;background:none}.info{display:grid;grid-template-columns:115px 1fr;gap:7px;font-size:13px}.actions{display:flex;gap:6px;flex-wrap:wrap;margin:14px 0;padding:12px 0;border-block:1px solid #ddd}.actions button{border:0;border-radius:5px;padding:8px;color:#fff}.g{background:#168b55}.y{background:#e2ad09;color:#222!important}.r{background:#dc3d4b}.gr{background:#697681}.c{background:#05aeca}.log{font-size:12px;line-height:1.8}.badge{background:#e8eef3;padding:4px 7px;border-radius:12px}.transit-badge{background:#ff3b30!important;color:#fff!important;font-weight:800!important;min-width:28px;display:inline-block;text-align:center;box-shadow:0 0 0 2px #ffffff33}aside .badge,aside .menu-count{display:inline-flex;align-items:center;justify-content:center;min-width:28px;height:24px;padding:2px 7px;margin:0;position:absolute;left:14px;top:50%;transform:translateY(-50%);border-radius:999px;background:#ffd54f;color:#111;font-weight:900;font-size:12px;box-shadow:0 0 0 2px #ffffff22}aside button{position:relative;padding-left:54px!important}aside .transit-badge{background:#ff3b30!important;color:#fff!important}aside button.menu-active{background:#175d79!important;color:#fff!important;font-weight:800;box-shadow:inset -4px 0 0 #39b8ff}aside button.menu-active .badge,aside button.menu-active .menu-count{box-shadow:0 0 0 2px #fff6}@media(max-width:650px){aside{width:135px;font-size:11px}main{padding:7px}.drawer{width:95%}th,td{font-size:11px;padding:6px}}
 .phone-ltr{direction:ltr!important;unicode-bidi:bidi-override;display:inline-block;text-align:left}
@@ -496,109 +496,6 @@ html[data-lang="fr"] th,html[data-lang="fr"] td{text-align:left}
   html[data-role="worker"] #orderListCard th,html[data-role="worker"] #orderListCard td{display:table-cell!important;position:static!important;height:auto!important;max-height:none!important;visibility:visible!important;opacity:1!important;clip:auto!important;clip-path:none!important;}
 }
 
-
-/* v180 maintenance: منع التمرير الأفقي العام + تفاصيل كاملة */
-html,body{
-  width:100%!important;
-  max-width:100%!important;
-  overflow-x:hidden!important;
-}
-body,.app,main,.page,.page.on,.card{
-  min-width:0!important;
-  max-width:100%!important;
-}
-.app{width:100%!important;}
-main{
-  width:auto!important;
-  overflow-x:hidden!important;
-}
-.page.on{
-  width:100%!important;
-  overflow-x:hidden!important;
-}
-#orderListCard,.transfer-table-wrap,.pdf-import-table-wrap{
-  max-width:100%!important;
-  overflow-x:auto!important;
-  -webkit-overflow-scrolling:touch!important;
-}
-table{max-width:none}
-
-/* التفاصيل تغطي مساحة العرض المتاحة كاملة ولا تُقصّ */
-#overlay{
-  position:fixed!important;
-  inset:0!important;
-  width:100vw!important;
-  height:100dvh!important;
-  max-width:100vw!important;
-  overflow:hidden!important;
-}
-html[data-view-mode="desktop"] #overlay>.drawer,
-html[data-view-mode="mobile"] #overlay>.drawer,
-html[data-view-mode="auto"] #overlay>.drawer,
-body #overlay>.drawer{
-  position:fixed!important;
-  top:0!important;
-  bottom:0!important;
-  left:0!important;
-  right:auto!important;
-  width:min(560px,100vw)!important;
-  max-width:100vw!important;
-  height:100dvh!important;
-  max-height:100dvh!important;
-  overflow-y:auto!important;
-  overflow-x:hidden!important;
-  padding:14px 14px 34px!important;
-  margin:0!important;
-  transform:none!important;
-  -webkit-overflow-scrolling:touch!important;
-  overscroll-behavior:contain!important;
-}
-#overlay>.drawer>*{max-width:100%!important;}
-#detail{
-  width:100%!important;
-  max-width:100%!important;
-  overflow:visible!important;
-}
-#detail .info{
-  grid-template-columns:minmax(92px,118px) minmax(0,1fr)!important;
-  width:100%!important;
-}
-#detail .info>*,
-#detail span,
-#detail div,
-#history,#remarks{
-  min-width:0!important;
-  max-width:100%!important;
-  overflow-wrap:anywhere!important;
-  word-break:break-word!important;
-}
-#overlay input,#overlay select,#overlay textarea,#overlay button{
-  max-width:100%!important;
-}
-#overlay .actions{
-  max-width:100%!important;
-  overflow-x:hidden!important;
-}
-@media(max-width:650px){
-  html[data-view-mode="desktop"] #overlay>.drawer,
-  html[data-view-mode="mobile"] #overlay>.drawer,
-  html[data-view-mode="auto"] #overlay>.drawer,
-  body #overlay>.drawer{
-    width:100vw!important;
-    max-width:100vw!important;
-    left:0!important;
-    right:0!important;
-  }
-  #detail .info{
-    grid-template-columns:minmax(84px,105px) minmax(0,1fr)!important;
-    gap:6px!important;
-  }
-  #overlay>.drawer{font-size:14px!important;}
-}
-
-/* النصوص الثانوية غير الضرورية */
-#ownerActions .badge{display:none!important;}
-
 </style></head>
 <body>
 <div id="loginScreen" class="login-screen">
@@ -606,7 +503,7 @@ body #overlay>.drawer{
  <select id="loginWorker"><option value="">اختر حسابك</option></select>
 <input id="loginPin" type="password" inputmode="numeric" placeholder="الرمز السري">
 <div id="loginStatus" style="margin-top:8px;font-weight:700;min-height:22px"></div>
-<div style="margin-top:6px;font-size:12px;opacity:.7">الإصدار 180</div>
+<div style="margin-top:6px;font-size:12px;opacity:.7">الإصدار 181</div>
 <button id="workerLoginBtn" type="button" onclick="workerLogin(event)" class="btn" style="width:100%">دخول الموزع</button>
 <hr>
 <h3>إنشاء حساب موزع</h3>
@@ -740,7 +637,7 @@ body #overlay>.drawer{
 
 <section id="cloudSetup" class="page">
 <div class="card">
-<h2>☁️ المزامنة السحابية</h2>
+<h2>☁️ AK Delivery Cloud</h2>
 
 <div style="display:flex;gap:8px;flex-wrap:wrap">
 <button class="btn gr" onclick="cloudTest()">اختبار الاتصال</button>
@@ -756,7 +653,7 @@ body #overlay>.drawer{
 </section>
 <section id=emergencySync class=page>
 <div class=card>
-<h2>🔄 مزامنة الموزع</h2>
+<h2>🔄 مزامنة المالك والموزع</h2>
 
 
 <div id=emOwnerBox>
@@ -781,7 +678,7 @@ body #overlay>.drawer{
 
 <section id=backupSafe class=page>
   <div class=card>
-    <h2>🛡️ النسخ الاحتياطي</h2>
+    <h2>🛡️ حماية بيانات التطبيق</h2>
     
     <div class=grid>
       <button class="btn g" onclick="downloadFullBackup()">⬇️ تنزيل نسخة احتياطية كاملة</button>
@@ -794,7 +691,7 @@ body #overlay>.drawer{
     <div id="backupStatus" style="margin-top:12px"></div>
   </div>
   <div class=card>
-    <h3>اللقطات المحلية</h3>
+    <h3>النسخ التلقائي المحلي</h3>
     
     <div id="snapshotsList"></div>
   </div>
@@ -812,7 +709,7 @@ body #overlay>.drawer{
 </section></main></div>
 <div id=overlay class=overlay onclick="if(event.target===this)closeDrawer()"><div class=drawer><button class=close onclick=closeDrawer()>×</button><h2 id=dcode></h2><div id=detail></div><div id="ownerActions" style="display:none;margin:10px 0">
 <button class=btn onclick="openEdit()">✏️ تعديل الطلب</button>
-
+<span class=badge>وضع المالك</span>
 </div>
 <div id="ownerAssignBox" class="card" style="display:none;margin:10px 0">
   <h3 style="margin-top:0">👤 إسناد الطلب إلى موزع</h3>
@@ -824,7 +721,7 @@ body #overlay>.drawer{
   <div id="assignStatus" style="margin-top:7px;font-size:13px"></div>
 </div>
 <div id="editBox" class=card style="display:none">
-<h3>تعديل الطلب</h3>
+<h3>تعديل جميع بيانات الطلب — للمالك فقط</h3>
 <div class=grid>
 <input id=eSeq type=text placeholder="رقم الترتيب مثل AK000001"><input id=eSender placeholder="اسم الزبون المرسل">
 <input id=eClientNo placeholder="رمز الطلب المرسل من الزبون">
@@ -840,7 +737,7 @@ body #overlay>.drawer{
 <option>مبرمج</option><option>تم التسليم</option><option>رفض</option><option>ملغى</option><option>مرتجع</option>
 </select>
 </div>
-<textarea id=eOwnerNote placeholder="ملاحظة داخلية"></textarea>
+<textarea id=eOwnerNote placeholder="ملاحظة داخلية للمالك (لا تظهر للموزع)"></textarea>
 <div style="margin-top:8px;display:flex;gap:6px">
 <button class=btn onclick="saveEdit()">حفظ التعديل</button>
 <button class="btn gr" onclick="closeEdit()">إلغاء</button>
@@ -1154,6 +1051,14 @@ function saveViewMode(mode){
 function applyViewMode(){
   let mode=localStorage.getItem('delivery_view_mode_v44')||'auto';
   document.documentElement.setAttribute('data-view-mode',mode);
+  let vp=document.getElementById('akViewport')||document.querySelector('meta[name="viewport"]');
+  if(vp){
+    if(mode==='desktop'){
+      vp.setAttribute('content','width=1180,initial-scale=0.32,minimum-scale=0.20,maximum-scale=3,user-scalable=yes');
+    }else{
+      vp.setAttribute('content','width=device-width,initial-scale=1,minimum-scale=1,user-scalable=yes');
+    }
+  }
 }
 
 
@@ -3150,8 +3055,8 @@ function openOrder(id){
    _drawer.style.setProperty('position','fixed','important');
    _drawer.style.setProperty('left','0','important');
    _drawer.style.setProperty('right','auto','important');
-   _drawer.style.setProperty('width',(window.innerWidth<=650?'100vw':'min(560px, 100vw)'),'important');
-   _drawer.style.setProperty('max-width','100vw','important');
+   _drawer.style.setProperty('width',(window.innerWidth<=650?'calc(100vw - 135px)':'min(510px, calc(100vw - 210px))'),'important');
+   _drawer.style.setProperty('max-width',(window.innerWidth<=650?'calc(100vw - 135px)':'calc(100vw - 210px)'),'important');
    _drawer.style.setProperty('margin','0','important');
    _drawer.style.setProperty('transform','none','important');
    _drawer.style.setProperty('direction','rtl','important');
@@ -4865,6 +4770,18 @@ html[data-view-mode="desktop"] #list.page.on,html[data-view-mode="mobile"] #list
   #orderHeaderFixed table,#orderListCard table{min-width:760px!important;}
   html[data-role="worker"] aside{flex:0 0 135px!important;width:135px!important;}
 }
+
+/* v181: إصلاح نهائي لزر سطح المكتب على الهاتف */
+html[data-view-mode="desktop"]{min-width:1180px!important;width:1180px!important;max-width:none!important;overflow-x:auto!important}
+html[data-view-mode="desktop"] body{min-width:1180px!important;width:1180px!important;max-width:none!important;overflow-x:auto!important;overflow-y:auto!important;display:block!important}
+html[data-view-mode="desktop"] #appHeader,
+html[data-view-mode="desktop"] header{min-width:1180px!important;width:1180px!important;position:sticky!important;top:0!important}
+html[data-view-mode="desktop"] .app{min-width:1180px!important;width:1180px!important;max-width:none!important;display:flex!important;overflow:visible!important;align-items:stretch!important}
+html[data-view-mode="desktop"] aside{flex:0 0 210px!important;width:210px!important;min-width:210px!important;max-width:210px!important;overflow:visible!important}
+html[data-view-mode="desktop"] main{flex:1 1 auto!important;min-width:970px!important;width:970px!important;max-width:none!important;overflow:visible!important}
+html[data-view-mode="desktop"] main>.page.on,
+html[data-view-mode="desktop"] #list.page.on{width:100%!important;min-width:0!important;overflow:visible!important}
+html[data-view-mode="desktop"] #orderListCard{width:100%!important;min-width:0!important;overflow:auto!important}
 </style></head><body><div class="head"><h1>فاتورة تسوية الموزع</h1><p>رقم الفاتورة: <b>${htmlEscape(invoiceNo)}</b></p><p>الموزع: <b>${htmlEscape(w?.name||st.workerName||'—')}</b> — تاريخ التسوية: ${htmlEscape(st.date||'—')}</p></div>
  <table><tr><th>#</th><th>رقم الترتيب</th><th>رمز الطلب</th><th>المستلم</th><th>قيمة الطلب</th><th>خصم التوصيل</th><th>الصافي</th></tr>${rows}</table>
  <div class="summary"><b>عدد الطلبات:</b> ${orders.length}<br><b>المجموع العام لمبالغ الطلبات:</b> ${cash(collected)}<br><b>إجمالي خصم ثمن التوصيل:</b> ${cash(fees)}<br><b>الباقي الواجب دفعه للمالك:</b> ${cash(net)}</div>
