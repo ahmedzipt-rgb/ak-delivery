@@ -562,7 +562,7 @@ html[data-lang="fr"] #overlay > .drawer .actions{justify-content:flex-start!impo
  <select id="loginWorker"><option value="">اختر حسابك</option></select>
 <input id="loginPin" type="password" inputmode="numeric" placeholder="الرمز السري">
 <div id="loginStatus" style="margin-top:8px;font-weight:700;min-height:22px"></div>
-<div style="margin-top:6px;font-size:12px;opacity:.7">الإصدار 186</div>
+<div style="margin-top:6px;font-size:12px;opacity:.7">الإصدار 187</div>
 <button id="workerLoginBtn" type="button" onclick="workerLogin(event)" class="btn" style="width:100%">دخول الموزع</button>
 <hr>
 <h3>إنشاء حساب موزع</h3>
@@ -667,7 +667,7 @@ html[data-lang="fr"] #overlay > .drawer .actions{justify-content:flex-start!impo
 
 <section id="systemHealth" class="page">
   <div class="card">
-    <h2>🩺 صحة النظام — AK Delivery 180</h2>
+    <h2>🩺 صحة النظام — AK Delivery 187</h2>
     <div id="healthSummaryV180">جارٍ الفحص...</div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">
       <button class="btn g" onclick="renderSystemHealthV180()">🔄 تحديث الفحص</button>
@@ -1666,7 +1666,7 @@ function cloudDbDigest(d){
     pick('customerChangeRequests',['id','modifiedAt','status','workerId','deletedAt'])
   ].join('||');
 }
-async function cloudRequest(action,payload={}){
+async function cloudRequestOnceV187(action,payload={}){
   let r;
 
   if(action==='ping'){
@@ -1738,6 +1738,52 @@ async function cloudRequest(action,payload={}){
   if(!j.ok)throw new Error(j.error||'خطأ في السحابة');
   return j;
 }
+/* v187: إعادة محاولة تلقائية للاتصال السحابي.
+   عند انتهاء المهلة أثناء الحفظ، نتحقق أولاً هل وصلت البيانات فعلاً قبل إعادة الإرسال. */
+function cloudTransientErrorV187(err){
+  const m=String((err&&err.message)||err||'').toLowerCase();
+  const n=String((err&&err.name)||'').toLowerCase();
+  return n.includes('timeout')||n.includes('abort')||
+    /timed out|timeout|network|fetch|failed to fetch|aborted|load failed|connection/i.test(m);
+}
+function sleepV187(ms){return new Promise(r=>setTimeout(r,ms));}
+async function cloudRequest(action,payload={}){
+  const maxAttempts=3;
+  let lastErr=null;
+  for(let attempt=0;attempt<maxAttempts;attempt++){
+    try{
+      const result=await cloudRequestOnceV187(action,payload);
+      if(attempt>0){
+        try{akLogV180('cloud-auto-retry-ok','نجحت المزامنة تلقائياً بعد إعادة المحاولة','attempt '+(attempt+1));}catch(_){}
+      }
+      return result;
+    }catch(err){
+      lastErr=err;
+      if(action==='saveAll' && payload && payload.db){
+        try{
+          const check=await cloudRequestOnceV187('loadAll',{});
+          const cdb=parseCloudDb(check);
+          if(cdb && JSON.stringify(cdb)===JSON.stringify(payload.db)){
+            try{
+              localStorage.setItem(AK180_LAST_WRITE,new Date().toISOString());
+              localStorage.removeItem(CLOUD_LAST_ERROR_KEY);
+              akLogV180('cloud-write-recovered','تأكد الحفظ بعد انتهاء المهلة دون إعادة يدوية');
+            }catch(_){}
+            return {ok:true,verified:true,recoveredAfterTimeout:true};
+          }
+        }catch(_){}
+      }
+      if(!cloudTransientErrorV187(err) || attempt===maxAttempts-1)throw err;
+      try{
+        localStorage.setItem(CLOUD_LAST_ERROR_KEY,'محاولة تلقائية '+(attempt+1)+'/'+maxAttempts+': '+String(err&&err.message||err));
+        akLogV180('cloud-auto-retry','إعادة محاولة المزامنة تلقائياً',String(err&&err.message||err));
+      }catch(_){}
+      await sleepV187([900,2200,4500][attempt]||4500);
+    }
+  }
+  throw lastErr||new Error('فشل الاتصال بالسحابة');
+}
+
 function parseCloudDb(j){
   let pack=j.snapshot ?? j.payload ?? j.data ?? j.value ?? null;
   if(typeof pack==='string'){try{pack=JSON.parse(pack)}catch(_){}}
@@ -2334,6 +2380,30 @@ async function retryStatusOutboxV173(){
   try{await workerPushOrderStatusTransaction(ev.orderId,ev.status)}catch(_){}
 }
 setInterval(retryStatusOutboxV173,5000);
+
+/* v187: حارس مزامنة إضافي للهاتف.
+   يعيد تشغيل المزامنة إذا بقيت تغييرات محلية معلقة، ويجلب التحديثات دورياً
+   بعد استئناف الصفحة أو عند تعطل مؤقت سابق. */
+let cloudWatchdogLastV187=0;
+async function cloudWatchdogV187(){
+  if(!navigator.onLine||!session?.role||document.visibilityState==='hidden')return;
+  if(cloudSyncBusy||cloudPullBusy)return;
+  const now=Date.now();
+  if(now-cloudWatchdogLastV187<4500)return;
+  cloudWatchdogLastV187=now;
+  try{
+    if(localStorage.getItem(CLOUD_PENDING_KEY)==='1'){
+      clearTimeout(cloudSyncTimer);cloudSyncTimer=null;
+      await syncNow(true);
+    }else if(now-cloudLastPullStarted>=12000){
+      await cloudPull(true,session.role==='owner');
+    }
+  }catch(_){}
+}
+setInterval(cloudWatchdogV187,6000);
+window.addEventListener('focus',()=>setTimeout(cloudWatchdogV187,250));
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')setTimeout(cloudWatchdogV187,250);});
+window.addEventListener('pageshow',()=>setTimeout(cloudWatchdogV187,250));
 window.addEventListener('online',()=>setTimeout(retryStatusOutboxV173,500));
 applyStatusOutboxV173();
 
@@ -5519,7 +5589,7 @@ document.addEventListener('DOMContentLoaded',function(){
 
 
 <script>
-/* AK Delivery 180 Stable — جودة، تشخيص، سلامة بيانات، أداء */
+/* AK Delivery 187 Stable — جودة، تشخيص، سلامة بيانات، أداء */
 
 /* ---------- سجل العمليات ---------- */
 const AK180_LOG_KEY='ak_delivery_ops_log_v180';
@@ -5819,7 +5889,7 @@ function diagnosticsTextV180(){
   const issues=scanIntegrityV180();
   let outbox=[];try{outbox=readStatusOutbox()}catch(_){}
   const payload={
-    app:'AK Delivery 180 Stable',
+    app:'AK Delivery 187 Stable',
     time:new Date().toISOString(),
     online:navigator.onLine,
     role:session?.role||null,
@@ -5936,7 +6006,7 @@ setInterval(()=>{
   }catch(_){}
 },15000);
 
-akLogV180('boot','تشغيل AK Delivery 180 Stable');
+akLogV180('boot','تشغيل AK Delivery 187 Stable');
 try{updateCloudReadWriteStatusV180();}catch(_){}
 setTimeout(()=>{
   try{
