@@ -562,7 +562,7 @@ html[data-lang="fr"] #overlay > .drawer .actions{justify-content:flex-start!impo
  <select id="loginWorker"><option value="">اختر حسابك</option></select>
 <input id="loginPin" type="password" inputmode="numeric" placeholder="الرمز السري">
 <div id="loginStatus" style="margin-top:8px;font-weight:700;min-height:22px"></div>
-<div style="margin-top:6px;font-size:12px;opacity:.7">الإصدار 187</div>
+<div style="margin-top:6px;font-size:12px;opacity:.7">الإصدار 188</div>
 <button id="workerLoginBtn" type="button" onclick="workerLogin(event)" class="btn" style="width:100%">دخول الموزع</button>
 <hr>
 <h3>إنشاء حساب موزع</h3>
@@ -667,7 +667,7 @@ html[data-lang="fr"] #overlay > .drawer .actions{justify-content:flex-start!impo
 
 <section id="systemHealth" class="page">
   <div class="card">
-    <h2>🩺 صحة النظام — AK Delivery 187</h2>
+    <h2>🩺 صحة النظام — AK Delivery 188</h2>
     <div id="healthSummaryV180">جارٍ الفحص...</div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">
       <button class="btn g" onclick="renderSystemHealthV180()">🔄 تحديث الفحص</button>
@@ -1747,6 +1747,22 @@ function cloudTransientErrorV187(err){
     /timed out|timeout|network|fetch|failed to fetch|aborted|load failed|connection/i.test(m);
 }
 function sleepV187(ms){return new Promise(r=>setTimeout(r,ms));}
+/* v188: يمسح الخطأ المؤقت بعد نجاح فعلي عندما لا توجد أعمال مزامنة معلقة. */
+function clearResolvedCloudErrorV188(reason=''){
+  try{
+    let q=[];try{q=typeof readStatusOutbox==='function'?readStatusOutbox():[]}catch(_){}
+    const pendingLocal=localStorage.getItem(CLOUD_PENDING_KEY)==='1';
+    const pendingOrders=Array.isArray(db?.orders)?db.orders.filter(o=>o&&o.pendingStatusSync).length:0;
+    if(!pendingLocal && !q.length && !pendingOrders){
+      const old=localStorage.getItem(CLOUD_LAST_ERROR_KEY)||'';
+      if(old){
+        localStorage.removeItem(CLOUD_LAST_ERROR_KEY);
+        try{akLogV180('cloud-error-cleared','تم مسح خطأ سحابي مؤقت بعد نجاح المزامنة',reason||old)}catch(_){}
+      }
+    }
+  }catch(_){}
+}
+
 async function cloudRequest(action,payload={}){
   const maxAttempts=3;
   let lastErr=null;
@@ -1756,6 +1772,7 @@ async function cloudRequest(action,payload={}){
       if(attempt>0){
         try{akLogV180('cloud-auto-retry-ok','نجحت المزامنة تلقائياً بعد إعادة المحاولة','attempt '+(attempt+1));}catch(_){}
       }
+      try{clearResolvedCloudErrorV188(action+' success');}catch(_){}
       return result;
     }catch(err){
       lastErr=err;
@@ -5813,8 +5830,14 @@ function renderSystemHealthV180(){
   const lastRead=localStorage.getItem(AK180_LAST_READ)||localStorage.getItem('ak_delivery_last_cloud_pull');
   const lastWrite=localStorage.getItem(AK180_LAST_WRITE)||localStorage.getItem('ak_delivery_last_cloud_push');
   const lastOk=localStorage.getItem(CLOUD_LAST_OK_KEY);
-  const lastErr=localStorage.getItem(CLOUD_LAST_ERROR_KEY)||'';
+  let lastErr=localStorage.getItem(CLOUD_LAST_ERROR_KEY)||'';
   const storage=storageSizeV180();
+  // v188: خطأ قديم لا يُعرض كعطل حالي إذا لا توجد مزامنة معلقة.
+  const syncProblemNowV188=localPending||outbox.length>0||pendingOrders>0;
+  if(lastErr && !syncProblemNowV188){
+    try{localStorage.removeItem(CLOUD_LAST_ERROR_KEY);akLogV180('cloud-error-cleared','أزيل تنبيه قديم لأن المزامنة الحالية سليمة',lastErr);}catch(_){}
+    lastErr='';
+  }
 
   const hs=document.getElementById('healthSummaryV180');
   if(hs)hs.innerHTML=
@@ -5889,7 +5912,7 @@ function diagnosticsTextV180(){
   const issues=scanIntegrityV180();
   let outbox=[];try{outbox=readStatusOutbox()}catch(_){}
   const payload={
-    app:'AK Delivery 187 Stable',
+    app:'AK Delivery 188 Stable',
     time:new Date().toISOString(),
     online:navigator.onLine,
     role:session?.role||null,
@@ -6001,12 +6024,15 @@ setInterval(()=>{
     const badge=document.getElementById('healthIssueCount');
     if(badge){
       let q=[];try{q=readStatusOutbox()}catch(_){}
-      badge.textContent=String(scanIntegrityV180().length+q.length+(localStorage.getItem(CLOUD_LAST_ERROR_KEY)?1:0));
+      const pendingNow=localStorage.getItem(CLOUD_PENDING_KEY)==='1'||q.length>0||((db.orders||[]).some(o=>o&&o.pendingStatusSync));
+      const errNow=localStorage.getItem(CLOUD_LAST_ERROR_KEY);
+      if(errNow&&!pendingNow)try{localStorage.removeItem(CLOUD_LAST_ERROR_KEY)}catch(_){}
+      badge.textContent=String(scanIntegrityV180().length+q.length+((errNow&&pendingNow)?1:0));
     }
   }catch(_){}
 },15000);
 
-akLogV180('boot','تشغيل AK Delivery 187 Stable');
+akLogV180('boot','تشغيل AK Delivery 188 Stable');
 try{updateCloudReadWriteStatusV180();}catch(_){}
 setTimeout(()=>{
   try{
