@@ -562,7 +562,7 @@ html[data-lang="fr"] #overlay > .drawer .actions{justify-content:flex-start!impo
  <select id="loginWorker"><option value="">اختر حسابك</option></select>
 <input id="loginPin" type="password" inputmode="numeric" placeholder="الرمز السري">
 <div id="loginStatus" style="margin-top:8px;font-weight:700;min-height:22px"></div>
-<div style="margin-top:6px;font-size:12px;opacity:.7">الإصدار 189</div>
+<div style="margin-top:6px;font-size:12px;opacity:.7">الإصدار 191</div>
 <button id="workerLoginBtn" type="button" onclick="workerLogin(event)" class="btn" style="width:100%">دخول الموزع</button>
 <hr>
 <h3>إنشاء حساب موزع</h3>
@@ -1565,7 +1565,8 @@ const formatSeq=v=>{
 function tm(){return new Date().toLocaleString('ar-MA');}
 function cash(n){return Number(n||0).toFixed(2)+' د.م';}
 
-const CLOUD_URL='https://script.google.com/macros/s/AKfycbyx_Ux59er_GZ3xO_qhgdFoBdizpJsBUuxSH4Qo2r7Qb6yeqdSS7F2akzWxC9_w-WtV/exec';
+// v191: CloudV3 conflict-safe backend
+const CLOUD_URL='https://script.google.com/macros/s/AKfycbzZPzuueU6kb2YSNUCBMU5FL0sp_2KnpGIxxZc4m2GRWHm9I2soatPsKKft5rZA_OEJ/exec';
 const CLOUD_KEY='AKD-0534-CLOUD';
 let cloudSyncTimer=null;
 let cloudSyncBusy=false;
@@ -1745,7 +1746,15 @@ async function cloudRequestOnceV187(action,payload={}){
   let j;
   try{j=JSON.parse(txt)}catch(_){throw new Error('استجابة غير صالحة من السحابة');}
   if(!r.ok)throw new Error(j.error||'فشل الاتصال بالسحابة');
-  if(!j.ok)throw new Error(j.error||'خطأ في السحابة');
+  if(!j.ok){
+    const err=new Error(j.error||'خطأ في السحابة');
+    if(j.code)err.code=j.code;
+    if(j.currentGeneration)err.currentGeneration=j.currentGeneration;
+    throw err;
+  }
+  // v191: لا نقبل بالخطأ خادماً قديماً بعد الانتقال إلى CloudV3.
+  if((action==='ping'||action==='loadAll') && String(j.backend||'')!=='3')
+    throw new Error('الخادم السحابي ليس CloudV3');
   return j;
 }
 /* v187: إعادة محاولة تلقائية للاتصال السحابي.
@@ -2167,6 +2176,7 @@ async function workerCloudPush(silent=true,retries=0){
     if(!Array.isArray(out.deliveryBatches))out.deliveryBatches=[];
     if(!Array.isArray(out.returnBatches))out.returnBatches=[];
     if(!Array.isArray(out.customerChangeRequests))out.customerChangeRequests=[];
+    if(!Array.isArray(out.settlements))out.settlements=[];
 
     const cloudOrders=new Map(out.orders.map(o=>[String(o.id),o]));
     const workerFields=['status','history','remarks','rejectReason','postponeDate','returnRequestedAt',
@@ -2222,6 +2232,8 @@ async function workerCloudPush(silent=true,retries=0){
     mergeWorkerRows('deliveryBatches');
     mergeWorkerRows('returnBatches');
     mergeWorkerRows('customerChangeRequests');
+    // v191: تأكيدات الدفع الخاصة بالموزع جزء من المزامنة مثل بقية العمليات.
+    mergeWorkerRows('settlements');
 
     const payload={db:stripTransientSyncFlagsV175(out),updatedAt:isoNow(),updatedBy:'worker:'+wid};
     if(baseGeneration!==undefined)payload._baseGeneration=baseGeneration;
@@ -3164,7 +3176,8 @@ async function workerConfirmPayment(){
 
   if(!confirm(`تأكيد أنك دفعت للمالك مبلغ ${cash(net)}؟`))return;
 
-  db.settlements.push({
+  const paymentNow=isoNow();
+  const settlement={
     id:'WP'+Date.now(),
     date:tm(),
     collected,
@@ -3174,20 +3187,32 @@ async function workerConfirmPayment(){
     workerId:String(session.workerId),
     workerName:w?.name||'',
     confirmedByWorker:true,
-    confirmedAt:isoNow(),
+    confirmedAt:paymentNow,
+    modifiedAt:paymentNow,
+    modifiedBy:w?.name||'الموزع',
+    syncState:'pending',
     invoiceNo:'SET-'+new Date().toISOString().slice(0,10).replace(/-/g,'')+'-'+String(Date.now()).slice(-6),
     orderSnapshot:arr.map(o=>({id:o.id,seq:o.seq,clientNo:o.clientNo,recipient:o.recipient,amount:+o.amount||0,worker:o.worker,settlementFee:deliveryFeeForOrder(o)}))
-  });
+  };
+  db.settlements.push(settlement);
   localStorage.setItem(K,JSON.stringify(db));
+  localStorage.setItem(CLOUD_PENDING_KEY,'1');
+  cloudEditGeneration++;
+  updateSyncIndicators();
   renderWorkerFinanceSummary();
   render();
   menu();
 
   if(navigator.onLine){
-    const ok=await syncNow();
-    if(ok)return alert('تم تأكيد الدفع وحفظه في السحابة ✓');
+    const ok=await syncNow(false);
+    if(ok){
+      const saved=(db.settlements||[]).find(x=>String(x.id)===String(settlement.id));
+      if(saved){saved.syncState='confirmed';saved.syncedAt=isoNow();localStorage.setItem(K,JSON.stringify(db));}
+      return alert('تم تأكيد الدفع ووصل إلى السحابة ✓');
+    }
   }
-  alert('تم تسجيل تأكيد الدفع على هذا الجهاز، وستتم المزامنة تلقائياً.');
+  queueCloudSync(800);
+  alert('تم حفظ تأكيد الدفع على الجهاز وسيعاد إرساله تلقائياً حتى تؤكده السحابة.');
 }
 
 
