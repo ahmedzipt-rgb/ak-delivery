@@ -562,7 +562,7 @@ html[data-lang="fr"] #overlay > .drawer .actions{justify-content:flex-start!impo
  <select id="loginWorker"><option value="">اختر حسابك</option></select>
 <input id="loginPin" type="password" inputmode="numeric" placeholder="الرمز السري">
 <div id="loginStatus" style="margin-top:8px;font-weight:700;min-height:22px"></div>
-<div style="margin-top:6px;font-size:12px;opacity:.7">الإصدار 191</div>
+<div style="margin-top:6px;font-size:12px;opacity:.7">الإصدار 192</div>
 <button id="workerLoginBtn" type="button" onclick="workerLogin(event)" class="btn" style="width:100%">دخول الموزع</button>
 <hr>
 <h3>إنشاء حساب موزع</h3>
@@ -667,7 +667,7 @@ html[data-lang="fr"] #overlay > .drawer .actions{justify-content:flex-start!impo
 
 <section id="systemHealth" class="page">
   <div class="card">
-    <h2>🩺 صحة النظام — AK Delivery 189</h2>
+    <h2>🩺 صحة النظام — AK Delivery 192</h2>
     <div id="healthSummaryV180">جارٍ الفحص...</div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">
       <button class="btn g" onclick="renderSystemHealthV180()">🔄 تحديث الفحص</button>
@@ -695,7 +695,7 @@ html[data-lang="fr"] #overlay > .drawer .actions{justify-content:flex-start!impo
 </section>
 
 <section id="ak189Recovery" class="page"><div class="card">
-<h2>🛡️ مراجعة تعارضات طلبات AK Delivery 189</h2>
+<h2>🛡️ مراجعة تعارضات طلبات AK Delivery 192</h2>
 <p>تُعرض هنا الطلبات التي تختلف بياناتها بين هذا الجهاز والسحابة. لا تُحذف أي نسخة تلقائيًا.</p>
 <div id="ak189ConflictStatus"></div>
 <button type="button" class="btn g" onclick="ak189RefreshReport()">تحديث المراجعة</button>
@@ -5561,7 +5561,7 @@ function directNavigate(key){
         returnCreate:'returnBatches',returnBatches:'returnBatches',returnedOrders:'returnedOrders',customerChanges:'customerChanges',
         deliveryTransfers:'deliveryTransfers',workers:'workers',
         accounts:'accounts',invoices:'invoices',backupSafe:'backupSafe',systemHealth:'systemHealth',
-        cloudSetup:'cloudSetup',emergencySync:'emergencySync'
+        ak189Recovery:'ak189Recovery',cloudSetup:'cloudSetup',emergencySync:'emergencySync'
       };
       target=map[key]||'';
       // الرئيسية تعرض الطلبات فعلياً ولا تترك مساحة بيضاء بسبب بقاء مرشح قسم فارغ.
@@ -5591,6 +5591,7 @@ function directNavigate(key){
       }
       else if(target==='backupSafe'){updateBackupStatus();showLocalSnapshots();}
       else if(target==='systemHealth')renderSystemHealthV180();
+      else if(target==='ak189Recovery')ak189RefreshReport();
       else if(target==='emergencySync')renderEmergencySync();
       else if(target==='cloudSetup')updateCloudStatus('جاهز');
     }catch(e){console.error('page render',e);}
