@@ -562,7 +562,7 @@ html[data-lang="fr"] #overlay > .drawer .actions{justify-content:flex-start!impo
  <select id="loginWorker"><option value="">اختر حسابك</option></select>
 <input id="loginPin" type="password" inputmode="numeric" placeholder="الرمز السري">
 <div id="loginStatus" style="margin-top:8px;font-weight:700;min-height:22px"></div>
-<div style="margin-top:6px;font-size:12px;opacity:.7">الإصدار 200</div>
+<div style="margin-top:6px;font-size:12px;opacity:.7">الإصدار 201</div>
 <button id="workerLoginBtn" type="button" onclick="workerLogin(event)" class="btn" style="width:100%">دخول الموزع</button>
 <hr>
 <h3>إنشاء حساب موزع</h3>
@@ -667,7 +667,7 @@ html[data-lang="fr"] #overlay > .drawer .actions{justify-content:flex-start!impo
 
 <section id="systemHealth" class="page">
   <div class="card">
-    <h2>🩺 صحة النظام — AK Delivery 200</h2>
+    <h2>🩺 صحة النظام — AK Delivery 201</h2>
     <div id="healthSummaryV180">جارٍ الفحص...</div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">
       <button class="btn g" onclick="renderSystemHealthV180()">🔄 تحديث الفحص</button>
@@ -695,7 +695,7 @@ html[data-lang="fr"] #overlay > .drawer .actions{justify-content:flex-start!impo
 </section>
 
 <section id="ak189Recovery" class="page"><div class="card">
-<h2>🛡️ مراجعة تعارضات طلبات AK Delivery 200</h2>
+<h2>🛡️ مراجعة تعارضات طلبات AK Delivery 201</h2>
 <p>تُعرض هنا الطلبات التي تختلف بياناتها بين هذا الجهاز والسحابة. لا تُحذف أي نسخة تلقائيًا.</p>
 <div id="ak189ConflictStatus"></div>
 <button type="button" class="btn g" onclick="ak189RefreshReport()">تحديث المراجعة</button>
@@ -2191,7 +2191,7 @@ function ak189RefreshReport(){
  </div>`).join('');
 }
 function ak189DownloadRecovery(){
- const data={app:'AK Delivery 200',exportedAt:new Date().toISOString(),deviceDb:db,conflicts:ak189Conflicts(),
+ const data={app:'AK Delivery 201',exportedAt:new Date().toISOString(),deviceDb:db,conflicts:ak189Conflicts(),
  baseline:ak189Read(AK189_BASE,[]),statusQueue:readStatusOutbox()};
  const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
  const a=document.createElement('a');a.href=URL.createObjectURL(blob);
@@ -2231,6 +2231,41 @@ async function ak189Choose(i,chosen){
    إذا كان الطلب في مرحلة عمل لدى الموزع لكن worker فارغ،
    نسترجع الموزع فقط من سجل إرسال/استلام صريح لنفس orderId.
    لا نغيّر الحالة ولا اسم الزبون ولا المبلغ. */
+
+/* v201: إصلاح عدم تطابق مؤكد الاستلام.
+   إذا أكد الموزع الاستلام في deliveryTransfers وبقي الطلب «في الطريق»،
+   ننقله إلى «قيد التوزيع» لأن سجل الاستلام هو الدليل الأقوى. */
+function ak201RepairReceivedStatus(targetDb){
+  if(!targetDb||!Array.isArray(targetDb.orders)||!Array.isArray(targetDb.deliveryTransfers))return {changed:0,ids:[]};
+  const received=new Map();
+  for(const t of targetDb.deliveryTransfers){
+    if(!t||t.deletedAt||t.status!=='received'||!t.orderId||!t.workerId)continue;
+    const id=String(t.orderId), prev=received.get(id);
+    if(!prev||timeValue(t.receivedAt||t.modifiedAt)>=timeValue(prev.receivedAt||prev.modifiedAt))received.set(id,t);
+  }
+  let changed=0; const ids=[];
+  for(const o of targetDb.orders){
+    if(!o||o.deletedAt||o.duplicateHidden||o.status!=='في الطريق')continue;
+    const t=received.get(String(o.id));
+    if(!t)continue;
+    if(o.worker && String(o.worker)!==String(t.workerId))continue;
+    o.worker=String(t.workerId);
+    o.status='قيد التوزيع';
+    o.statusEnteredAt=t.receivedAt||o.statusEnteredAt||isoNow();
+    o.deliveryReceivedAt=o.deliveryReceivedAt||t.receivedAt||'';
+    o.deliveryReceivedLabel=o.deliveryReceivedLabel||t.receivedLabel||'';
+    o.deliveryReceivedByWorkerId=o.deliveryReceivedByWorkerId||String(t.workerId);
+    o.deliveryReceivedByWorkerName=o.deliveryReceivedByWorkerName||t.workerName||'';
+    o.receiptStatusRecoveredAt=isoNow();
+    o.receiptStatusRecoveredFrom='deliveryTransfer-v201';
+    if(!Array.isArray(o.history))o.history=[];
+    const note='تصحيح حالة بعد تأكيد الاستلام — حماية v201';
+    if(!o.history.some(h=>String(h&&h.text||'').includes(note)))o.history.push({time:tm(),text:note});
+    changed++; ids.push(String(o.id));
+  }
+  return {changed,ids};
+}
+
 function ak200RepairWorkerAssignments(targetDb){
   if(!targetDb||!Array.isArray(targetDb.orders))return {changed:0,ids:[]};
   const transfers=Array.isArray(targetDb.deliveryTransfers)?targetDb.deliveryTransfers:[];
@@ -2299,6 +2334,7 @@ function mergeDatabases(localDb,cloudDb){
   out.deliveryTransfers=mergeById(localDb.deliveryTransfers||[],cloudDb.deliveryTransfers||[]);
   out.customerChangeRequests=mergeById(localDb.customerChangeRequests||[],cloudDb.customerChangeRequests||[]);
   ak200RepairWorkerAssignments(out);
+  ak201RepairReceivedStatus(out);
   const activePendingV175=new Set(readStatusOutbox().map(e=>String(e.orderId)));
   for(const o of (out.orders||[])){
     if(!o||activePendingV175.has(String(o.id)))continue;
@@ -2351,6 +2387,7 @@ async function cloudPush(silent=false,retries=0){
     if(localOrders===0 && localWorkers===0)throw new Error('تم منع رفع قاعدة فارغة');
 
     ak200RepairWorkerAssignments(db);
+    ak201RepairReceivedStatus(db);
     const payload={db:ak193SafePayloadDb(db,latestDbForSafe),updatedAt:isoNow()};
     if(baseGeneration!==undefined)payload._baseGeneration=baseGeneration;
     const result=await cloudRequest('saveAll',payload);
@@ -2455,6 +2492,7 @@ async function workerCloudPush(silent=true,retries=0){
     mergeWorkerRows('settlements');
 
     ak200RepairWorkerAssignments(out);
+    ak201RepairReceivedStatus(out);
     const payload={db:stripTransientSyncFlagsV175(out),updatedAt:isoNow(),updatedBy:'worker:'+wid};
     if(baseGeneration!==undefined)payload._baseGeneration=baseGeneration;
     const result=await cloudRequest('saveAll',payload);
@@ -2514,10 +2552,25 @@ async function workerPushOrderStatusTransaction(orderId,targetStatus,attempts=0)
     remote.statusChangedAtV173=local.statusChangedAtV173||isoNow();
     remote.statusEventIdV173=local.statusEventIdV173||('ST173-'+Date.now()+'-'+Math.random().toString(36).slice(2,8));
     remote.modifiedAt=local.modifiedAt||isoNow();remote.modifiedBy=local.modifiedBy||actorName();
-    remote.lastChangeKind='تغيير حالة v175: '+targetStatus;
+    remote.lastChangeKind='تغيير حالة v201: '+targetStatus;
     delete remote.pendingStatusSync;
     delete remote.pendingStatusTarget;
-    const payload={db:stripTransientSyncFlagsV175(out),updatedAt:isoNow(),updatedBy:'worker-status-v176:'+wid};
+
+    // v201: حالة الطلب وسجل استلامه تُحفظان في نفس snapshot السحابي.
+    if(!Array.isArray(out.deliveryTransfers))out.deliveryTransfers=[];
+    const localTransfers=(db.deliveryTransfers||[]).filter(t=>
+      t && !t.deletedAt &&
+      String(t.orderId)===String(orderId) &&
+      String(t.workerId)===wid
+    );
+    for(const lt of localTransfers){
+      const ti=out.deliveryTransfers.findIndex(t=>String(t.id)===String(lt.id));
+      const copy=JSON.parse(JSON.stringify(lt));
+      if(ti<0)out.deliveryTransfers.push(copy);
+      else out.deliveryTransfers[ti]=copy;
+    }
+
+    const payload={db:stripTransientSyncFlagsV175(out),updatedAt:isoNow(),updatedBy:'worker-status-v201:'+wid};
     if(baseGeneration!==undefined)payload._baseGeneration=baseGeneration;
 
     // v174: نؤكد حالة الطلب نفسه، لا تطابق قاعدة البيانات كاملة.
@@ -2615,10 +2668,11 @@ async function cloudPull(silent=false,merge=true){
    }
    ak195ClearResolvedCloudState('cloud pull success');
    const repairedAssignmentsV200=ak200RepairWorkerAssignments(db);
-   if(repairedAssignmentsV200.changed){
+   const repairedReceiptV201=ak201RepairReceivedStatus(db);
+   if(repairedAssignmentsV200.changed||repairedReceiptV201.changed){
      localStorage.setItem(K,JSON.stringify(db));
      localStorage.setItem(CLOUD_PENDING_KEY,'1');
-     try{akLogV180('assignment-repair','تم استرجاع إسناد موزع مفقود',repairedAssignmentsV200.ids.join(','));}catch(_){}
+     try{akLogV180('assignment-repair','تم تصحيح الإسناد/حالة الاستلام',repairedAssignmentsV200.ids.concat(repairedReceiptV201.ids).join(','));}catch(_){}
      if(session?.role==='owner'&&navigator.onLine)queueCloudSync(250);
    }
    ak189Remember(cloudDb);
@@ -4175,19 +4229,43 @@ async function confirmOrderReceipt(transferId){
  o.deliveryReceivedLabel=label;
  o.deliveryReceivedByWorkerId=String(session.workerId);
  o.deliveryReceivedByWorkerName=actorName();
+ o.previousStatusBeforeChangeV180=o.status;
+ o.previousStatusChangedAtV180=now;
  o.status='قيد التوزيع';
  o.statusEnteredAt=now;
+ o.statusChangedAtV173=now;
+ o.statusEventIdV173='ST201-'+Date.now()+'-'+Math.random().toString(36).slice(2,8);
  o.modifiedAt=now;
  o.modifiedBy=actorName();
  appendOrderHistory(o,'أكد الموزع استلام الطلب — انتقل إلى قيد التوزيع');
+ o.pendingStatusSync=true;
+ o.pendingStatusTarget='قيد التوزيع';
+ enqueueStatusEventV173(o,'قيد التوزيع');
 
- localStorage.setItem(K,JSON.stringify(db));scheduleCloudSync();
+ localStorage.setItem(K,JSON.stringify(db));
+ localStorage.setItem(CLOUD_PENDING_KEY,'1');
+ ak198RecordEvent('receipt',o.id);
  renderDeliveryTransfers();render();menu();
+
  if(navigator.onLine){
-   const ok=await syncNow();
-   if(ok)return alert('تم تأكيد استلام الطلب وحفظه في السحابة ✓');
+   try{
+     const ok=await workerPushOrderStatusTransaction(o.id,'قيد التوزيع');
+     if(ok){
+       const fresh=db.orders.find(x=>String(x.id)===String(o.id));
+       if(fresh){
+         delete fresh.pendingStatusSync;
+         delete fresh.pendingStatusTarget;
+         fresh.lastStatusConfirmedAt=isoNow();
+       }
+       removeStatusEventV173(o.id,o.statusEventIdV173);
+       localStorage.setItem(K,JSON.stringify(db));
+       return alert('تم تأكيد الاستلام وانتقال الطلب إلى قيد التوزيع في السحابة ✓');
+     }
+   }catch(e){
+     localStorage.setItem(CLOUD_LAST_ERROR_KEY,e&&e.message?e.message:'فشل تأكيد الاستلام');
+   }
  }
- alert('تم تأكيد الاستلام على هذا الجهاز وستتم المزامنة تلقائياً.');
+ alert('تم حفظ الاستلام محلياً وسيعاد إرسال الطلب تلقائياً حتى تؤكد السحابة حالته.');
 }
 function renderDeliveryTransferControls(o){
  const old=document.getElementById('deliveryTransferControls');
@@ -6369,7 +6447,7 @@ function diagnosticsTextV180(){
   const issues=scanIntegrityV180();
   let outbox=[];try{outbox=readStatusOutbox()}catch(_){}
   const payload={
-    app:'AK Delivery 200 Safe Sync',
+    app:'AK Delivery 201 Safe Sync',
     time:new Date().toISOString(),
     online:navigator.onLine,
     role:session?.role||null,
@@ -6489,7 +6567,7 @@ setInterval(()=>{
   }catch(_){}
 },15000);
 
-akLogV180('boot','تشغيل AK Delivery 200 Safe Sync');
+akLogV180('boot','تشغيل AK Delivery 201 Safe Sync');
 try{updateCloudReadWriteStatusV180();}catch(_){}
 setTimeout(()=>{
   try{
