@@ -562,7 +562,7 @@ html[data-lang="fr"] #overlay > .drawer .actions{justify-content:flex-start!impo
  <select id="loginWorker"><option value="">اختر حسابك</option></select>
 <input id="loginPin" type="password" inputmode="numeric" placeholder="الرمز السري">
 <div id="loginStatus" style="margin-top:8px;font-weight:700;min-height:22px"></div>
-<div style="margin-top:6px;font-size:12px;opacity:.7">الإصدار 201</div>
+<div style="margin-top:6px;font-size:12px;opacity:.7">الإصدار 202</div>
 <button id="workerLoginBtn" type="button" onclick="workerLogin(event)" class="btn" style="width:100%">دخول الموزع</button>
 <hr>
 <h3>إنشاء حساب موزع</h3>
@@ -667,7 +667,7 @@ html[data-lang="fr"] #overlay > .drawer .actions{justify-content:flex-start!impo
 
 <section id="systemHealth" class="page">
   <div class="card">
-    <h2>🩺 صحة النظام — AK Delivery 201</h2>
+    <h2>🩺 صحة النظام — AK Delivery 202</h2>
     <div id="healthSummaryV180">جارٍ الفحص...</div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">
       <button class="btn g" onclick="renderSystemHealthV180()">🔄 تحديث الفحص</button>
@@ -695,7 +695,7 @@ html[data-lang="fr"] #overlay > .drawer .actions{justify-content:flex-start!impo
 </section>
 
 <section id="ak189Recovery" class="page"><div class="card">
-<h2>🛡️ مراجعة تعارضات طلبات AK Delivery 201</h2>
+<h2>🛡️ مراجعة تعارضات طلبات AK Delivery 202</h2>
 <p>تُعرض هنا الطلبات التي تختلف بياناتها بين هذا الجهاز والسحابة. لا تُحذف أي نسخة تلقائيًا.</p>
 <div id="ak189ConflictStatus"></div>
 <button type="button" class="btn g" onclick="ak189RefreshReport()">تحديث المراجعة</button>
@@ -1677,19 +1677,72 @@ function cloudDbDigest(d){
     pick('customerChangeRequests',['id','modifiedAt','status','workerId','deletedAt'])
   ].join('||');
 }
+
+/* v202: طبقة اتصال مقاومة لبطء Google Apps Script على الهاتف.
+   لا نستخدم AbortSignal.timeout مباشرة لأنه كان يُنتج signal timed out
+   ويحوّل بطءً مؤقتاً إلى فشل مزامنة ظاهر للمستخدم. */
+function ak202CloudError(err){
+  if(err&&err.code==='cloud_timeout')return err;
+  const m=String((err&&err.message)||err||'');
+  const n=String((err&&err.name)||'');
+  if(/timed out|timeout|signal timed out|aborted/i.test(m)||/timeout|abort/i.test(n)){
+    const e=new Error('انتهت مهلة الاتصال بالسحابة');
+    e.name='TimeoutError';
+    e.code='cloud_timeout';
+    return e;
+  }
+  return err instanceof Error?err:new Error(m||'فشل الاتصال بالسحابة');
+}
+async function ak202Fetch(url,options={},timeoutMs=75000){
+  const opts=Object.assign({},options||{});
+  if(!timeoutMs||typeof AbortController==='undefined')return fetch(url,opts);
+  const ctrl=new AbortController();
+  const external=opts.signal;
+  let externalAbort=null;
+  if(external){
+    if(external.aborted)ctrl.abort(external.reason);
+    else{
+      externalAbort=()=>ctrl.abort(external.reason);
+      try{external.addEventListener('abort',externalAbort,{once:true});}catch(_){}
+    }
+  }
+  opts.signal=ctrl.signal;
+  let timedOut=false;
+  const timer=setTimeout(()=>{timedOut=true;try{ctrl.abort()}catch(_){}},timeoutMs);
+  try{
+    return await fetch(url,opts);
+  }catch(err){
+    if(timedOut){
+      const e=new Error('انتهت مهلة الاتصال بالسحابة بعد '+Math.round(timeoutMs/1000)+' ثانية');
+      e.name='TimeoutError';
+      e.code='cloud_timeout';
+      throw e;
+    }
+    throw ak202CloudError(err);
+  }finally{
+    clearTimeout(timer);
+    if(external&&externalAbort){
+      try{external.removeEventListener('abort',externalAbort)}catch(_){}
+    }
+  }
+}
+
 async function cloudRequestOnceV187(action,payload={}){
   let r;
 
   if(action==='ping'){
-    r=await fetch(
+    r=await ak202Fetch(
       CLOUD_URL+'?key='+encodeURIComponent(CLOUD_KEY)+'&action=ping&_t='+Date.now(),
-      {method:'GET',cache:'no-store',signal:AbortSignal.timeout(18000)}
+      {method:'GET',cache:'no-store'},
+      25000
     );
 
   }else if(action==='loadAll'){
-    r=await fetch(
+    const loadTimeout=Math.max(45000,Number(payload&&payload._timeoutMs)||75000);
+    r=await ak202Fetch(
       CLOUD_URL+'?key='+encodeURIComponent(CLOUD_KEY)+'&action=load&_t='+Date.now()+'-'+Math.random().toString(36).slice(2),
-      {method:'GET',cache:'no-store',signal:AbortSignal.timeout(35000)}
+      {method:'GET',cache:'no-store'},
+      loadTimeout
     );
 
   }else if(action==='saveAll'){
@@ -1702,17 +1755,17 @@ async function cloudRequestOnceV187(action,payload={}){
     const expectedDb=JSON.stringify(data.db||{});
     const body=JSON.stringify({key:CLOUD_KEY,action:'save',data:data});
 
-    await fetch(CLOUD_URL,{
+    await ak202Fetch(CLOUD_URL,{
       method:'POST',mode:'no-cors',
       headers:{'Content-Type':'text/plain;charset=UTF-8'},
-      body,cache:'no-store',signal:AbortSignal.timeout(35000)
-    });
+      body,cache:'no-store'
+    },75000);
 
-    for(let i=0;i<6;i++){
-      await new Promise(resolve=>setTimeout(resolve,[250,400,650,900,1200,1500][i]));
+    for(let i=0;i<4;i++){
+      await new Promise(resolve=>setTimeout(resolve,[500,900,1500,2500][i]));
       let check;
-      try{check=await cloudRequest('loadAll',{});}catch(err){
-        if(i===5)throw err;
+      try{check=await cloudRequestOnceV187('loadAll',{_timeoutMs:60000});}catch(err){
+        if(i===3)throw ak202CloudError(err);
         continue;
       }
       let pack=check.snapshot ?? check.payload ?? check.data ?? check.value ?? null;
@@ -1760,10 +1813,11 @@ async function cloudRequestOnceV187(action,payload={}){
 /* v187: إعادة محاولة تلقائية للاتصال السحابي.
    عند انتهاء المهلة أثناء الحفظ، نتحقق أولاً هل وصلت البيانات فعلاً قبل إعادة الإرسال. */
 function cloudTransientErrorV187(err){
+  if(err&&err.code==='cloud_timeout')return true;
   const m=String((err&&err.message)||err||'').toLowerCase();
   const n=String((err&&err.name)||'').toLowerCase();
   return n.includes('timeout')||n.includes('abort')||
-    /timed out|timeout|network|fetch|failed to fetch|aborted|load failed|connection/i.test(m);
+    /timed out|timeout|network|fetch|failed to fetch|aborted|load failed|connection|مهلة الاتصال/i.test(m);
 }
 function sleepV187(ms){return new Promise(r=>setTimeout(r,ms));}
 /* v188: يمسح الخطأ المؤقت بعد نجاح فعلي عندما لا توجد أعمال مزامنة معلقة. */
@@ -1803,7 +1857,7 @@ async function ak197LoadOnce(payload={}){
 function ak197ClearTransientNetworkError(){
   try{
     const old=localStorage.getItem(CLOUD_LAST_ERROR_KEY)||'';
-    if(/failed to fetch|timed out|timeout|network|aborted|load failed|connection/i.test(old)){
+    if(/failed to fetch|timed out|timeout|network|aborted|load failed|connection|مهلة الاتصال|انتهت مهلة/i.test(old)){
       localStorage.removeItem(CLOUD_LAST_ERROR_KEY);
       try{akLogV180('cloud-network-recovered','عاد الاتصال بالسحابة وتم مسح خطأ الشبكة القديم');}catch(_){}
     }
@@ -1811,41 +1865,57 @@ function ak197ClearTransientNetworkError(){
 }
 
 async function cloudRequest(action,payload={}){
-  const maxAttempts=4;
+  const maxAttempts=3;
   let lastErr=null;
   for(let attempt=0;attempt<maxAttempts;attempt++){
     try{
+      const attemptPayload=action==='loadAll'
+        ?Object.assign({},payload||{},{_timeoutMs:[60000,75000,90000][attempt]||90000})
+        :payload;
       const result=action==='loadAll'
-        ?await ak197LoadOnce(payload)
-        :await cloudRequestOnceV187(action,payload);
+        ?await ak197LoadOnce(attemptPayload)
+        :await cloudRequestOnceV187(action,attemptPayload);
       if(action==='ping'||action==='loadAll')ak197ClearTransientNetworkError();
       if(attempt>0){
         try{akLogV180('cloud-auto-retry-ok','نجحت المزامنة تلقائياً بعد إعادة المحاولة','attempt '+(attempt+1));}catch(_){}
       }
+      try{localStorage.removeItem('ak_delivery_cloud_retry_v202')}catch(_){}
       try{clearResolvedCloudErrorV188(action+' success');}catch(_){}
       return result;
-    }catch(err){
+    }catch(rawErr){
+      const err=ak202CloudError(rawErr);
       lastErr=err;
       if(action==='saveAll' && payload && payload.db){
         try{
-          const check=await ak197LoadOnce({});
+          const check=await cloudRequestOnceV187('loadAll',{_timeoutMs:60000});
           const cdb=parseCloudDb(check);
           if(cdb && JSON.stringify(cdb)===JSON.stringify(payload.db)){
             try{
               localStorage.setItem(AK180_LAST_WRITE,new Date().toISOString());
               localStorage.removeItem(CLOUD_LAST_ERROR_KEY);
-              akLogV180('cloud-write-recovered','تأكد الحفظ بعد انتهاء المهلة دون إعادة يدوية');
+              localStorage.removeItem('ak_delivery_cloud_retry_v202');
+              akLogV180('cloud-write-recovered','تأكد الحفظ بعد بطء الاتصال دون إعادة يدوية');
             }catch(_){}
             return {ok:true,verified:true,recoveredAfterTimeout:true};
           }
         }catch(_){}
       }
-      if(!cloudTransientErrorV187(err) || attempt===maxAttempts-1)throw err;
+      const transient=cloudTransientErrorV187(err);
+      if(!transient || attempt===maxAttempts-1){
+        try{
+          localStorage.removeItem('ak_delivery_cloud_retry_v202');
+          localStorage.setItem(CLOUD_LAST_ERROR_KEY,String(err&&err.message||err));
+          akLogV180('cloud-final-fail','فشلت المزامنة بعد كل المحاولات',String(err&&err.message||err));
+        }catch(_){}
+        throw err;
+      }
       try{
-        localStorage.setItem(CLOUD_LAST_ERROR_KEY,'محاولة تلقائية '+(attempt+1)+'/'+maxAttempts+': '+String(err&&err.message||err));
-        akLogV180('cloud-auto-retry','إعادة محاولة المزامنة تلقائياً',String(err&&err.message||err));
+        localStorage.setItem('ak_delivery_cloud_retry_v202',JSON.stringify({
+          action,attempt:attempt+1,maxAttempts,time:isoNow(),message:String(err&&err.message||err)
+        }));
+        akLogV180('cloud-auto-retry','إعادة محاولة المزامنة تلقائياً','attempt '+(attempt+1)+'/'+maxAttempts);
       }catch(_){}
-      await sleepV187([1200,3000,6000,9000][attempt]||9000);
+      await sleepV187([1500,3500,7000][attempt]||7000);
     }
   }
   throw lastErr||new Error('فشل الاتصال بالسحابة');
@@ -2191,7 +2261,7 @@ function ak189RefreshReport(){
  </div>`).join('');
 }
 function ak189DownloadRecovery(){
- const data={app:'AK Delivery 201',exportedAt:new Date().toISOString(),deviceDb:db,conflicts:ak189Conflicts(),
+ const data={app:'AK Delivery 202',exportedAt:new Date().toISOString(),deviceDb:db,conflicts:ak189Conflicts(),
  baseline:ak189Read(AK189_BASE,[]),statusQueue:readStatusOutbox()};
  const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
  const a=document.createElement('a');a.href=URL.createObjectURL(blob);
@@ -2227,11 +2297,6 @@ async function ak189Choose(i,chosen){
 }
 
 
-/* v200: حماية إسناد الموزع.
-   إذا كان الطلب في مرحلة عمل لدى الموزع لكن worker فارغ،
-   نسترجع الموزع فقط من سجل إرسال/استلام صريح لنفس orderId.
-   لا نغيّر الحالة ولا اسم الزبون ولا المبلغ. */
-
 /* v201: إصلاح عدم تطابق مؤكد الاستلام.
    إذا أكد الموزع الاستلام في deliveryTransfers وبقي الطلب «في الطريق»،
    ننقله إلى «قيد التوزيع» لأن سجل الاستلام هو الدليل الأقوى. */
@@ -2266,6 +2331,10 @@ function ak201RepairReceivedStatus(targetDb){
   return {changed,ids};
 }
 
+/* v200: حماية إسناد الموزع.
+   إذا كان الطلب في مرحلة عمل لدى الموزع لكن worker فارغ،
+   نسترجع الموزع فقط من سجل إرسال/استلام صريح لنفس orderId.
+   لا نغيّر الحالة ولا اسم الزبون ولا المبلغ. */
 function ak200RepairWorkerAssignments(targetDb){
   if(!targetDb||!Array.isArray(targetDb.orders))return {changed:0,ids:[]};
   const transfers=Array.isArray(targetDb.deliveryTransfers)?targetDb.deliveryTransfers:[];
@@ -2552,36 +2621,21 @@ async function workerPushOrderStatusTransaction(orderId,targetStatus,attempts=0)
     remote.statusChangedAtV173=local.statusChangedAtV173||isoNow();
     remote.statusEventIdV173=local.statusEventIdV173||('ST173-'+Date.now()+'-'+Math.random().toString(36).slice(2,8));
     remote.modifiedAt=local.modifiedAt||isoNow();remote.modifiedBy=local.modifiedBy||actorName();
-    remote.lastChangeKind='تغيير حالة v201: '+targetStatus;
+    remote.lastChangeKind='تغيير حالة v175: '+targetStatus;
     delete remote.pendingStatusSync;
     delete remote.pendingStatusTarget;
-
-    // v201: حالة الطلب وسجل استلامه تُحفظان في نفس snapshot السحابي.
-    if(!Array.isArray(out.deliveryTransfers))out.deliveryTransfers=[];
-    const localTransfers=(db.deliveryTransfers||[]).filter(t=>
-      t && !t.deletedAt &&
-      String(t.orderId)===String(orderId) &&
-      String(t.workerId)===wid
-    );
-    for(const lt of localTransfers){
-      const ti=out.deliveryTransfers.findIndex(t=>String(t.id)===String(lt.id));
-      const copy=JSON.parse(JSON.stringify(lt));
-      if(ti<0)out.deliveryTransfers.push(copy);
-      else out.deliveryTransfers[ti]=copy;
-    }
-
-    const payload={db:stripTransientSyncFlagsV175(out),updatedAt:isoNow(),updatedBy:'worker-status-v201:'+wid};
+    const payload={db:stripTransientSyncFlagsV175(out),updatedAt:isoNow(),updatedBy:'worker-status-v176:'+wid};
     if(baseGeneration!==undefined)payload._baseGeneration=baseGeneration;
 
     // v174: نؤكد حالة الطلب نفسه، لا تطابق قاعدة البيانات كاملة.
     const token='AKSTATUS-'+Date.now()+'-'+Math.random().toString(36).slice(2,8);
     const data=Object.assign({},payload,{_syncToken:token});
     const body=JSON.stringify({key:CLOUD_KEY,action:'save',data:data});
-    await fetch(CLOUD_URL,{
+    await ak202Fetch(CLOUD_URL,{
       method:'POST',mode:'no-cors',
       headers:{'Content-Type':'text/plain;charset=UTF-8'},
-      body,cache:'no-store',signal:AbortSignal.timeout(35000)
-    });
+      body,cache:'no-store'
+    },75000);
 
     let confirmedDb=null,confirmed=null;
     const waits=[300,500,800,1200,1800,2500,3500];
@@ -2790,7 +2844,7 @@ async function syncNow(silent=true){
   }
 }
 
-/* v199: مزامنة حدثية موحدة وخفيفة.
+/* v202: مزامنة حدثية موحدة وخفيفة.
    كل تعديل يسجل حدثاً محلياً صغيراً، ثم تُدمج الأحداث المتقاربة في مزامنة واحدة.
    لا نفتح عدة اتصالات لنفس سلسلة التعديلات. */
 const AK198_EVENT_KEY='ak_delivery_sync_events_v198';
@@ -4229,43 +4283,19 @@ async function confirmOrderReceipt(transferId){
  o.deliveryReceivedLabel=label;
  o.deliveryReceivedByWorkerId=String(session.workerId);
  o.deliveryReceivedByWorkerName=actorName();
- o.previousStatusBeforeChangeV180=o.status;
- o.previousStatusChangedAtV180=now;
  o.status='قيد التوزيع';
  o.statusEnteredAt=now;
- o.statusChangedAtV173=now;
- o.statusEventIdV173='ST201-'+Date.now()+'-'+Math.random().toString(36).slice(2,8);
  o.modifiedAt=now;
  o.modifiedBy=actorName();
  appendOrderHistory(o,'أكد الموزع استلام الطلب — انتقل إلى قيد التوزيع');
- o.pendingStatusSync=true;
- o.pendingStatusTarget='قيد التوزيع';
- enqueueStatusEventV173(o,'قيد التوزيع');
 
- localStorage.setItem(K,JSON.stringify(db));
- localStorage.setItem(CLOUD_PENDING_KEY,'1');
- ak198RecordEvent('receipt',o.id);
+ localStorage.setItem(K,JSON.stringify(db));scheduleCloudSync();
  renderDeliveryTransfers();render();menu();
-
  if(navigator.onLine){
-   try{
-     const ok=await workerPushOrderStatusTransaction(o.id,'قيد التوزيع');
-     if(ok){
-       const fresh=db.orders.find(x=>String(x.id)===String(o.id));
-       if(fresh){
-         delete fresh.pendingStatusSync;
-         delete fresh.pendingStatusTarget;
-         fresh.lastStatusConfirmedAt=isoNow();
-       }
-       removeStatusEventV173(o.id,o.statusEventIdV173);
-       localStorage.setItem(K,JSON.stringify(db));
-       return alert('تم تأكيد الاستلام وانتقال الطلب إلى قيد التوزيع في السحابة ✓');
-     }
-   }catch(e){
-     localStorage.setItem(CLOUD_LAST_ERROR_KEY,e&&e.message?e.message:'فشل تأكيد الاستلام');
-   }
+   const ok=await syncNow();
+   if(ok)return alert('تم تأكيد استلام الطلب وحفظه في السحابة ✓');
  }
- alert('تم حفظ الاستلام محلياً وسيعاد إرسال الطلب تلقائياً حتى تؤكد السحابة حالته.');
+ alert('تم تأكيد الاستلام على هذا الجهاز وستتم المزامنة تلقائياً.');
 }
 function renderDeliveryTransferControls(o){
  const old=document.getElementById('deliveryTransferControls');
@@ -6447,7 +6477,7 @@ function diagnosticsTextV180(){
   const issues=scanIntegrityV180();
   let outbox=[];try{outbox=readStatusOutbox()}catch(_){}
   const payload={
-    app:'AK Delivery 201 Safe Sync',
+    app:'AK Delivery 202 Safe Sync',
     time:new Date().toISOString(),
     online:navigator.onLine,
     role:session?.role||null,
@@ -6567,7 +6597,7 @@ setInterval(()=>{
   }catch(_){}
 },15000);
 
-akLogV180('boot','تشغيل AK Delivery 201 Safe Sync');
+akLogV180('boot','تشغيل AK Delivery 202 Safe Sync');
 try{updateCloudReadWriteStatusV180();}catch(_){}
 setTimeout(()=>{
   try{
