@@ -1,0 +1,446 @@
+// AK Delivery Cloud V4
+// Incremental entity synchronization with append-only change events.
+// Keeps the existing V3 snapshot as a read-only bootstrap/backup source.
+
+const AKV4_SPREADSHEET_ID = '1jGbTl46X0G7iRRTpaPvWXR2lO2X0q1_eyZs4P9mF0ko';
+const AKV4_ACCESS_KEY = 'AKD-0534-CLOUD';
+
+const AKV4_SETTINGS_SHEET = 'Settings';
+const AKV4_ENTITIES_SHEET = 'AKV4_Entities';
+const AKV4_EVENTS_SHEET = 'AKV4_Events';
+const AKV4_OPS_SHEET = 'AKV4_Ops';
+const AKV4_META_SHEET = 'AKV4_Meta';
+
+const AKV4_V3_MANIFEST_KEY = 'AK_DELIVERY_CLOUD_SNAPSHOT_MANIFEST_V3';
+const AKV4_V3_CHUNK_PREFIX = 'AK_DELIVERY_CLOUD_CHUNK_V3_';
+const AKV4_V2_MANIFEST_KEY = 'AK_DELIVERY_CLOUD_SNAPSHOT_MANIFEST_V2';
+const AKV4_V2_CHUNK_PREFIX = 'AK_DELIVERY_CLOUD_CHUNK_V2_';
+const AKV4_LEGACY_KEY = 'AK_DELIVERY_CLOUD_SNAPSHOT';
+
+const AKV4_ARRAY_TYPES = [
+  'orders','workers','returnBatches','deliveryBatches','deliveryTransfers','settlements','customerChangeRequests'
+];
+const AKV4_TYPE_SET = Object.fromEntries(AKV4_ARRAY_TYPES.map(x => [x,true]));
+const AKV4_META_TYPE = '__meta__';
+const AKV4_META_ID = 'root';
+const AKV4_MAX_CHANGES_PER_POLL = 80;
+
+function akV4Json_(x) {
+  return ContentService.createTextOutput(JSON.stringify(x)).setMimeType(ContentService.MimeType.JSON);
+}
+function akV4Book_() { return SpreadsheetApp.openById(AKV4_SPREADSHEET_ID); }
+function akV4Sheet_(name, headers) {
+  const book = akV4Book_();
+  let s = book.getSheetByName(name);
+  if (!s) s = book.insertSheet(name);
+  if (headers && s.getLastRow() === 0) s.getRange(1,1,1,headers.length).setValues([headers]);
+  return s;
+}
+function akV4Clone_(x) { return x == null ? x : JSON.parse(JSON.stringify(x)); }
+function akV4NowIso_() { return new Date().toISOString(); }
+function akV4Key_(type,id) { return String(type)+'\u0000'+String(id); }
+function akV4Num_(v,d) { const n=Number(v); return Number.isFinite(n)?n:(d||0); }
+
+/* ---------- V3 bootstrap read only ---------- */
+function akV4ReadRows3_(s) {
+  const last = Math.max(s.getLastRow(),1);
+  return s.getRange(1,1,last,3).getValues();
+}
+function akV4ReadManifest_(rows, manifestKey, chunkPrefix) {
+  const mr = rows.find(r => r[0] === manifestKey);
+  if (!mr || !mr[1]) return null;
+  const m = JSON.parse(String(mr[1]));
+  const chunks = Number(m.chunks);
+  if (!m.generation || !Number.isFinite(chunks)) throw new Error('Invalid V3 manifest');
+  const prefix = chunkPrefix + String(m.generation) + '_';
+  const parts = [];
+  rows.forEach(r => {
+    const k = String(r[0] || '');
+    if (k.indexOf(prefix) !== 0) return;
+    const n = Number(k.substring(prefix.length));
+    if (Number.isFinite(n)) parts[n] = String(r[1] || '');
+  });
+  for (let i=0;i<chunks;i++) if (typeof parts[i] !== 'string') throw new Error('Missing V3 chunk '+i);
+  const text = parts.slice(0,chunks).join('');
+  if (Number(m.length) && text.length !== Number(m.length)) throw new Error('V3 snapshot length mismatch');
+  const data = JSON.parse(text);
+  return {data, generation:String(m.generation), updatedAt:m.updatedAt||mr[2]||null};
+}
+function akV4ReadV3Bootstrap_() {
+  const s = akV4Sheet_(AKV4_SETTINGS_SHEET);
+  const rows = akV4ReadRows3_(s);
+  let r = akV4ReadManifest_(rows, AKV4_V3_MANIFEST_KEY, AKV4_V3_CHUNK_PREFIX);
+  if (r) return r;
+  r = akV4ReadManifest_(rows, AKV4_V2_MANIFEST_KEY, AKV4_V2_CHUNK_PREFIX);
+  if (r) return r;
+  const old = rows.find(x => x[0] === AKV4_LEGACY_KEY);
+  if (!old || !old[1]) throw new Error('No cloud snapshot available for V4 initialization');
+  return {data:JSON.parse(String(old[1])), generation:'legacy', updatedAt:old[2]||null};
+}
+
+/* ---------- Meta ---------- */
+function akV4MetaSheet_() { return akV4Sheet_(AKV4_META_SHEET,['Key','Value','UpdatedAt']); }
+function akV4MetaMap_() {
+  const s = akV4MetaSheet_();
+  const last=s.getLastRow();
+  const m={};
+  if(last>=2){
+    s.getRange(2,1,last-1,3).getValues().forEach(r => { if(r[0]) m[String(r[0])] = String(r[1] == null ? '' : r[1]); });
+  }
+  return m;
+}
+function akV4SetMetaMany_(obj) {
+  const s=akV4MetaSheet_();
+  const last=s.getLastRow();
+  const rows=last>=2?s.getRange(2,1,last-1,3).getValues():[];
+  const index={}; rows.forEach((r,i)=>{if(r[0])index[String(r[0])]=i+2;});
+  const now=new Date();
+  Object.keys(obj).forEach(k=>{
+    const row=[k,String(obj[k] == null ? '' : obj[k]),now];
+    if(index[k]) s.getRange(index[k],1,1,3).setValues([row]);
+    else { s.appendRow(row); index[k]=s.getLastRow(); }
+  });
+}
+function akV4CurrentRev_(){ return akV4Num_(akV4MetaMap_().currentRev,0); }
+
+/* ---------- Entities ---------- */
+function akV4EntitiesSheet_(){
+  return akV4Sheet_(AKV4_ENTITIES_SHEET,['Type','Id','EntityRev','Json','Deleted','UpdatedAt']);
+}
+function akV4EntityTable_(){
+  const s=akV4EntitiesSheet_();
+  const last=s.getLastRow();
+  const values=last>=2?s.getRange(2,1,last-1,6).getValues():[];
+  const map=new Map();
+  values.forEach((r,i)=>{
+    const type=String(r[0]||''), id=String(r[1]||'');
+    if(!type||!id)return;
+    let entity=null;
+    const deleted=String(r[4]).toLowerCase()==='true'||r[4]===true;
+    if(!deleted && r[3]){try{entity=JSON.parse(String(r[3]))}catch(_){entity=null;}}
+    map.set(akV4Key_(type,id),{row:i+2,type,id,rev:akV4Num_(r[2],0),entity,deleted,updatedAt:r[5]||null});
+  });
+  return {sheet:s,map};
+}
+function akV4BuildDbFromTable_(table){
+  const db={};
+  AKV4_ARRAY_TYPES.forEach(k=>db[k]=[]);
+  const revs={};
+  table.map.forEach(rec=>{
+    if(rec.deleted){ revs[rec.type+':'+rec.id]=rec.rev; return; }
+    revs[rec.type+':'+rec.id]=rec.rev;
+    if(rec.type===AKV4_META_TYPE && rec.id===AKV4_META_ID){
+      const meta=rec.entity||{};
+      Object.keys(meta).forEach(k=>{ if(!AKV4_TYPE_SET[k]) db[k]=akV4Clone_(meta[k]); });
+    } else if(AKV4_TYPE_SET[rec.type]) {
+      db[rec.type].push(akV4Clone_(rec.entity));
+    }
+  });
+  return {db,revs};
+}
+function akV4DbToSeedRows_(db){
+  const rows=[];
+  const now=new Date();
+  AKV4_ARRAY_TYPES.forEach(type=>{
+    const arr=Array.isArray(db[type])?db[type]:[];
+    arr.forEach(entity=>{
+      if(!entity || entity.id==null)return;
+      rows.push([type,String(entity.id),0,JSON.stringify(entity),false,now]);
+    });
+  });
+  const meta={};
+  Object.keys(db||{}).forEach(k=>{ if(!AKV4_TYPE_SET[k]) meta[k]=akV4Clone_(db[k]); });
+  rows.push([AKV4_META_TYPE,AKV4_META_ID,0,JSON.stringify(meta),false,now]);
+  return rows;
+}
+
+/* ---------- Events / ops ---------- */
+function akV4EventsSheet_(){
+  return akV4Sheet_(AKV4_EVENTS_SHEET,['GlobalRev','Seq','OpId','Timestamp','ActorRole','ActorId','Kind','Type','Id','Deleted','EntityRev','Json']);
+}
+function akV4OpsSheet_(){
+  return akV4Sheet_(AKV4_OPS_SHEET,['OpId','Status','Rev','Error','DetailsJson','UpdatedAt']);
+}
+function akV4FindOp_(opId){
+  const s=akV4OpsSheet_(), last=s.getLastRow();
+  if(last<2)return null;
+  const range=s.getRange(2,1,last-1,1);
+  const hit=range.createTextFinder(String(opId)).matchEntireCell(true).findNext();
+  if(!hit)return null;
+  const row=hit.getRow();
+  const v=s.getRange(row,1,1,6).getValues()[0];
+  let details=null; try{details=v[4]?JSON.parse(String(v[4])):null}catch(_){}
+  return {row,opId:String(v[0]),status:String(v[1]),rev:akV4Num_(v[2],0),error:String(v[3]||''),details,updatedAt:v[5]||null};
+}
+function akV4WriteOp_(opId,status,rev,error,details){
+  const s=akV4OpsSheet_();
+  const old=akV4FindOp_(opId);
+  const row=[String(opId),String(status),rev||0,String(error||''),details?JSON.stringify(details):'',new Date()];
+  if(old)s.getRange(old.row,1,1,6).setValues([row]); else s.appendRow(row);
+}
+function akV4ReadEventChangesForRev_(rev){
+  const s=akV4EventsSheet_(), last=s.getLastRow();
+  if(last<2)return [];
+  const vals=s.getRange(2,1,last-1,12).getValues();
+  return vals.filter(r=>akV4Num_(r[0],0)===Number(rev)).map(r=>{
+    let entity=null; if(r[11]){try{entity=JSON.parse(String(r[11]))}catch(_){}}
+    return {type:String(r[7]),id:String(r[8]),deleted:r[9]===true||String(r[9]).toLowerCase()==='true',entityRev:akV4Num_(r[10],0),entity};
+  });
+}
+
+/* ---------- Initialization ---------- */
+function akV4EnsureInitialized_(){
+  const meta=akV4MetaMap_();
+  if(meta.initialized==='1')return {rev:akV4Num_(meta.currentRev,0),baseGeneration:meta.baseV3Generation||''};
+  const lock=LockService.getScriptLock();
+  lock.waitLock(20000);
+  try{
+    const again=akV4MetaMap_();
+    if(again.initialized==='1')return {rev:akV4Num_(again.currentRev,0),baseGeneration:again.baseV3Generation||''};
+    const src=akV4ReadV3Bootstrap_();
+    const pack=src.data||{};
+    const db=pack.db||pack;
+    if(!db || !Array.isArray(db.orders) || !Array.isArray(db.workers))throw new Error('Invalid V3 database for V4 initialization');
+
+    const es=akV4EntitiesSheet_(); es.clearContents(); es.getRange(1,1,1,6).setValues([['Type','Id','EntityRev','Json','Deleted','UpdatedAt']]);
+    const ev=akV4EventsSheet_(); ev.clearContents(); ev.getRange(1,1,1,12).setValues([['GlobalRev','Seq','OpId','Timestamp','ActorRole','ActorId','Kind','Type','Id','Deleted','EntityRev','Json']]);
+    const os=akV4OpsSheet_(); os.clearContents(); os.getRange(1,1,1,6).setValues([['OpId','Status','Rev','Error','DetailsJson','UpdatedAt']]);
+
+    const seed=akV4DbToSeedRows_(db);
+    if(seed.length)es.getRange(2,1,seed.length,6).setValues(seed);
+    akV4SetMetaMany_({initialized:'1',currentRev:'0',baseV3Generation:src.generation||'',initializedAt:akV4NowIso_(),updatedAt:akV4NowIso_()});
+    SpreadsheetApp.flush();
+    return {rev:0,baseGeneration:src.generation||''};
+  } finally { try{lock.releaseLock();}catch(_){} }
+}
+
+/* ---------- Safety / authorization ---------- */
+function akV4ReturnRank_(x){
+  if(!x)return 0;
+  if(x.status==='owner_confirmed'||x.ownerConfirmedAt)return 3;
+  if(x.status==='completed'||x.confirmedAt)return 2;
+  return 1;
+}
+function akV4TransferRank_(x){return x&&(x.status==='received'||x.receivedAt)?2:(x?1:0);}
+function akV4NormalizeWorkerOrder_(current,next,actorId){
+  if(!next)throw new Error('Worker cannot delete orders');
+  const assigned=String((current&&current.worker)||next.worker||'');
+  if(assigned!==String(actorId||''))throw new Error('Order is not assigned to this worker');
+  const out=akV4Clone_(next);
+  if(current){
+    if(current.returnOwnerConfirmedAt){
+      out.returnOwnerConfirmedAt=current.returnOwnerConfirmedAt;
+      if(current.returnOwnerConfirmedLabel)out.returnOwnerConfirmedLabel=current.returnOwnerConfirmedLabel;
+      out.returnCompletedAt=out.returnCompletedAt||current.returnCompletedAt;
+      out.status='مرتجع';
+    } else if(current.returnCompletedAt && out.status==='طلب رجوع') {
+      out.returnCompletedAt=current.returnCompletedAt;
+      out.status='مرتجع';
+    }
+    if(current.deliveryReceivedAt){
+      out.deliveryReceivedAt=current.deliveryReceivedAt;
+      if(current.deliveryReceivedLabel)out.deliveryReceivedLabel=current.deliveryReceivedLabel;
+      if(current.deliveryReceivedByWorkerId)out.deliveryReceivedByWorkerId=current.deliveryReceivedByWorkerId;
+      if(current.deliveryReceivedByWorkerName)out.deliveryReceivedByWorkerName=current.deliveryReceivedByWorkerName;
+    }
+    if(current.status==='تم التسليم' && out.status!=='تم التسليم')throw new Error('Worker cannot move a delivered order backwards');
+  }
+  out.worker=assigned;
+  return out;
+}
+function akV4AuthorizeChange_(change,currentRec,actor){
+  const role=String(actor.role||'');
+  const type=String(change.type||'');
+  const next=change.deleted?null:akV4Clone_(change.entity);
+  const current=currentRec&&!currentRec.deleted?currentRec.entity:null;
+  if(role!=='worker')return next;
+  if(change.deleted)throw new Error('Worker cannot delete cloud entities');
+  const actorId=String(actor.id||'');
+  if(type==='orders')return akV4NormalizeWorkerOrder_(current,next,actorId);
+  if(type==='deliveryTransfers'){
+    if(String((current&&current.workerId)||(next&&next.workerId)||'')!==actorId)throw new Error('Delivery transfer belongs to another worker');
+    if(current && akV4TransferRank_(current)>akV4TransferRank_(next))return akV4Clone_(current);
+    return next;
+  }
+  if(type==='returnBatches'){
+    if(String((current&&current.workerId)||(next&&next.workerId)||'')!==actorId)throw new Error('Return batch belongs to another worker');
+    if(current && akV4ReturnRank_(current)>=3)return akV4Clone_(current);
+    const out=next;
+    if(current){
+      out.ownerReceivedOrderIds=akV4Clone_(current.ownerReceivedOrderIds||[]);
+      if(current.ownerConfirmedAt)out.ownerConfirmedAt=current.ownerConfirmedAt;
+      if(current.ownerConfirmedLabel)out.ownerConfirmedLabel=current.ownerConfirmedLabel;
+      if(akV4ReturnRank_(current)>akV4ReturnRank_(out))return akV4Clone_(current);
+    }
+    return out;
+  }
+  if(type==='deliveryBatches'||type==='customerChangeRequests'||type==='settlements'){
+    if(String((current&&current.workerId)||(next&&next.workerId)||'')!==actorId)throw new Error('Entity belongs to another worker');
+    return next;
+  }
+  throw new Error('Worker cannot modify '+type);
+}
+
+/* ---------- Transaction ---------- */
+function akV4ApplyTx_(data){
+  akV4EnsureInitialized_();
+  if(!data||!data.opId||!Array.isArray(data.changes))throw new Error('Invalid V4 transaction');
+  const opId=String(data.opId);
+  const existing=akV4FindOp_(opId);
+  if(existing)return existing;
+
+  const actor={role:String(data.actorRole||''),id:String(data.actorId||''),name:String(data.actorName||'')};
+  const lock=LockService.getScriptLock();
+  lock.waitLock(20000);
+  try{
+    const second=akV4FindOp_(opId); if(second)return second;
+    const table=akV4EntityTable_();
+    const conflicts=[];
+    const prepared=[];
+    const seen=new Set();
+
+    data.changes.forEach((raw,idx)=>{
+      const type=String(raw&&raw.type||''), id=String(raw&&raw.id||'');
+      if(!(AKV4_TYPE_SET[type]||(type===AKV4_META_TYPE&&id===AKV4_META_ID)))throw new Error('Unsupported entity type '+type);
+      if(!id)throw new Error('Missing entity id');
+      const key=akV4Key_(type,id);
+      if(seen.has(key))throw new Error('Duplicate entity in transaction '+type+':'+id); seen.add(key);
+      const current=table.map.get(key)||null;
+      const currentRev=current?current.rev:0;
+      const expected=akV4Num_(raw.expectedRev,0);
+      if(expected!==currentRev){
+        conflicts.push({type,id,expectedRev:expected,currentRev,deleted:current?current.deleted:false,entity:current&&!current.deleted?current.entity:null});
+        return;
+      }
+      const safeEntity=akV4AuthorizeChange_(raw,current,actor);
+      if(!raw.deleted){
+        if(!safeEntity || typeof safeEntity!=='object')throw new Error('Invalid entity '+type+':'+id);
+        if(type!==AKV4_META_TYPE && String(safeEntity.id)!==id)throw new Error('Entity id mismatch '+type+':'+id);
+      }
+      prepared.push({idx,type,id,key,deleted:!!raw.deleted,entity:safeEntity,current});
+    });
+
+    if(conflicts.length){
+      const rev=akV4CurrentRev_();
+      const details={code:'cloud_conflict',currentRev:rev,conflicts};
+      akV4WriteOp_(opId,'conflict',rev,'Entity revision conflict',details);
+      return akV4FindOp_(opId);
+    }
+    if(!prepared.length){
+      const rev=akV4CurrentRev_();
+      akV4WriteOp_(opId,'success',rev,'',{empty:true});
+      return akV4FindOp_(opId);
+    }
+
+    const newRev=akV4CurrentRev_()+1;
+    const now=new Date(), nowIso=now.toISOString();
+    const appendEntityRows=[];
+    const eventRows=[];
+    const responseChanges=[];
+
+    prepared.forEach((p,seq)=>{
+      const json=p.deleted?'':JSON.stringify(p.entity);
+      const row=[p.type,p.id,newRev,json,p.deleted,now];
+      if(p.current)table.sheet.getRange(p.current.row,1,1,6).setValues([row]);
+      else appendEntityRows.push(row);
+      eventRows.push([newRev,seq+1,opId,now,actor.role,actor.id,String(data.kind||'sync'),p.type,p.id,p.deleted,newRev,json]);
+      responseChanges.push({type:p.type,id:p.id,deleted:p.deleted,entityRev:newRev,entity:p.deleted?null:akV4Clone_(p.entity)});
+    });
+    if(appendEntityRows.length){
+      const start=table.sheet.getLastRow()+1;
+      table.sheet.getRange(start,1,appendEntityRows.length,6).setValues(appendEntityRows);
+    }
+    const evs=akV4EventsSheet_();
+    const evStart=evs.getLastRow()+1;
+    evs.getRange(evStart,1,eventRows.length,12).setValues(eventRows);
+    akV4SetMetaMany_({currentRev:String(newRev),updatedAt:nowIso,lastOpId:opId});
+    akV4WriteOp_(opId,'success',newRev,'',{changeCount:responseChanges.length});
+    SpreadsheetApp.flush();
+    return {opId,status:'success',rev:newRev,error:'',details:{changeCount:responseChanges.length},changes:responseChanges,updatedAt:nowIso};
+  } catch(err){
+    const rev=akV4CurrentRev_();
+    try{akV4WriteOp_(opId,'error',rev,String(err&&err.message||err),{code:err&&err.code?err.code:null});}catch(_){}
+    return akV4FindOp_(opId)||{opId,status:'error',rev,error:String(err)};
+  } finally { try{lock.releaseLock();}catch(_){} }
+}
+
+/* ---------- Full load / incremental changes ---------- */
+function akV4Load_(){
+  akV4EnsureInitialized_();
+  const table=akV4EntityTable_();
+  const built=akV4BuildDbFromTable_(table);
+  const rev=akV4CurrentRev_();
+  return {ok:true,backend:'4',rev,generation:'v4-'+rev,updatedAt:akV4MetaMap_().updatedAt||null,db:built.db,entityRevs:built.revs};
+}
+function akV4ChangesSince_(since,maxRevs){
+  akV4EnsureInitialized_();
+  since=Math.max(0,akV4Num_(since,0));
+  const current=akV4CurrentRev_();
+  if(since>=current)return {ok:true,backend:'4',since,currentRev:current,events:[],hasMore:false};
+  const limit=Math.max(1,Math.min(akV4Num_(maxRevs,AKV4_MAX_CHANGES_PER_POLL),AKV4_MAX_CHANGES_PER_POLL));
+  const maxTarget=Math.min(current,since+limit);
+  const s=akV4EventsSheet_(), last=s.getLastRow();
+  if(last<2)return {ok:true,backend:'4',since,currentRev:current,events:[],hasMore:current>since};
+  const values=s.getRange(2,1,last-1,12).getValues();
+  const grouped=new Map();
+  values.forEach(r=>{
+    const rev=akV4Num_(r[0],0);
+    if(rev<=since||rev>maxTarget)return;
+    if(!grouped.has(rev))grouped.set(rev,{rev,opId:String(r[2]||''),timestamp:r[3] instanceof Date?r[3].toISOString():String(r[3]||''),actorRole:String(r[4]||''),actorId:String(r[5]||''),kind:String(r[6]||''),changes:[]});
+    let entity=null; if(r[11]){try{entity=JSON.parse(String(r[11]))}catch(_){}}
+    grouped.get(rev).changes.push({type:String(r[7]),id:String(r[8]),deleted:r[9]===true||String(r[9]).toLowerCase()==='true',entityRev:akV4Num_(r[10],0),entity});
+  });
+  const events=[...grouped.values()].sort((a,b)=>a.rev-b.rev);
+  return {ok:true,backend:'4',since,currentRev:current,events,hasMore:maxTarget<current,nextSince:events.length?events[events.length-1].rev:since};
+}
+function akV4OpStatus_(opId){
+  akV4EnsureInitialized_();
+  const op=akV4FindOp_(String(opId||''));
+  if(!op)return {ok:true,backend:'4',found:false,status:'pending'};
+  const out={ok:true,backend:'4',found:true,opId:op.opId,status:op.status,rev:op.rev,error:op.error,details:op.details,updatedAt:op.updatedAt};
+  if(op.status==='success'&&op.rev>0)out.changes=akV4ReadEventChangesForRev_(op.rev);
+  return out;
+}
+
+/* ---------- HTTP entry points ---------- */
+function doGet(e){
+  try{
+    const p=(e&&e.parameter)||{};
+    if(p.key!==AKV4_ACCESS_KEY)return akV4Json_({ok:false,error:'Access denied',backend:'4'});
+    const action=String(p.action||'');
+    if(action==='v4_ping'){
+      akV4EnsureInitialized_();
+      const meta=akV4MetaMap_();
+      return akV4Json_({ok:true,backend:'4',rev:akV4Num_(meta.currentRev,0),generation:'v4-'+akV4Num_(meta.currentRev,0),updatedAt:meta.updatedAt||null});
+    }
+    if(action==='v4_load')return akV4Json_(akV4Load_());
+    if(action==='v4_changes')return akV4Json_(akV4ChangesSince_(p.since,p.max));
+    if(action==='v4_op')return akV4Json_(akV4OpStatus_(p.opId));
+
+    // Legacy read compatibility during migration. Old clients may read, but must not overwrite V4.
+    if(action==='ping'){
+      akV4EnsureInitialized_(); const meta=akV4MetaMap_(); const rev=akV4Num_(meta.currentRev,0);
+      return akV4Json_({ok:true,app:'AK Delivery',backend:'3',generation:'v4-'+rev,updatedAt:meta.updatedAt||null});
+    }
+    if(action==='load'){
+      const x=akV4Load_();
+      return akV4Json_({ok:true,empty:false,data:{db:x.db,updatedAt:x.updatedAt,updatedBy:'CloudV4 compatibility'},updatedAt:x.updatedAt,generation:x.generation,backend:'3'});
+    }
+    return akV4Json_({ok:false,error:'Unknown action',backend:'4'});
+  }catch(err){return akV4Json_({ok:false,error:String(err&&err.message||err),code:err&&err.code?err.code:null,backend:'4'});}
+}
+
+function doPost(e){
+  let body={};
+  try{body=JSON.parse((e&&e.postData&&e.postData.contents)||'{}');}catch(_){return akV4Json_({ok:false,error:'Invalid JSON',backend:'4'});}
+  if(body.key!==AKV4_ACCESS_KEY)return akV4Json_({ok:false,error:'Access denied',backend:'4'});
+  try{
+    if(body.action==='v4_tx'){
+      const r=akV4ApplyTx_(body.data||{});
+      return akV4Json_({ok:r.status==='success',backend:'4',status:r.status,rev:r.rev,error:r.error||'',details:r.details||null});
+    }
+    // Safety: once V4 exists, block old full-snapshot writes. This prevents stale clients from erasing newer entity changes.
+    if(body.action==='save')return akV4Json_({ok:false,error:'Upgrade required: CloudV4 blocks legacy full-snapshot writes',code:'upgrade_required',backend:'4'});
+    return akV4Json_({ok:false,error:'Invalid request',backend:'4'});
+  }catch(err){return akV4Json_({ok:false,error:String(err&&err.message||err),code:err&&err.code?err.code:null,backend:'4'});}
+}
