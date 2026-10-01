@@ -562,7 +562,7 @@ html[data-lang="fr"] #overlay > .drawer .actions{justify-content:flex-start!impo
  <select id="loginWorker"><option value="">اختر حسابك</option></select>
 <input id="loginPin" type="password" inputmode="numeric" placeholder="الرمز السري">
 <div id="loginStatus" style="margin-top:8px;font-weight:700;min-height:22px"></div>
-<div style="margin-top:6px;font-size:12px;opacity:.7">الإصدار 209</div>
+<div style="margin-top:6px;font-size:12px;opacity:.7">الإصدار 210</div>
 <button id="workerLoginBtn" type="button" onclick="workerLogin(event)" class="btn" style="width:100%">دخول الموزع</button>
 <hr>
 <h3>إنشاء حساب موزع</h3>
@@ -1591,6 +1591,221 @@ const CLOUD_LAST_OK_KEY='ak_delivery_last_cloud_ok_v59';
 const CLOUD_LAST_ERROR_KEY='ak_delivery_last_cloud_error_v142';
 const CLOUD_SEEN_ASSIGNED_KEY='ak_delivery_seen_assigned_v59';
 
+
+/* v210 / CloudV4: مزامنة كيان-بكيان بدل إرسال قاعدة البيانات كاملة.
+   - كل كتابة ترسل فقط الكيانات التي تغيّرت.
+   - الخادم يعطي كل معاملة revision عالمي وكل كيان entityRev.
+   - الأجهزة تسحب events الصغيرة منذ آخر revision وتطبقها فوراً.
+   - إعادة المحاولة تستخدم opId ثابتاً، لذلك لا تتكرر العملية إذا نجح POST ثم انقطع الرد. */
+const AKV4_ACTIVE=true;
+const AKV4_ARRAY_TYPES=['orders','workers','returnBatches','deliveryBatches','deliveryTransfers','settlements','customerChangeRequests'];
+const AKV4_META_TYPE='__meta__', AKV4_META_ID='root';
+const AKV4_BASE_KEY='ak_delivery_v4_baseline_v210';
+const AKV4_REV_KEY='ak_delivery_v4_rev_v210';
+let akV4PollBusy=false, akV4LastPoll=0;
+
+function akV4Clone(v){return v==null?v:JSON.parse(JSON.stringify(v));}
+function akV4CleanEntity(v){
+  const x=akV4Clone(v||{});
+  delete x.pendingStatusSync;delete x.pendingStatusTarget;
+  return x;
+}
+function akV4HashString(s){
+  let h=2166136261>>>0;
+  for(let i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619)>>>0;}
+  return h.toString(36)+':'+s.length;
+}
+function akV4HashEntity(v){return akV4HashString(JSON.stringify(akV4CleanEntity(v)));}
+function akV4Key(type,id){return String(type)+':'+String(id);}
+function akV4StateFromDb(source){
+  const m=new Map(), d=source||{};
+  for(const type of AKV4_ARRAY_TYPES){
+    const arr=Array.isArray(d[type])?d[type]:[];
+    for(const raw of arr){
+      if(!raw||raw.id==null)continue;
+      const entity=akV4CleanEntity(raw), id=String(entity.id), key=akV4Key(type,id);
+      m.set(key,{key,type,id,entity,hash:akV4HashEntity(entity)});
+    }
+  }
+  const meta={};
+  for(const [k,v] of Object.entries(d)){
+    if(AKV4_ARRAY_TYPES.includes(k)||String(k).startsWith('_v4'))continue;
+    meta[k]=akV4Clone(v);
+  }
+  const key=akV4Key(AKV4_META_TYPE,AKV4_META_ID);
+  m.set(key,{key,type:AKV4_META_TYPE,id:AKV4_META_ID,entity:meta,hash:akV4HashEntity(meta)});
+  return m;
+}
+function akV4ReadBase(){
+  try{
+    const x=JSON.parse(localStorage.getItem(AKV4_BASE_KEY)||'null');
+    if(x&&typeof x==='object'&&x.entries)return x;
+  }catch(_){}
+  return {rev:Number(localStorage.getItem(AKV4_REV_KEY)||0)||0,entries:{}};
+}
+function akV4WriteBase(base){
+  try{
+    localStorage.setItem(AKV4_BASE_KEY,JSON.stringify(base));
+    localStorage.setItem(AKV4_REV_KEY,String(Number(base.rev)||0));
+  }catch(_){}
+}
+function akV4SetFullBase(serverDb,revs,rev){
+  const state=akV4StateFromDb(serverDb), entries={};
+  for(const [key,item] of state){
+    entries[key]={rev:Number((revs||{})[key]||0)||0,hash:item.hash,deleted:false};
+  }
+  const base={rev:Number(rev)||0,entries};akV4WriteBase(base);return base;
+}
+function akV4ApplyBaselineChange(base,ch){
+  const key=akV4Key(ch.type,ch.id);
+  if(ch.deleted)base.entries[key]={rev:Number(ch.entityRev)||0,hash:'',deleted:true};
+  else base.entries[key]={rev:Number(ch.entityRev)||0,hash:akV4HashEntity(ch.entity),deleted:false};
+}
+function akV4DiffDb(targetDb){
+  const base=akV4ReadBase(), state=akV4StateFromDb(targetDb), changes=[];
+  for(const [key,item] of state){
+    const b=base.entries[key];
+    if(!b||b.deleted||b.hash!==item.hash){
+      changes.push({type:item.type,id:item.id,expectedRev:b?Number(b.rev||0):0,deleted:false,entity:item.entity});
+    }
+  }
+  for(const [key,b] of Object.entries(base.entries||{})){
+    if(b.deleted||state.has(key))continue;
+    const cut=key.indexOf(':'), type=key.slice(0,cut), id=key.slice(cut+1);
+    changes.push({type,id,expectedRev:Number(b.rev||0),deleted:true});
+  }
+  return {base,changes};
+}
+function akV4Actor(){
+  const role=session?.role||'owner';
+  return {role,id:role==='worker'?String(session?.workerId||''):'owner',name:typeof actorName==='function'?actorName():(role==='worker'?'الموزع':'المالك')};
+}
+async function akV4Get(action,params={},timeoutMs=30000){
+  const qs=new URLSearchParams(Object.assign({key:CLOUD_KEY,action,_t:Date.now()+'-'+Math.random().toString(36).slice(2)},params||{}));
+  const r=await ak202Fetch(CLOUD_URL+'?'+qs.toString(),{method:'GET',cache:'no-store'},timeoutMs);
+  const txt=await r.text();let j;try{j=JSON.parse(txt)}catch(_){throw new Error('استجابة CloudV4 غير صالحة')}
+  if(!r.ok||!j.ok)throw Object.assign(new Error(j.error||'فشل CloudV4'),{code:j.code||''});
+  return j;
+}
+async function akV4FetchFull(){
+  const j=await akV4Get('v4_load',{},60000);
+  if(String(j.backend)!=='4'||!j.db)throw new Error('CloudV4 load غير صالح');
+  akV4SetFullBase(j.db,j.entityRevs||{},j.rev||0);
+  return {ok:true,backend:'4',rev:Number(j.rev)||0,generation:'v4-'+(Number(j.rev)||0),updatedAt:j.updatedAt||null,data:{db:j.db},entityRevs:j.entityRevs||{}};
+}
+function akV4LocalItem(type,id){
+  if(type===AKV4_META_TYPE){
+    const state=akV4StateFromDb(db);return state.get(akV4Key(type,id))?.entity||{};
+  }
+  return (Array.isArray(db?.[type])?db[type]:[]).find(x=>String(x?.id)===String(id))||null;
+}
+function akV4ReplaceLocal(type,id,entity,deleted){
+  if(type===AKV4_META_TYPE){
+    if(deleted)return;
+    const meta=entity||{};
+    for(const [k,v] of Object.entries(meta)){if(!AKV4_ARRAY_TYPES.includes(k))db[k]=akV4Clone(v);}
+    return;
+  }
+  if(!Array.isArray(db[type]))db[type]=[];
+  const i=db[type].findIndex(x=>String(x?.id)===String(id));
+  if(deleted){if(i>=0)db[type].splice(i,1);return;}
+  const x=akV4Clone(entity);
+  if(i<0)db[type].push(x);else db[type][i]=x;
+}
+function akV4KeyDirty(key){
+  const base=akV4ReadBase(), b=base.entries[key];
+  const state=akV4StateFromDb(db), item=state.get(key);
+  if(!b)return !!item;
+  if(b.deleted)return !!item;
+  return !item||item.hash!==b.hash;
+}
+function akV4KeyDirtyAgainstBase(key,base){
+  const b=(base&&base.entries)?base.entries[key]:null;
+  const state=akV4StateFromDb(db), item=state.get(key);
+  if(!b)return !!item;
+  if(b.deleted)return !!item;
+  return !item||item.hash!==b.hash;
+}
+function akV4ApplyRemoteChanges(events){
+  const base=akV4ReadBase();let changed=false,conflicts=0,lastRev=base.rev;
+  for(const ev of (events||[])){
+    lastRev=Math.max(lastRev,Number(ev.rev)||0);
+    for(const ch of (ev.changes||[])){
+      const key=akV4Key(ch.type,ch.id), dirty=akV4KeyDirtyAgainstBase(key,base);
+      if(dirty&&ch.type==='orders'){
+        const local=akV4LocalItem(ch.type,ch.id), remote=ch.deleted?null:ch.entity;
+        try{if(local&&remote&&typeof ak189Record==='function')ak189Record(local,remote,'تعارض مزامنة CloudV4 — تغير نفس الطلب على جهازين');}catch(_){}
+        akV4ApplyBaselineChange(base,ch);conflicts++;continue;
+      }
+      akV4ReplaceLocal(ch.type,ch.id,ch.entity,!!ch.deleted);
+      akV4ApplyBaselineChange(base,ch);changed=true;
+    }
+  }
+  base.rev=lastRev;akV4WriteBase(base);
+  if(changed){
+    try{dedupeDatabase()}catch(_){}
+    localStorage.setItem(K,JSON.stringify(db));
+    try{ak189Remember(db)}catch(_){}
+    try{menu();render();renderWorkers();accountsRender();refreshLoginWorkers();refreshActiveCloudPage();ak189RefreshReport();}catch(_){}
+  }
+  if(changed||conflicts){
+    try{localStorage.setItem(CLOUD_LAST_OK_KEY,isoNow());localStorage.setItem('ak_delivery_last_cloud_pull',isoNow());localStorage.setItem('ak_delivery_cloud_last_read_v180',isoNow());updateCloudReadWriteStatusV180();updateSyncIndicators();}catch(_){}
+  }
+  return {changed,conflicts,lastRev};
+}
+async function akV4PollChanges(force=false){
+  if(!AKV4_ACTIVE||!navigator.onLine||document.visibilityState==='hidden'||!session?.role||akV4PollBusy)return false;
+  const now=Date.now();if(!force&&now-akV4LastPoll<1100)return false;akV4LastPoll=now;akV4PollBusy=true;
+  try{
+    const base=akV4ReadBase();
+    if(!base.rev && !Object.keys(base.entries||{}).length){
+      if(typeof ak208HasLocalDirty==='function'&&ak208HasLocalDirty()){if(!cloudSyncTimer)queueCloudSync(40);return false;}
+      const full=await akV4FetchFull();db=akV4Clone(full.data.db);localStorage.setItem(K,JSON.stringify(db));
+      try{menu();render();renderWorkers();accountsRender();refreshLoginWorkers();refreshActiveCloudPage();}catch(_){}
+      try{ak208MarkReadSuccess()}catch(_){};return true;
+    }
+    const j=await akV4Get('v4_changes',{since:String(base.rev),max:'80'},30000);
+    const res=akV4ApplyRemoteChanges(j.events||[]);
+    if(j.hasMore)setTimeout(()=>akV4PollChanges(true),20);
+    return !!(res.changed||res.conflicts||!(j.events||[]).length);
+  }catch(e){try{localStorage.setItem(CLOUD_LAST_ERROR_KEY,e.message||String(e));updateSyncIndicators()}catch(_){};return false}
+  finally{akV4PollBusy=false;}
+}
+async function akV4SaveAll(payload={}){
+  if(!payload||!payload.db)throw new Error('لا توجد بيانات للحفظ');
+  let base=akV4ReadBase();
+  if(!Object.keys(base.entries||{}).length){await akV4FetchFull();base=akV4ReadBase();}
+  const diff=akV4DiffDb(payload.db);
+  if(!diff.changes.length)return {ok:true,verified:true,backend:'4',generation:'v4-'+diff.base.rev,rev:diff.base.rev,noChanges:true};
+  if(!payload._v4OpId)payload._v4OpId='AKV4-'+Date.now()+'-'+Math.random().toString(36).slice(2,9);
+  const actor=akV4Actor();
+  const body={key:CLOUD_KEY,action:'v4_tx',data:{opId:payload._v4OpId,actorRole:actor.role,actorId:actor.id,actorName:actor.name,kind:String(payload.updatedBy||'sync'),changes:diff.changes}};
+  await ak202Fetch(CLOUD_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain;charset=UTF-8'},body:JSON.stringify(body),cache:'no-store'},45000);
+  const waits=[100,160,240,360,520,800,1200,1800,2500,3500];
+  for(const ms of waits){
+    await new Promise(r=>setTimeout(r,ms));
+    const op=await akV4Get('v4_op',{opId:payload._v4OpId},30000);
+    if(!op.found||op.status==='pending')continue;
+    if(op.status==='conflict'){
+      const err=new Error('تعارض تحديثات CloudV4');err.code='cloud_conflict';err.currentGeneration='v4-'+(Number(op.rev)||0);err.details=op.details;throw err;
+    }
+    if(op.status!=='success'){throw new Error(op.error||'فشلت معاملة CloudV4');}
+    const b=akV4ReadBase(), sentState=akV4StateFromDb(payload.db), currentState=akV4StateFromDb(db);
+    for(const ch of (op.changes||[])){
+      const key=akV4Key(ch.type,ch.id), sent=sentState.get(key), cur=currentState.get(key);
+      akV4ApplyBaselineChange(b,ch);
+      // إذا غيّر المستخدم نفس الكيان أثناء انتظار تأكيد الخادم، لا نمحو تعديله الأحدث محلياً.
+      const unchangedSinceSend = ch.deleted ? !cur : (!!sent && !!cur && sent.hash===cur.hash);
+      if(unchangedSinceSend)akV4ReplaceLocal(ch.type,ch.id,ch.entity,!!ch.deleted);
+    }
+    b.rev=Number(op.rev)||b.rev;akV4WriteBase(b);
+    localStorage.setItem(K,JSON.stringify(db));
+    try{localStorage.setItem(CLOUD_LAST_OK_KEY,isoNow());localStorage.setItem('ak_delivery_last_cloud_push',isoNow());localStorage.setItem('ak_delivery_cloud_last_write_v180',isoNow());updateCloudReadWriteStatusV180();}catch(_){}
+    return {ok:true,verified:true,backend:'4',generation:'v4-'+b.rev,rev:b.rev,changes:op.changes||[]};
+  }
+  const err=new Error('انتهت مهلة تأكيد معاملة CloudV4');err.code='cloud_timeout';throw err;
+}
+
 /* v204: محرك مزامنة أحادي المسار.
    v205 يضيف حواجز حالات نهائية تمنع التراجع الصامت للرجوع والاستلام.
    يمنع تزامن الجلب والرفع في الوقت نفسه على جهاز الموزع،
@@ -1970,87 +2185,13 @@ async function ak202Fetch(url,options={},timeoutMs=75000){
 }
 
 async function cloudRequestOnceV187(action,payload={}){
-  let r;
-
   if(action==='ping'){
-    r=await ak202Fetch(
-      CLOUD_URL+'?key='+encodeURIComponent(CLOUD_KEY)+'&action=ping&_t='+Date.now(),
-      {method:'GET',cache:'no-store'},
-      25000
-    );
-
-  }else if(action==='loadAll'){
-    const loadTimeout=Math.max(45000,Number(payload&&payload._timeoutMs)||75000);
-    r=await ak202Fetch(
-      CLOUD_URL+'?key='+encodeURIComponent(CLOUD_KEY)+'&action=load&_t='+Date.now()+'-'+Math.random().toString(36).slice(2),
-      {method:'GET',cache:'no-store'},
-      loadTimeout
-    );
-
-  }else if(action==='saveAll'){
-    // v131: رفع مؤكد. لا نعتبر POST ناجحاً إلا بعد أن تعيد السحابة نفس الرمز
-    // ونفس عدد الطلبات والموزعين المرسلين.
-    const token='AKSYNC-'+Date.now()+'-'+Math.random().toString(36).slice(2,8);
-    const data=Object.assign({},payload||{},{_syncToken:token});
-    const expectedOrders=Array.isArray(data.db?.orders)?data.db.orders.length:0;
-    const expectedWorkers=Array.isArray(data.db?.workers)?data.db.workers.length:0;
-    const expectedDb=JSON.stringify(data.db||{});
-    const body=JSON.stringify({key:CLOUD_KEY,action:'save',data:data});
-
-    await ak202Fetch(CLOUD_URL,{
-      method:'POST',mode:'no-cors',
-      headers:{'Content-Type':'text/plain;charset=UTF-8'},
-      body,cache:'no-store'
-    },75000);
-
-    for(let i=0;i<4;i++){
-      await new Promise(resolve=>setTimeout(resolve,[500,900,1500,2500][i]));
-      let check;
-      try{check=await cloudRequestOnceV187('loadAll',{_timeoutMs:60000});}catch(err){
-        if(i===3)throw ak202CloudError(err);
-        continue;
-      }
-      let pack=check.snapshot ?? check.payload ?? check.data ?? check.value ?? null;
-      if(typeof pack==='string'){try{pack=JSON.parse(pack)}catch(_){}}
-      const cdb=pack&&pack.db;
-      const orders=Array.isArray(cdb?.orders)?cdb.orders.length:-1;
-      const workers=Array.isArray(cdb?.workers)?cdb.workers.length:-1;
-      const sameDb=!!cdb && JSON.stringify(cdb)===expectedDb;
-      if(pack && pack._syncToken===token && orders===expectedOrders && workers===expectedWorkers && sameDb){
-        return {ok:true,verified:true,tokenMatched:pack._syncToken===token,dbMatched:sameDb,token,orders,workers};
-      }
-      // تغيّر الجيل متوقع عند نجاح حفظنا؛ الرمز هو ما يحدد الكاتب الفعلي.
-      // إذا وصل حفظ جهاز آخر، أعد قراءة النسخة الجديدة وادمجها قبل المحاولة.
-      if((pack && pack._syncToken===token && !sameDb) ||
-         (pack && pack._syncToken && pack._syncToken!==token &&
-          Object.prototype.hasOwnProperty.call(data,'_baseGeneration') &&
-          Object.prototype.hasOwnProperty.call(check,'generation') &&
-          check.generation!==data._baseGeneration)){
-        const conflict=new Error('تعارض تحديثات السحابة');
-        conflict.code='cloud_conflict';
-        throw conflict;
-      }
-    }
-    throw new Error('السحابة لم تؤكد حفظ البيانات');
-
-  }else{
-    throw new Error('عملية سحابية غير معروفة');
+    const j=await akV4Get('v4_ping',{},25000);
+    return {ok:true,app:'AK Delivery',backend:'4',generation:j.generation||('v4-'+(j.rev||0)),rev:Number(j.rev)||0,updatedAt:j.updatedAt||null};
   }
-
-  const txt=await r.text();
-  let j;
-  try{j=JSON.parse(txt)}catch(_){throw new Error('استجابة غير صالحة من السحابة');}
-  if(!r.ok)throw new Error(j.error||'فشل الاتصال بالسحابة');
-  if(!j.ok){
-    const err=new Error(j.error||'خطأ في السحابة');
-    if(j.code)err.code=j.code;
-    if(j.currentGeneration)err.currentGeneration=j.currentGeneration;
-    throw err;
-  }
-  // v191: لا نقبل بالخطأ خادماً قديماً بعد الانتقال إلى CloudV3.
-  if((action==='ping'||action==='loadAll') && String(j.backend||'')!=='3')
-    throw new Error('الخادم السحابي ليس CloudV3');
-  return j;
+  if(action==='loadAll')return await akV4FetchFull();
+  if(action==='saveAll')return await akV4SaveAll(payload||{});
+  throw new Error('عملية CloudV4 غير معروفة');
 }
 /* v187: إعادة محاولة تلقائية للاتصال السحابي.
    عند انتهاء المهلة أثناء الحفظ، نتحقق أولاً هل وصلت البيانات فعلاً قبل إعادة الإرسال. */
@@ -2570,7 +2711,7 @@ function ak189RefreshReport(){
  </div>`).join('');
 }
 function ak189DownloadRecovery(){
- const data={app:'AK Delivery 209',exportedAt:new Date().toISOString(),deviceDb:db,conflicts:ak189Conflicts(),
+ const data={app:'AK Delivery 210',exportedAt:new Date().toISOString(),deviceDb:db,conflicts:ak189Conflicts(),
  baseline:ak189Read(AK189_BASE,[]),statusQueue:readStatusOutbox()};
  const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
  const a=document.createElement('a');a.href=URL.createObjectURL(blob);
@@ -3582,10 +3723,13 @@ setInterval(()=>{
     if(!cloudSyncTimer)queueCloudSync(180);
     return;
   }
+  if(AKV4_ACTIVE){akV4PollChanges(false);return;}
   const activeRecently=(Date.now()-ak198LastActivity)<120000;
   const interval=activeRecently?8000:20000;
   if(Date.now()-cloudLastPullStarted>=interval){
-    if(session.role==='worker')ak208WorkerAdoptCloud(true);
+    if(AKV4_ACTIVE)akV4PollChanges(true);
+    else if(AKV4_ACTIVE)akV4PollChanges(true);
+    else if(session.role==='worker')ak208WorkerAdoptCloud(true);
     else ak208OwnerAdoptCloud(true);
   }
 },5000);
@@ -7329,7 +7473,81 @@ setInterval(()=>{
   }catch(_){}
 },15000);
 
-akLogV180('boot','تشغيل AK Delivery 209 Auto Safe Sync');
+
+
+async function akV4FullAdoptCurrentDevice(silent=true){
+  if(!navigator.onLine||!session?.role)return false;
+  if(typeof ak208HasLocalDirty==='function'&&ak208HasLocalDirty())return false;
+  try{
+    const full=await akV4FetchFull();
+    db=akV4Clone(full.data.db);localStorage.setItem(K,JSON.stringify(db));
+    try{ak208ClearLegacyQueueIfSafe();ak208MarkReadSuccess();}catch(_){}
+    try{menu();render();renderWorkers();accountsRender();refreshLoginWorkers();refreshActiveCloudPage();ak189RefreshReport();}catch(_){}
+    updateSyncIndicators();if(!silent)showToast('✅ تم اعتماد قاعدة CloudV4 كاملة');return true;
+  }catch(e){try{localStorage.setItem(CLOUD_LAST_ERROR_KEY,e.message||String(e));updateSyncIndicators()}catch(_){};return false}
+}
+async function akV4DirectOwnerPush(silent=true){
+  if(!session||session.role==='worker'||!navigator.onLine)return false;
+  try{
+    const r=await akV4SaveAll({db:stripTransientSyncFlagsV175(db),updatedAt:isoNow(),updatedBy:'owner-v210'});
+    if(!r||!r.verified)return false;
+    try{ak208ClearDirty('owner-v210');if(!ak208StatusPending()){ak198ClearEvents();localStorage.removeItem(CLOUD_PENDING_KEY);}localStorage.removeItem(CLOUD_LAST_ERROR_KEY);}catch(_){}
+    updateSyncIndicators();return true;
+  }catch(e){
+    if(e&&e.code==='cloud_conflict')throw e;
+    try{localStorage.setItem(CLOUD_PENDING_KEY,'1');localStorage.setItem(CLOUD_LAST_ERROR_KEY,e.message||String(e));updateSyncIndicators()}catch(_){}
+    return false;
+  }
+}
+async function akV4DirectWorkerPush(silent=true){
+  if(!session||session.role!=='worker'||!navigator.onLine)return false;
+  try{
+    const r=await akV4SaveAll({db:stripTransientSyncFlagsV175(db),updatedAt:isoNow(),updatedBy:'worker-v210:'+String(session.workerId||'')});
+    if(!r||!r.verified)return false;
+    try{ak208ClearDirty('worker-v210');if(!ak208StatusPending()){ak198ClearEvents();localStorage.removeItem(CLOUD_PENDING_KEY);}localStorage.removeItem(CLOUD_LAST_ERROR_KEY);}catch(_){}
+    updateSyncIndicators();return true;
+  }catch(e){
+    if(e&&e.code==='cloud_conflict')throw e;
+    try{localStorage.setItem(CLOUD_PENDING_KEY,'1');localStorage.setItem(CLOUD_LAST_ERROR_KEY,e.message||String(e));updateSyncIndicators()}catch(_){}
+    return false;
+  }
+}
+async function akV4DirectStatusPush(orderId,targetStatus,attempts=0){
+  if(!session||session.role!=='worker')return false;
+  const o=(db.orders||[]).find(x=>String(x?.id)===String(orderId));if(!o)throw new Error('الطلب غير موجود');
+  if(!orderAssignedToWorker(o,String(session.workerId||'')))throw new Error('هذا الطلب غير مسند إلى هذا الموزع');
+  try{
+    const r=await akV4SaveAll({db:stripTransientSyncFlagsV175(db),updatedAt:isoNow(),updatedBy:'worker-status-v210:'+String(session.workerId||'')});
+    if(!r||!r.verified)return false;
+    const fresh=(db.orders||[]).find(x=>String(x?.id)===String(orderId));
+    if(!fresh)return false;
+    if(String(fresh.status)!==String(targetStatus)){
+      // الخادم قد يرفض تراجعاً قديماً إلى حالة أضعف؛ نعتمد الحالة السحابية ولا نعيد الإرسال.
+      delete fresh.pendingStatusSync;delete fresh.pendingStatusTarget;removeStatusEventV173(orderId);
+      localStorage.setItem(K,JSON.stringify(db));try{ak208ClearDirty('status normalized by v4')}catch(_){};return true;
+    }
+    delete fresh.pendingStatusSync;delete fresh.pendingStatusTarget;fresh.lastStatusConfirmedAt=isoNow();
+    removeStatusEventV173(orderId,fresh.statusEventIdV173||o.statusEventIdV173);
+    try{ak207RemoveSyncEvent('status',orderId);ak208ClearDirty('status-v210');if(!ak208StatusPending()){ak198ClearEvents();localStorage.removeItem(CLOUD_PENDING_KEY);}}catch(_){}
+    localStorage.setItem(K,JSON.stringify(db));localStorage.removeItem(CLOUD_LAST_ERROR_KEY);updateSyncIndicators();return true;
+  }catch(e){
+    if(e&&e.code==='cloud_conflict'&&attempts<2){await akV4PollChanges(true);return akV4DirectStatusPush(orderId,targetStatus,attempts+1);}
+    throw e;
+  }
+}
+
+// الاستبدالات التالية تمنع المسارات القديمة من تنزيل قاعدة كاملة قبل/بعد كل تغيير.
+try{cloudPush=akV4DirectOwnerPush}catch(_){}
+try{workerCloudPush=akV4DirectWorkerPush}catch(_){}
+try{workerPushOrderStatusTransaction=akV4DirectStatusPush}catch(_){}
+try{ak208OwnerAdoptCloud=async function(silent=true,opts={}){return (opts&&opts.force)?akV4FullAdoptCurrentDevice(silent):akV4PollChanges(true)}}catch(_){}
+try{ak204AdoptWorkerCloud=async function(silent=true){return cloudSyncBusy?akV4PollChanges(true):akV4FullAdoptCurrentDevice(silent)}}catch(_){}
+
+// v210: كل فحوص التغيير القديمة تمر الآن عبر سجل أحداث CloudV4 الصغير.
+try{ak208FastGenerationCheck=async function(force=false){return akV4PollChanges(force)}}catch(_){}
+setTimeout(()=>{try{akV4PollChanges(true)}catch(_){}},220);
+
+akLogV180('boot','تشغيل AK Delivery 210 V4 Incremental Sync');
 try{updateCloudReadWriteStatusV180();}catch(_){}
 setTimeout(()=>{
   try{
@@ -7347,6 +7565,6 @@ setTimeout(()=>{
 setTimeout(()=>{try{renderImportWorkerSelectorsV206()}catch(_){}},300);
 setTimeout(()=>{try{ak208FirstBootCleanup();ak208FastGenerationCheck(true)}catch(_){}},320);
 
-// AK Delivery build v209 — automatic bidirectional sync; stale status outbox is reconciled against newer cloud events before apply; periodic full verification self-heals local drift; v205 safety guards retained
+// AK Delivery build v210 — CloudV4 entity transactions + incremental event polling; no full database transfer for normal changes; v205 safety guards retained
 </script>
 </body></html>
