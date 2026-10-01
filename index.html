@@ -562,7 +562,7 @@ html[data-lang="fr"] #overlay > .drawer .actions{justify-content:flex-start!impo
  <select id="loginWorker"><option value="">اختر حسابك</option></select>
 <input id="loginPin" type="password" inputmode="numeric" placeholder="الرمز السري">
 <div id="loginStatus" style="margin-top:8px;font-weight:700;min-height:22px"></div>
-<div style="margin-top:6px;font-size:12px;opacity:.7">الإصدار 207</div>
+<div style="margin-top:6px;font-size:12px;opacity:.7">الإصدار 208</div>
 <button id="workerLoginBtn" type="button" onclick="workerLogin(event)" class="btn" style="width:100%">دخول الموزع</button>
 <hr>
 <h3>إنشاء حساب موزع</h3>
@@ -677,7 +677,7 @@ html[data-lang="fr"] #overlay > .drawer .actions{justify-content:flex-start!impo
 
 <section id="systemHealth" class="page">
   <div class="card">
-    <h2>🩺 صحة النظام — AK Delivery 207</h2>
+    <h2>🩺 صحة النظام — AK Delivery 208</h2>
     <div id="healthSummaryV180">جارٍ الفحص...</div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">
       <button class="btn g" onclick="renderSystemHealthV180()">🔄 تحديث الفحص</button>
@@ -705,7 +705,7 @@ html[data-lang="fr"] #overlay > .drawer .actions{justify-content:flex-start!impo
 </section>
 
 <section id="ak189Recovery" class="page"><div class="card">
-<h2>🛡️ مراجعة تعارضات طلبات AK Delivery 207</h2>
+<h2>🛡️ مراجعة تعارضات طلبات AK Delivery 208</h2>
 <p>تُعرض هنا الطلبات التي تختلف بياناتها بين هذا الجهاز والسحابة. لا تُحذف أي نسخة تلقائيًا.</p>
 <div id="ak189ConflictStatus"></div>
 <button type="button" class="btn g" onclick="ak189RefreshReport()">تحديث المراجعة</button>
@@ -721,6 +721,7 @@ html[data-lang="fr"] #overlay > .drawer .actions{justify-content:flex-start!impo
 <button class="btn g" onclick="ownerCloudPull()">⬇️ جلب البيانات</button>
 <button class="btn" onclick="cloudPush()">⬆️ رفع البيانات</button>
 </div>
+<div style="margin-top:10px;padding:9px 11px;border-radius:8px;background:#ecfdf5;color:#166534;font-weight:800">⚡ المزامنة التلقائية v208 مفعّلة: أي تغيير يُرفع تلقائياً، وأي جيل سحابي جديد يُجلب تلقائياً إلى شاشة المالك والموزع.</div>
 <div id="cloudStatus" style="margin-top:12px"><b>الحالة:</b> جاهز</div>
 <div id="cloudReadWriteStatusV180" style="margin-top:10px;padding:10px;border:1px solid #e5e7eb;border-radius:8px">
   <b>القراءة:</b> — &nbsp; | &nbsp; <b>الحفظ:</b> —
@@ -1266,7 +1267,7 @@ function ownerLogin(ev){
       setTimeout(async()=>{
         try{
           if(localStorage.getItem(CLOUD_PENDING_KEY)==='1')await syncNow(true);
-          else await ak207OwnerAdoptCloud(true);
+          else await ak208OwnerAdoptCloud(true);
           safeUIRefresh();
         }catch(e){ console.error('cloudPull',e); }
       },500);
@@ -1604,59 +1605,75 @@ function ak204SetVerified(generation,reason=''){
   }catch(_){}
 }
 
-/* v207: مزامنة سريعة تعتمد على رقم الجيل السحابي.
-   نفحص الجيل برد صغير أولاً، ولا ننزل قاعدة البيانات الكاملة إلا إذا تغيرت فعلاً. */
-const AK207_GENERATION_KEY='ak_delivery_cloud_generation_v207';
-const AK207_META_OK_KEY='ak_delivery_cloud_meta_ok_v207';
-let ak207MetaBusy=false;
-let ak207LastMetaCheck=0;
-function ak207SetGeneration(generation,reason=''){
+/* v208: مزامنة تلقائية ثنائية الاتجاه.
+   المبدأ الأساسي: رقم الجيل لا يُسجَّل كـ "معتمد" إلا بعد تنزيل قاعدة السحابة فعلياً
+   وتطبيقها على الجهاز. فحص ping وحده لا يُعد مزامنة ولا قراءة بيانات. */
+const AK208_ADOPTED_GENERATION_KEY='ak_delivery_cloud_adopted_generation_v208';
+const AK208_META_OK_KEY='ak_delivery_cloud_meta_ok_v208';
+const AK208_LOCAL_DIRTY_KEY='ak_delivery_local_dirty_v208';
+const AK208_BOOT_CLEAN_KEY='ak_delivery_boot_queue_clean_v208';
+let ak208MetaBusy=false;
+let ak208LastMetaCheck=0;
+function ak208SetAdoptedGeneration(generation,reason=''){
   try{
-    if(generation!=null)localStorage.setItem(AK207_GENERATION_KEY,String(generation));
-    localStorage.setItem(AK207_META_OK_KEY,JSON.stringify({time:isoNow(),generation:generation==null?null:String(generation),reason:String(reason||'')}));
+    if(generation!=null)localStorage.setItem(AK208_ADOPTED_GENERATION_KEY,String(generation));
+    localStorage.setItem(AK208_META_OK_KEY,JSON.stringify({time:isoNow(),generation:generation==null?null:String(generation),reason:String(reason||'')}));
   }catch(_){}
 }
-function ak207KnownGeneration(){
-  try{return String(localStorage.getItem(AK207_GENERATION_KEY)||localStorage.getItem(AK204_LAST_GENERATION_KEY)||'')}catch(_){return ''}
+function ak208AdoptedGeneration(){
+  try{return String(localStorage.getItem(AK208_ADOPTED_GENERATION_KEY)||'')}catch(_){return ''}
 }
-function ak207SyncEvents(){
-  try{return typeof ak198ReadEvents==='function'?ak198ReadEvents():[]}catch(_){return []}
+function ak208StatusPending(){
+  try{return readStatusOutbox().length>0 || (db.orders||[]).some(o=>o&&o.pendingStatusSync)}catch(_){return true}
 }
-function ak207HasRealPendingWork(){
+function ak208MarkDirty(kind='change',entityId=''){
+  try{localStorage.setItem(AK208_LOCAL_DIRTY_KEY,JSON.stringify({time:isoNow(),kind:String(kind||'change'),entityId:String(entityId||'')}))}catch(_){}
+}
+function ak208ClearDirty(reason=''){
+  try{localStorage.removeItem(AK208_LOCAL_DIRTY_KEY);try{akLogV180('v208-dirty-cleared','تم تأكيد التغيير المحلي في السحابة',reason)}catch(_){}}catch(_){}
+}
+function ak208HasLocalDirty(){
+  try{return ak208StatusPending() || !!localStorage.getItem(AK208_LOCAL_DIRTY_KEY)}catch(_){return true}
+}
+function ak208ClearLegacyQueueIfSafe(){
   try{
-    return readStatusOutbox().length>0 ||
-      (db.orders||[]).some(o=>o&&o.pendingStatusSync) ||
-      ak207SyncEvents().length>0;
-  }catch(_){return true}
-}
-function ak207HasPendingWork(){
-  try{return localStorage.getItem(CLOUD_PENDING_KEY)==='1'||ak207HasRealPendingWork()}catch(_){return true}
-}
-function ak207RemoveSyncEvent(kind,entityId){
-  try{
-    const k=String(kind||''),id=String(entityId||'');
-    const a=ak207SyncEvents().filter(x=>!(String(x?.kind||'')===k&&String(x?.entityId||'')===id));
-    if(a.length)localStorage.setItem(AK198_EVENT_KEY,JSON.stringify(a));
-    else localStorage.removeItem(AK198_EVENT_KEY);
-  }catch(_){}
-}
-function ak207ClearPendingIfSettled(reason=''){
-  try{
-    if(ak207HasRealPendingWork())return false;
+    if(ak208HasLocalDirty())return false;
+    // v207 كان يعتبر أحداثاً قديمة عملاً معلقاً حتى بعد تأكيد السحابة. لا نسمح لها بحجب الاستقبال.
+    if(typeof AK198_EVENT_KEY!=='undefined')localStorage.removeItem(AK198_EVENT_KEY);
     localStorage.removeItem(CLOUD_PENDING_KEY);
     localStorage.removeItem(CLOUD_LAST_ERROR_KEY);
-    try{akLogV180('sync-settled','تم تنظيف علامات الانتظار بعد تأكيد السحابة',reason)}catch(_){}
-    updateSyncIndicators();
     return true;
   }catch(_){return false}
 }
-async function ak207OwnerAdoptCloud(silent=true){
+function ak208FirstBootCleanup(){
+  try{
+    if(localStorage.getItem(AK208_BOOT_CLEAN_KEY)==='done')return;
+    // نحفظ لقطة قبل تنظيف أعلام قديمة من الإصدارات السابقة.
+    try{if(typeof createLocalSnapshot==='function')createLocalSnapshot()}catch(_){}
+    if(!ak208StatusPending()){
+      try{if(typeof AK198_EVENT_KEY!=='undefined')localStorage.removeItem(AK198_EVENT_KEY)}catch(_){}
+      localStorage.removeItem(CLOUD_PENDING_KEY);
+      localStorage.removeItem(CLOUD_LAST_ERROR_KEY);
+    }
+    localStorage.setItem(AK208_BOOT_CLEAN_KEY,'done');
+  }catch(_){}
+}
+function ak208MarkReadSuccess(){
+  const t=isoNow();
+  try{
+    localStorage.setItem(CLOUD_LAST_OK_KEY,t);
+    localStorage.setItem('ak_delivery_last_cloud_pull',t);
+    localStorage.setItem('ak_delivery_cloud_last_read_v180',t);
+    if(typeof updateCloudReadWriteStatusV180==='function')updateCloudReadWriteStatusV180();
+  }catch(_){}
+}
+async function ak208OwnerAdoptCloud(silent=true,opts={}){
   if(!session||session.role!=='owner'||!navigator.onLine)return false;
-  if(ak207HasPendingWork())return false;
-  if(cloudPullBusy||cloudSyncBusy||ak204AdoptBusy)return false;
+  const force=!!(opts&&opts.force), allowDuringSync=!!(opts&&opts.allowDuringSync);
+  if(!force&&ak208HasLocalDirty())return false;
+  if(cloudPullBusy||ak204AdoptBusy||(!allowDuringSync&&cloudSyncBusy))return false;
   cloudPullBusy=true;
   cloudLastPullStarted=Date.now();
-  const beforeDigest=cloudDbDigest(db);
   try{
     const loaded=await cloudRequest('loadAll',{});
     const cloudDb=parseCloudDb(loaded);
@@ -1665,22 +1682,21 @@ async function ak207OwnerAdoptCloud(silent=true){
     for(const name of ['orders','workers','deliveryTransfers','deliveryBatches','returnBatches','customerChangeRequests','settlements']){
       if(!Array.isArray(fresh[name]))fresh[name]=[];
     }
+    // التعارضات المعزولة فقط تبقى محلية؛ بقية السحابة هي المصدر المعتمد للاستقبال.
     fresh=ak193PreserveLocalConflicts(fresh,db);
     ak200RepairWorkerAssignments(fresh);
     ak201RepairReceivedStatus(fresh);
     db=fresh;
     ak189Remember(cloudDb);
     localStorage.setItem(K,JSON.stringify(db));
-    localStorage.setItem(CLOUD_LAST_OK_KEY,isoNow());
-    localStorage.setItem('ak_delivery_last_cloud_pull',isoNow());
-    ak207SetGeneration(loaded&&loaded.generation,'owner-adopt');
+    ak208ClearLegacyQueueIfSafe();
+    ak208MarkReadSuccess();
+    ak208SetAdoptedGeneration(loaded&&loaded.generation,'owner-adopt');
     cloudPullFailures=0;
     localStorage.removeItem(CLOUD_LAST_ERROR_KEY);
-    if(beforeDigest!==cloudDbDigest(db)){
-      try{menu();render();renderWorkers();accountsRender();refreshLoginWorkers();refreshActiveCloudPage();}catch(_){}
-    }
+    try{menu();render();renderWorkers();accountsRender();refreshLoginWorkers();refreshActiveCloudPage();}catch(_){}
     updateSyncIndicators();
-    if(!silent)showToast('✅ تم اعتماد آخر نسخة سحابية');
+    if(!silent)showToast('✅ تم اعتماد آخر نسخة سحابية وتحديث الشاشة');
     return true;
   }catch(e){
     cloudPullFailures=Math.min(cloudPullFailures+1,4);
@@ -1693,39 +1709,75 @@ async function ak207OwnerAdoptCloud(silent=true){
     cloudLastPullStarted=Date.now();
   }
 }
-async function ak207FastGenerationCheck(force=false){
+async function ak208WorkerAdoptCloud(silent=true){
+  if(!session||session.role!=='worker'||!navigator.onLine)return false;
+  if(ak208HasLocalDirty())return false;
+  const ok=await ak204AdoptWorkerCloud(silent);
+  if(ok){
+    const g=String(localStorage.getItem(AK204_LAST_GENERATION_KEY)||'');
+    if(g)ak208SetAdoptedGeneration(g,'worker-adopt-wrapper');
+    ak208MarkReadSuccess();
+    ak208ClearLegacyQueueIfSafe();
+    try{menu();render();accountsRender();refreshActiveCloudPage();}catch(_){}
+  }
+  return ok;
+}
+async function ak208FastGenerationCheck(force=false){
   if(!navigator.onLine||document.visibilityState==='hidden'||!session?.role)return false;
-  if(ak207MetaBusy||cloudSyncBusy||cloudPullBusy||ak204AdoptBusy)return false;
+  if(ak208MetaBusy||cloudSyncBusy||cloudPullBusy||ak204AdoptBusy)return false;
+  ak208FirstBootCleanup();
   const now=Date.now();
   const active=(now-ak198LastActivity)<120000;
-  const minGap=active?2500:6500;
-  if(!force && now-ak207LastMetaCheck<minGap)return false;
-  ak207LastMetaCheck=now;
-  if(localStorage.getItem(CLOUD_PENDING_KEY)==='1'&&!ak207HasRealPendingWork()){
-    localStorage.removeItem(CLOUD_PENDING_KEY);
-    localStorage.removeItem(CLOUD_LAST_ERROR_KEY);
-  }
-  if(ak207HasPendingWork()){
-    if(session.role==='worker')setTimeout(retryStatusOutboxV173,40);
-    else if(!cloudSyncTimer)queueCloudSync(80);
+  const minGap=active?2200:6000;
+  if(!force && now-ak208LastMetaCheck<minGap)return false;
+  ak208LastMetaCheck=now;
+
+  // لا نجعل أعلاماً قديمة تمنع الاستقبال. التغيير الحقيقي في v208 له dirty marker أو status outbox.
+  if(!ak208HasLocalDirty())ak208ClearLegacyQueueIfSafe();
+  if(ak208HasLocalDirty()){
+    if(session.role==='worker'&&ak208StatusPending())setTimeout(retryStatusOutboxV173,30);
+    else if(!cloudSyncTimer)queueCloudSync(60);
     return false;
   }
-  ak207MetaBusy=true;
+
+  ak208MetaBusy=true;
   try{
     const meta=await cloudRequestOnceV187('ping',{});
     const remote=String(meta&&meta.generation||'');
-    const known=ak207KnownGeneration();
-    if(remote && remote!==known){
-      const ok=session.role==='worker'?await ak204AdoptWorkerCloud(true):await ak207OwnerAdoptCloud(true);
-      if(ok)ak207SetGeneration(remote,'fast-change-detected');
-      return ok;
-    }
-    if(remote)ak207SetGeneration(remote,'fast-check');
-    return true;
+    try{localStorage.setItem(CLOUD_LAST_OK_KEY,isoNow())}catch(_){}
+    updateSyncIndicators();
+    const adopted=ak208AdoptedGeneration();
+    // أول تشغيل v208 أو أي تغير في الجيل => تنزيل فعلي وتحديث الشاشة.
+    if(!remote || remote===adopted)return true;
+    const ok=session.role==='worker'?await ak208WorkerAdoptCloud(true):await ak208OwnerAdoptCloud(true);
+    return ok;
   }catch(_){return false}
-  finally{ak207MetaBusy=false;}
+  finally{ak208MetaBusy=false;}
 }
 
+/* أسماء توافقية للإصدارات السابقة حتى لا يبقى أي مسار قديم خارج محرك v208. */
+function ak207SetGeneration(generation,reason=''){ /* ping لا يثبت الجيل؛ الحفظ للتوافق التشخيصي فقط */
+  try{localStorage.setItem('ak_delivery_cloud_generation_v207_seen',String(generation||''))}catch(_){}
+}
+function ak207KnownGeneration(){return ak208AdoptedGeneration()}
+function ak207SyncEvents(){try{return typeof ak198ReadEvents==='function'?ak198ReadEvents():[]}catch(_){return []}}
+function ak207HasRealPendingWork(){return ak208HasLocalDirty()}
+function ak207HasPendingWork(){return ak208HasLocalDirty()}
+function ak207RemoveSyncEvent(kind,entityId){
+  try{
+    const k=String(kind||''),id=String(entityId||'');
+    const a=ak207SyncEvents().filter(x=>!(String(x?.kind||'')===k&&String(x?.entityId||'')===id));
+    if(a.length)localStorage.setItem(AK198_EVENT_KEY,JSON.stringify(a)); else localStorage.removeItem(AK198_EVENT_KEY);
+  }catch(_){}
+}
+function ak207ClearPendingIfSettled(reason=''){
+  try{
+    if(ak208HasLocalDirty())return false;
+    ak208ClearLegacyQueueIfSafe();updateSyncIndicators();return true;
+  }catch(_){return false}
+}
+async function ak207OwnerAdoptCloud(silent=true){return ak208OwnerAdoptCloud(silent)}
+async function ak207FastGenerationCheck(force=false){return ak208FastGenerationCheck(force)}
 
 // النسخة 70: مطابقة موحدة وآمنة بين الطلب وحساب الموزع.
 // تدعم اختلاف النوع بين رقم/نص، وتدعم البيانات القديمة التي قد تحفظ اسم الموزع بدل المعرّف.
@@ -1789,14 +1841,14 @@ function updateSyncIndicators(msg){
    else if(last)txt+='متصل';
    else txt+='جاهز';
    mini.textContent=txt;
-   mini.title=last?'آخر مزامنة: '+new Date(last).toLocaleString('ar-MA'):'لم تتم مزامنة تلقائية بعد';
+   mini.title=last?'آخر اتصال ناجح: '+new Date(last).toLocaleString('ar-MA'):'لم يتم الاتصال بالسحابة بعد';
  }
  const st=document.getElementById('cloudStatus');
  if(st && !msg){
    const last=localStorage.getItem(CLOUD_LAST_OK_KEY);
    const pending=localStorage.getItem(CLOUD_PENDING_KEY)==='1';
    const lastError=localStorage.getItem(CLOUD_LAST_ERROR_KEY);
-   st.innerHTML='<b>الحالة:</b> '+(!navigator.onLine?'لا يوجد إنترنت':pending?(lastError?'تعذرت المزامنة: '+lastError+' — ستتم إعادة المحاولة تلقائياً':'توجد تغييرات بانتظار المزامنة'):last?'متصل — آخر مزامنة '+new Date(last).toLocaleString('ar-MA'):'جاهز');
+   st.innerHTML='<b>الحالة:</b> '+(!navigator.onLine?'لا يوجد إنترنت':pending?(lastError?'تعذرت المزامنة: '+lastError+' — ستتم إعادة المحاولة تلقائياً':'توجد تغييرات بانتظار المزامنة'):last?'متصل — آخر اتصال '+new Date(last).toLocaleString('ar-MA'):'جاهز');
  }
  updateWorkerNewBadge();
 }
@@ -2408,7 +2460,7 @@ function ak189RefreshReport(){
  </div>`).join('');
 }
 function ak189DownloadRecovery(){
- const data={app:'AK Delivery 207',exportedAt:new Date().toISOString(),deviceDb:db,conflicts:ak189Conflicts(),
+ const data={app:'AK Delivery 208',exportedAt:new Date().toISOString(),deviceDb:db,conflicts:ak189Conflicts(),
  baseline:ak189Read(AK189_BASE,[]),statusQueue:readStatusOutbox()};
  const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
  const a=document.createElement('a');a.href=URL.createObjectURL(blob);
@@ -2739,7 +2791,7 @@ async function cloudTest(){
    updateCloudStatus('جاري الاختبار...');
    await cloudRequest('ping',{});
    localStorage.setItem(CLOUD_LAST_OK_KEY,isoNow());
-   updateCloudStatus('متصل بالسحابة ✓');
+   updateCloudStatus('الاتصال بالسحابة ناجح ✓ — هذا اختبار اتصال فقط');
  }catch(e){updateCloudStatus('غير متصل: '+e.message);}
 }
 async function cloudPush(silent=false,retries=0){
@@ -2956,7 +3008,7 @@ async function workerPushOrderStatusTransaction(orderId,targetStatus,attempts=0)
       }
       removeStatusEventV173(orderId,local.statusEventIdV173);
       ak207RemoveSyncEvent('status',orderId);
-      if(loaded&&loaded.generation)ak207SetGeneration(loaded.generation,'status-already-confirmed');
+      if(loaded&&loaded.generation)ak208SetAdoptedGeneration(loaded.generation,'status-already-confirmed');
       localStorage.setItem(K,JSON.stringify(db));
       localStorage.setItem(CLOUD_LAST_OK_KEY,isoNow());
       ak207ClearPendingIfSettled('status already confirmed');
@@ -3033,7 +3085,8 @@ async function workerPushOrderStatusTransaction(orderId,targetStatus,attempts=0)
     if(fresh){fresh.status=targetStatus;fresh.lastStatusConfirmedAt=isoNow();delete fresh.pendingStatusSync;delete fresh.pendingStatusTarget;}
     removeStatusEventV173(orderId,remote.statusEventIdV173);
     ak207RemoveSyncEvent('status',orderId);
-    if(check&&check.generation)ak207SetGeneration(check.generation,'status-confirmed');
+    if(check&&check.generation)ak208SetAdoptedGeneration(check.generation,'status-confirmed');
+    ak208MarkReadSuccess();
     localStorage.setItem(K,JSON.stringify(db));localStorage.setItem(CLOUD_LAST_OK_KEY,isoNow());
     localStorage.removeItem(CLOUD_LAST_ERROR_KEY);
     ak207ClearPendingIfSettled('status '+targetStatus);
@@ -3053,7 +3106,6 @@ async function cloudPull(silent=false,merge=true){
  try{
    if(!silent)updateCloudStatus('جاري جلب البيانات...');
    const j=await cloudRequest('loadAll',{});
-   if(j&&j.generation)ak207SetGeneration(j.generation,'cloud-pull');
    const cloudDb=parseCloudDb(j);
    if(!cloudDb)throw new Error('لا توجد بيانات في السحابة بعد');
    const beforeDigestV176=cloudDbDigest(db);
@@ -3065,9 +3117,10 @@ async function cloudPull(silent=false,merge=true){
    try{ak194RecoverOwnerReviewOutbox(cloudDb);}catch(_){ }
    // v159: لا يسمح الجلب السحابي بالكتابة فوق حالة محلية تنتظر التأكيد.
    const pendingStatusOrders=(db.orders||[]).filter(o=>o&&o.pendingStatusSync).map(o=>JSON.parse(JSON.stringify(o)));
-   // لا يستبدل الجلب تعديلًا تم على الجهاز أثناء انتظار رد السحابة.
-   let candidateDb=(merge||cloudEditGeneration!==startedGeneration||localStorage.getItem(CLOUD_PENDING_KEY)==='1')
-     ?mergeDatabases(db,cloudDb):cloudDb;
+   // v208: السحابة تُعتمد مباشرة إذا لم يوجد تعديل محلي حقيقي غير مؤكد.
+   // أعلام قديمة مثل CLOUD_PENDING وحدها لا تكفي لمنع الاستقبال.
+   const preserveLocalV208=!!merge && (cloudEditGeneration!==startedGeneration || ak208HasLocalDirty());
+   let candidateDb=preserveLocalV208?mergeDatabases(db,cloudDb):cloudDb;
    candidateDb=ak193PreserveLocalConflicts(candidateDb,db);
    db=candidateDb;
    if(pendingStatusOrders.length){
@@ -3108,6 +3161,7 @@ async function cloudPull(silent=false,merge=true){
    if(repairedAssignmentsV200.changed||repairedReceiptV201.changed){
      localStorage.setItem(K,JSON.stringify(db));
      localStorage.setItem(CLOUD_PENDING_KEY,'1');
+     ak208MarkDirty('assignment-repair',repairedAssignmentsV200.ids.concat(repairedReceiptV201.ids).join(','));
      try{akLogV180('assignment-repair','تم تصحيح الإسناد/حالة الاستلام',repairedAssignmentsV200.ids.concat(repairedReceiptV201.ids).join(','));}catch(_){}
      if(session?.role==='owner'&&navigator.onLine)queueCloudSync(90);
    }
@@ -3118,8 +3172,9 @@ async function cloudPull(silent=false,merge=true){
    const uiChangedV176=beforeDigestV176!==afterDigestV176||!!correctedReturns||!!recoveredReturns;
    if(uiChangedV176)localStorage.setItem(K,JSON.stringify(db));
    if(correctedReturns||recoveredReturns)scheduleCloudSync();
-   localStorage.setItem('ak_delivery_last_cloud_pull',isoNow());
-   localStorage.setItem(CLOUD_LAST_OK_KEY,isoNow());
+   ak208MarkReadSuccess();
+   if(j&&j.generation&&!preserveLocalV208)ak208SetAdoptedGeneration(j.generation,'cloud-pull-adopted');
+   if(!preserveLocalV208)ak208ClearLegacyQueueIfSafe();
    cloudPullFailures=0;
    if(session.role==='worker'&&beforeAssigned){
       const fresh=db.orders.filter(o=>!o.deletedAt&&orderAssignedToWorker(o,session.workerId)&&!beforeAssigned.has(String(o.id)));
@@ -3149,12 +3204,16 @@ function refreshActiveCloudPage(){
 async function ownerCloudPull(){
   if(!session||session.role!=='owner')return cloudPull(false,true);
   if(!navigator.onLine){showToast('لا يوجد اتصال بالإنترنت');return false;}
-  if(!confirm('سيتم حفظ نسخة احتياطية محلية ثم استبدال بيانات هذا الجهاز بنسخة السحابة. متابعة؟'))return false;
-  const ok=await cloudPull(false,false);
-  if(ok){
-    updateCloudStatus('تم اعتماد نسخة السحابة على جهاز المالك ✓');
-    showToast('✅ تم جلب نسخة السحابة كاملة');
+  if(!confirm('سيتم حفظ نسخة احتياطية محلية ثم اعتماد نسخة السحابة الحالية بالكامل. متابعة؟'))return false;
+  try{createLocalSnapshot()}catch(_){}
+  // الجلب اليدوي في v208 هو اعتماد صريح للسحابة، لذلك ننظف أعلاماً قديمة لا تمثل تغيير حالة حقيقياً.
+  if(!ak208StatusPending()){
+    ak208ClearDirty('manual owner pull');
+    try{ak198ClearEvents()}catch(_){}
+    localStorage.removeItem(CLOUD_PENDING_KEY);
   }
+  const ok=await ak208OwnerAdoptCloud(false,{force:true});
+  if(ok)updateCloudStatus('تم اعتماد نسخة السحابة على جهاز المالك ✓');
   return ok;
 }
 /* v204: اعتماد سحابي موثوق للموزع.
@@ -3233,7 +3292,8 @@ async function ak204AdoptWorkerCloud(silent=true){
     localStorage.setItem(CLOUD_LAST_OK_KEY,isoNow());
     localStorage.setItem('ak_delivery_last_cloud_pull',isoNow());
     ak204SetVerified(loaded&&loaded.generation,'worker-adopt');
-    ak207SetGeneration(loaded&&loaded.generation,'worker-adopt');
+    ak208SetAdoptedGeneration(loaded&&loaded.generation,'worker-adopt');
+    ak208MarkReadSuccess();
     cloudPullFailures=0;
 
     const afterDigest=cloudDbDigest(db);
@@ -3299,13 +3359,21 @@ async function syncNow(silent=true){
   try{
     let ok=false;
     if(session&&session.role==='worker'){
-      // v204: رفع مؤكد ثم اعتماد نسخة السحابة نفسها، بلا دمج عشوائي مع نسخة قديمة.
+      // v208: الرفع المؤكد أولاً، ثم تنظيف dirty، ثم اعتماد السحابة وتحديث شاشة الموزع.
       ok=await workerCloudPush(silent);
-      if(ok)ok=await ak204AdoptWorkerCloud(true);
+      if(ok){
+        ak208ClearDirty('worker verified write');
+        if(!ak208StatusPending()){try{ak198ClearEvents()}catch(_){} localStorage.removeItem(CLOUD_PENDING_KEY);}
+        ok=await ak204AdoptWorkerCloud(true);
+      }
     }else{
-      // المالك يرفع بعد دمج آخر نسخة سحابية، ثم يعيد التحقق منها.
+      // v208: بعد تأكيد حفظ المالك ننظف طابور التعديل قبل إعادة القراءة؛ وإلا كان v207 يمنع نفسه من الجلب.
       ok=await cloudPush(silent);
-      if(ok)ok=await ak207OwnerAdoptCloud(true);
+      if(ok){
+        ak208ClearDirty('owner verified write');
+        if(!ak208StatusPending()){try{ak198ClearEvents()}catch(_){} localStorage.removeItem(CLOUD_PENDING_KEY);}
+        ok=await ak208OwnerAdoptCloud(true,{allowDuringSync:true});
+      }
     }
     if(ok){
       cloudSyncFailures=0;
@@ -3362,6 +3430,7 @@ function queueCloudSync(delay=90){
 function scheduleCloudSync(kind='change',entityId=''){
   cloudEditGeneration++;
   ak198RecordEvent(kind,entityId);
+  ak208MarkDirty(kind,entityId);
   localStorage.setItem(CLOUD_PENDING_KEY,'1');
   updateSyncIndicators();
   if(navigator.onLine)queueCloudSync(90);
@@ -3373,7 +3442,7 @@ try{
   window.ak198Channel=ak198Channel;
   ak198Channel.onmessage=ev=>{
     if(ev?.data?.type==='changed' && navigator.onLine && session?.role && !cloudPullBusy && !cloudSyncBusy){
-      setTimeout(()=>session.role==='owner'?ak207OwnerAdoptCloud(true):ak204AdoptWorkerCloud(true),80);
+      setTimeout(()=>session.role==='owner'?ak208OwnerAdoptCloud(true):ak208WorkerAdoptCloud(true),60);
     }
   };
 }catch(_){}
@@ -3391,7 +3460,7 @@ window.addEventListener('online',()=>{
   if(localStorage.getItem(CLOUD_PENDING_KEY)==='1'){
     queueCloudSync(150);
   }else if(!cloudPullBusy&&!cloudSyncBusy&&!ak204AdoptBusy){
-    setTimeout(()=>session.role==='worker'?ak204AdoptWorkerCloud(true):ak207OwnerAdoptCloud(true),80);
+    setTimeout(()=>session.role==='worker'?ak208WorkerAdoptCloud(true):ak208OwnerAdoptCloud(true),60);
   }
   if(session.role==='worker')setTimeout(retryStatusOutboxV173,500);
 });
@@ -3404,14 +3473,14 @@ setInterval(()=>{
     return;
   }
   const activeRecently=(Date.now()-ak198LastActivity)<120000;
-  const interval=activeRecently?12000:30000;
+  const interval=activeRecently?8000:20000;
   if(Date.now()-cloudLastPullStarted>=interval){
-    if(session.role==='worker')ak204AdoptWorkerCloud(true);
-    else ak207OwnerAdoptCloud(true);
+    if(session.role==='worker')ak208WorkerAdoptCloud(true);
+    else ak208OwnerAdoptCloud(true);
   }
 },5000);
-// v207: مسار سريع بين الأجهزة. Ping خفيف كل بضع ثوانٍ، وتنزيل كامل فقط عند تغير الجيل.
-setInterval(()=>{ak207FastGenerationCheck(false)},1000);
+// v208: مسار تلقائي بين الأجهزة. Ping خفيف كل ~2.2 ثانية أثناء العمل، وتنزيل كامل فقط عند تغير الجيل.
+setInterval(()=>{ak208FastGenerationCheck(false)},700);
 /* v199: استئناف موحد للصفحة بدلاً من عدة عمليات جلب متنافسة. */
 let ak199LastResume=0;
 function ak199ResumeSync(){
@@ -3423,13 +3492,13 @@ function ak199ResumeSync(){
   if(cloudSyncBusy||cloudPullBusy||ak204AdoptBusy)return;
   if(localStorage.getItem(CLOUD_PENDING_KEY)==='1')queueCloudSync(70);
   else if(now-cloudLastPullStarted>=1200){
-    if(session.role==='worker')ak204AdoptWorkerCloud(true);
-    else ak207OwnerAdoptCloud(true);
+    if(session.role==='worker')ak208WorkerAdoptCloud(true);
+    else ak208OwnerAdoptCloud(true);
   }
 }
-document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'){setTimeout(ak199ResumeSync,60);setTimeout(()=>ak207FastGenerationCheck(true),120);}});
-window.addEventListener('pageshow',()=>{setTimeout(ak199ResumeSync,60);setTimeout(()=>ak207FastGenerationCheck(true),140);});
-window.addEventListener('focus',()=>{setTimeout(ak199ResumeSync,70);setTimeout(()=>ak207FastGenerationCheck(true),150);});
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'){setTimeout(ak199ResumeSync,60);setTimeout(()=>ak208FastGenerationCheck(true),90);}});
+window.addEventListener('pageshow',()=>{setTimeout(ak199ResumeSync,60);setTimeout(()=>ak208FastGenerationCheck(true),110);});
+window.addEventListener('focus',()=>{setTimeout(ak199ResumeSync,70);setTimeout(()=>ak208FastGenerationCheck(true),120);});
 async function retryStatusOutboxV173(){
   if(!navigator.onLine||!session||session.role!=='worker'||cloudSyncBusy||cloudPullBusy||ak204AdoptBusy)return;
   const ev=readStatusOutbox().find(ev=>!ak193IsConflict(ev.orderId));if(!ev)return;
@@ -4118,6 +4187,8 @@ async function workerConfirmPayment(){
   localStorage.setItem(K,JSON.stringify(db));
   localStorage.setItem(CLOUD_PENDING_KEY,'1');
   cloudEditGeneration++;
+  ak208MarkDirty('settlement',settlement.id);
+  ak198RecordEvent('settlement',settlement.id);
   updateSyncIndicators();
   renderWorkerFinanceSummary();
   render();
@@ -6572,8 +6643,8 @@ if(!session || !session.role){
 setTimeout(()=>{
   if(navigator.onLine && session?.role&&!cloudPullBusy&&!cloudSyncBusy){
     if(localStorage.getItem(CLOUD_PENDING_KEY)==='1')syncNow(true);
-    else if(session.role==='worker')ak204AdoptWorkerCloud(true);
-    else ak207OwnerAdoptCloud(true);
+    else if(session.role==='worker')ak208WorkerAdoptCloud(true);
+    else ak208OwnerAdoptCloud(true);
   }
 },650);
 
@@ -7028,7 +7099,7 @@ function diagnosticsTextV180(){
   const issues=scanIntegrityV180();
   let outbox=[];try{outbox=readStatusOutbox()}catch(_){}
   const payload={
-    app:'AK Delivery 207 Fast Sync',
+    app:'AK Delivery 208 Auto Sync',
     time:new Date().toISOString(),
     online:navigator.onLine,
     role:session?.role||null,
@@ -7148,7 +7219,7 @@ setInterval(()=>{
   }catch(_){}
 },15000);
 
-akLogV180('boot','تشغيل AK Delivery 207 Fast Safe Sync');
+akLogV180('boot','تشغيل AK Delivery 208 Auto Safe Sync');
 try{updateCloudReadWriteStatusV180();}catch(_){}
 setTimeout(()=>{
   try{
@@ -7164,8 +7235,8 @@ setTimeout(()=>{
 },900);
 
 setTimeout(()=>{try{renderImportWorkerSelectorsV206()}catch(_){}},300);
-setTimeout(()=>{try{ak207FastGenerationCheck(true)}catch(_){}},450);
+setTimeout(()=>{try{ak208FirstBootCleanup();ak208FastGenerationCheck(true)}catch(_){}},320);
 
-// AK Delivery build v207 — fast generation sync + owner cloud adoption + immediate pending cleanup; v205 safety guards retained
+// AK Delivery build v208 — automatic bidirectional generation sync; adopted generation only after real data read; stale legacy queues cannot block receive; v205 safety guards retained
 </script>
 </body></html>
