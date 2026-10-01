@@ -562,7 +562,7 @@ html[data-lang="fr"] #overlay > .drawer .actions{justify-content:flex-start!impo
  <select id="loginWorker"><option value="">اختر حسابك</option></select>
 <input id="loginPin" type="password" inputmode="numeric" placeholder="الرمز السري">
 <div id="loginStatus" style="margin-top:8px;font-weight:700;min-height:22px"></div>
-<div style="margin-top:6px;font-size:12px;opacity:.7">الإصدار 205</div>
+<div style="margin-top:6px;font-size:12px;opacity:.7">الإصدار 206</div>
 <button id="workerLoginBtn" type="button" onclick="workerLogin(event)" class="btn" style="width:100%">دخول الموزع</button>
 <hr>
 <h3>إنشاء حساب موزع</h3>
@@ -604,12 +604,22 @@ html[data-lang="fr"] #overlay > .drawer .actions{justify-content:flex-start!impo
 <div id="orderListCard" class=card><table><colgroup><col><col><col><col><col><col><col><col></colgroup><thead><tr><th>رقم الترتيب</th><th>رمز الطلب</th><th>المستلم</th><th>العنوان</th><th class="stay-days-col">المدة</th><th>الهاتف</th><th>القيمة والحساب</th><th>الحالة</th></tr></thead><tbody id=rows></tbody></table></div></section>
 <section id=bulk class=page><div class=card><h2>إدخال الطلبات بالنسخ واللصق</h2>
 
+<div style="margin-bottom:10px">
+<label style="display:block;font-weight:800;margin-bottom:6px">👤 اختر موزع هذه الحزمة</label>
+<select id="bulkWorkerSelect" onchange="setImportWorkerV206(this.value)" style="width:100%"></select>
+<small style="display:block;margin-top:5px">كل الطلبات في هذه الحزمة ستُسند مباشرة إلى الموزع الذي تختاره.</small>
+</div>
 <textarea id=bulkText style="min-height:180px" placeholder="الصق الطلبات هنا..."></textarea>
 <div style="margin-top:8px;display:flex;gap:7px;flex-wrap:wrap">
 <button class=btn onclick="previewBulk()">معاينة</button>
 <button class="btn g" onclick="importBulk()">إضافة الطلبات</button>
 </div><div id=bulkPreview style="margin-top:12px"></div></div></section>
 <section id=pdfImport class=page><div class=card><h2>📄 استيراد الطلبات من PDF</h2>
+<div style="margin-bottom:10px">
+<label style="display:block;font-weight:800;margin-bottom:6px">👤 اختر موزع هذه الحزمة</label>
+<select id="pdfWorkerSelect" onchange="setImportWorkerV206(this.value)" style="width:100%"></select>
+<small style="display:block;margin-top:5px">اختر الموزع أولاً، ثم افتح ملف PDF. الطلبات التي تعتمدها ستُسند إليه مباشرة.</small>
+</div>
 <input id=pdfFileInput type=file accept="application/pdf,.pdf" onchange="readOrdersPdf(event)">
 <div class="pdf-import-actions">
 <button type="button" class="btn" onclick="selectPdfOrders(true)">☑ اختيار الكل</button>
@@ -667,7 +677,7 @@ html[data-lang="fr"] #overlay > .drawer .actions{justify-content:flex-start!impo
 
 <section id="systemHealth" class="page">
   <div class="card">
-    <h2>🩺 صحة النظام — AK Delivery 205</h2>
+    <h2>🩺 صحة النظام — AK Delivery 206</h2>
     <div id="healthSummaryV180">جارٍ الفحص...</div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">
       <button class="btn g" onclick="renderSystemHealthV180()">🔄 تحديث الفحص</button>
@@ -695,7 +705,7 @@ html[data-lang="fr"] #overlay > .drawer .actions{justify-content:flex-start!impo
 </section>
 
 <section id="ak189Recovery" class="page"><div class="card">
-<h2>🛡️ مراجعة تعارضات طلبات AK Delivery 205</h2>
+<h2>🛡️ مراجعة تعارضات طلبات AK Delivery 206</h2>
 <p>تُعرض هنا الطلبات التي تختلف بياناتها بين هذا الجهاز والسحابة. لا تُحذف أي نسخة تلقائيًا.</p>
 <div id="ak189ConflictStatus"></div>
 <button type="button" class="btn g" onclick="ak189RefreshReport()">تحديث المراجعة</button>
@@ -3571,6 +3581,43 @@ function previewBulk(){
 function setBulkPhone(index,value){
  if(bulkParsed[index])bulkParsed[index].phone=String(value||'').trim();
 }
+/* v206: اختيار موزع مستقل لكل حزمة قبل الاستيراد الجماعي.
+   يمكن تغيير الموزع قبل كل دفعة جديدة، سواء عبر PDF أو اللصق. */
+const AK206_IMPORT_WORKER_KEY='ak_delivery_import_worker_v206';
+function activeImportWorkersV206(){
+  return (db.workers||[]).filter(w=>w&&!w.deletedAt&&!w.blocked&&w.approved!==false);
+}
+function setImportWorkerV206(workerId){
+  const id=String(workerId||'');
+  try{
+    if(id)localStorage.setItem(AK206_IMPORT_WORKER_KEY,id);
+    else localStorage.removeItem(AK206_IMPORT_WORKER_KEY);
+  }catch(_){}
+}
+function renderImportWorkerSelectorsV206(){
+  const workers=activeImportWorkersV206();
+  let selected='';
+  try{selected=String(localStorage.getItem(AK206_IMPORT_WORKER_KEY)||'')}catch(_){}
+  if(!workers.some(w=>String(w.id)===selected)) selected='';
+  const options='<option value="">اختر الموزع لهذه الحزمة</option>'+
+    workers.map(w=>'<option value="'+String(w.id).replace(/"/g,'&quot;')+'">'+htmlEscape(w.name||'موزع')+'</option>').join('');
+  for(const sid of ['bulkWorkerSelect','pdfWorkerSelect']){
+    const el=document.getElementById(sid);
+    if(!el)continue;
+    const keep=el.value||selected;
+    el.innerHTML=options;
+    el.value=workers.some(w=>String(w.id)===String(keep))?String(keep):'';
+  }
+}
+function selectedImportWorkerV206(selectId){
+  renderImportWorkerSelectorsV206();
+  const el=document.getElementById(selectId);
+  const id=String(el?.value||'');
+  const w=activeImportWorkersV206().find(x=>String(x.id)===id);
+  if(w)setImportWorkerV206(id);
+  return w||null;
+}
+
 function importBulk(){
  if(session.role!=='owner')return;
  if(bulkText.value!==bulkPreviewSource)return alert('تغيّر النص المنسوخ. اضغط معاينة الطلبات مرة أخرى قبل الإضافة.');
@@ -3579,12 +3626,13 @@ function importBulk(){
  if(invalid.length)return alert('تحقق من رقم الهاتف في الطلب: '+invalid[0].code);
  const missing=bulkParsed.filter(x=>!x.phone);
  if(missing.length&&!confirm('يوجد '+missing.length+' طلب دون رقم هاتف في النص المنسوخ. هل تريد إضافتها دون رقم؟'))return;
+ const importW=selectedImportWorkerV206('bulkWorkerSelect');
+ if(!importW)return alert('اختر موزع هذه الحزمة قبل إضافة الطلبات.');
  let startNums=db.orders.map(o=>{let m=String(o.seq||'').match(/^AK(\d+)$/i);return m?+m[1]:(/^\d+$/.test(String(o.seq||''))?+o.seq:0)}),n=(startNums.length?Math.max(...startNums):0);
  let t=tm();
  bulkParsed.forEach((x,i)=>{
    let seq='AK'+String(n+i+1).padStart(6,'0');
-   const activeWorkers=(db.workers||[]).filter(w=>w&&!w.deletedAt&&!w.blocked&&w.approved!==false);
-   const autoW=activeWorkers.length===1?activeWorkers[0]:null;
+   const autoW=importW;
    const o={id:'SYS'+Date.now()+i,seq,clientNo:x.code,sender:'',recipient:x.name,phone:x.phone,address:x.address||x.city||'',city:x.city,product:'',amount:+x.amount||0,worker:autoW?String(autoW.id):'',status:'في الطريق',statusEnteredAt:isoNow(),history:[{time:t,text:'طلب جديد — إدخال جماعي — بواسطة '+actorName()},{time:t,text:'في الطريق — بانتظار الوصول إلى الموزع — بواسطة '+actorName()}],remarks:[],modifiedAt:isoNow(),modifiedBy:actorName()};
    db.orders.push(o);
    if(autoW)createPendingDeliveryTransfer(o,autoW,'إرسال تلقائي إلى الموزع '+autoW.name+' — في الطريق');
@@ -3754,12 +3802,13 @@ function importSelectedPdfOrders(){
  const existing=pdfExistingCodeSet();
  const selected=pdfParsedOrders.filter(o=>o.selected&&!o.duplicate&&!existing.has(pdfNormCode(o.code)));
  if(!selected.length)return alert('لم يتم اختيار أي طلب جديد للنسخ.');
- if(!confirm('سيتم نسخ '+selected.length+' طلب إلى قائمة الطلبات الجديدة. متابعة؟'))return;
+ const importW=selectedImportWorkerV206('pdfWorkerSelect');
+ if(!importW)return alert('اختر موزع هذه الحزمة قبل نسخ طلبات PDF.');
+ if(!confirm('سيتم نسخ '+selected.length+' طلب وإسنادها مباشرة إلى '+(importW.name||'الموزع')+'. متابعة؟'))return;
  let nums=db.orders.map(o=>{let m=String(o.seq||'').match(/^AK(\d+)$/i);return m?+m[1]:(/^\d+$/.test(String(o.seq||''))?+o.seq:0)}),n=(nums.length?Math.max(...nums):0),t=tm(),stamp=Date.now();
  selected.forEach((x,i)=>{
    const seq='AK'+String(n+i+1).padStart(6,'0');
-   const activeWorkers=(db.workers||[]).filter(w=>w&&!w.deletedAt&&!w.blocked&&w.approved!==false);
-   const autoW=activeWorkers.length===1?activeWorkers[0]:null;
+   const autoW=importW;
    const o={id:'PDF'+stamp+i,seq,clientNo:x.code,sender:'',recipient:x.name||'بدون اسم',phone:x.phone||'',address:x.address||'',city:x.city||'وجدة',product:'',amount:+x.amount||0,worker:autoW?String(autoW.id):'',status:'في الطريق',statusEnteredAt:isoNow(),importSource:'PDF',importFile:pdfImportFileName,history:[{time:t,text:'طلب جديد — استيراد PDF — بواسطة '+actorName()},{time:t,text:'في الطريق — بانتظار الوصول إلى الموزع — بواسطة '+actorName()}],remarks:[],modifiedAt:isoNow(),modifiedBy:actorName()};
    db.orders.push(o);
    if(autoW)createPendingDeliveryTransfer(o,autoW,'إرسال تلقائي إلى الموزع '+autoW.name+' — في الطريق');
@@ -6537,6 +6586,7 @@ function requestUiRefreshV180(){
     try{menu();}catch(e){akLogV180('ui-error','menu',e.message)}
     try{render();}catch(e){akLogV180('ui-error','render',e.message)}
     try{renderWorkers();}catch(e){akLogV180('ui-error','renderWorkers',e.message)}
+    try{renderImportWorkerSelectorsV206();}catch(e){akLogV180('ui-error','import worker selectors',e.message)}
     try{accountsRender();}catch(e){akLogV180('ui-error','accountsRender',e.message)}
   });
 }
@@ -6938,7 +6988,7 @@ setInterval(()=>{
   }catch(_){}
 },15000);
 
-akLogV180('boot','تشغيل AK Delivery 205 Safe Sync');
+akLogV180('boot','تشغيل AK Delivery 206 Safe Sync');
 try{updateCloudReadWriteStatusV180();}catch(_){}
 setTimeout(()=>{
   try{
@@ -6953,6 +7003,8 @@ setTimeout(()=>{
   }catch(e){akLogV180('repair-error','تعذر إصلاح الاتساق القديم',e.message)}
 },900);
 
-// AK Delivery build v205 — monotonic cloud guards enabled
+setTimeout(()=>{try{renderImportWorkerSelectorsV206()}catch(_){}},500);
+
+// AK Delivery build v206 — choose distributor per batch before bulk/PDF import; v205 sync guards retained
 </script>
 </body></html>
