@@ -562,7 +562,7 @@ html[data-lang="fr"] #overlay > .drawer .actions{justify-content:flex-start!impo
  <select id="loginWorker"><option value="">اختر حسابك</option></select>
 <input id="loginPin" type="password" inputmode="numeric" placeholder="الرمز السري">
 <div id="loginStatus" style="margin-top:8px;font-weight:700;min-height:22px"></div>
-<div style="margin-top:6px;font-size:12px;opacity:.7">الإصدار 203</div>
+<div style="margin-top:6px;font-size:12px;opacity:.7">الإصدار 205</div>
 <button id="workerLoginBtn" type="button" onclick="workerLogin(event)" class="btn" style="width:100%">دخول الموزع</button>
 <hr>
 <h3>إنشاء حساب موزع</h3>
@@ -667,7 +667,7 @@ html[data-lang="fr"] #overlay > .drawer .actions{justify-content:flex-start!impo
 
 <section id="systemHealth" class="page">
   <div class="card">
-    <h2>🩺 صحة النظام — AK Delivery 202</h2>
+    <h2>🩺 صحة النظام — AK Delivery 205</h2>
     <div id="healthSummaryV180">جارٍ الفحص...</div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">
       <button class="btn g" onclick="renderSystemHealthV180()">🔄 تحديث الفحص</button>
@@ -695,7 +695,7 @@ html[data-lang="fr"] #overlay > .drawer .actions{justify-content:flex-start!impo
 </section>
 
 <section id="ak189Recovery" class="page"><div class="card">
-<h2>🛡️ مراجعة تعارضات طلبات AK Delivery 202</h2>
+<h2>🛡️ مراجعة تعارضات طلبات AK Delivery 205</h2>
 <p>تُعرض هنا الطلبات التي تختلف بياناتها بين هذا الجهاز والسحابة. لا تُحذف أي نسخة تلقائيًا.</p>
 <div id="ak189ConflictStatus"></div>
 <button type="button" class="btn g" onclick="ak189RefreshReport()">تحديث المراجعة</button>
@@ -1580,6 +1580,21 @@ const CLOUD_LAST_OK_KEY='ak_delivery_last_cloud_ok_v59';
 const CLOUD_LAST_ERROR_KEY='ak_delivery_last_cloud_error_v142';
 const CLOUD_SEEN_ASSIGNED_KEY='ak_delivery_seen_assigned_v59';
 
+/* v204: محرك مزامنة أحادي المسار.
+   v205 يضيف حواجز حالات نهائية تمنع التراجع الصامت للرجوع والاستلام.
+   يمنع تزامن الجلب والرفع في الوقت نفسه على جهاز الموزع،
+   ويحفظ آخر جيل سحابي مؤكد حتى نعرف أن الجهاز اعتمد نسخة صحيحة. */
+const AK204_LAST_GENERATION_KEY='ak_delivery_cloud_generation_v204';
+const AK204_LAST_VERIFY_KEY='ak_delivery_cloud_verified_v204';
+let ak204AdoptBusy=false;
+function ak204SetVerified(generation,reason=''){
+  try{
+    if(generation!=null)localStorage.setItem(AK204_LAST_GENERATION_KEY,String(generation));
+    localStorage.setItem(AK204_LAST_VERIFY_KEY,JSON.stringify({time:isoNow(),generation:generation==null?null:String(generation),reason:String(reason||'')}));
+  }catch(_){}
+}
+
+
 // النسخة 70: مطابقة موحدة وآمنة بين الطلب وحساب الموزع.
 // تدعم اختلاف النوع بين رقم/نص، وتدعم البيانات القديمة التي قد تحفظ اسم الموزع بدل المعرّف.
 function orderAssignedToWorker(o,workerId){
@@ -2261,7 +2276,7 @@ function ak189RefreshReport(){
  </div>`).join('');
 }
 function ak189DownloadRecovery(){
- const data={app:'AK Delivery 202',exportedAt:new Date().toISOString(),deviceDb:db,conflicts:ak189Conflicts(),
+ const data={app:'AK Delivery 205',exportedAt:new Date().toISOString(),deviceDb:db,conflicts:ak189Conflicts(),
  baseline:ak189Read(AK189_BASE,[]),statusQueue:readStatusOutbox()};
  const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
  const a=document.createElement('a');a.href=URL.createObjectURL(blob);
@@ -2366,6 +2381,184 @@ function ak200RepairWorkerAssignments(targetDb){
   return {changed,ids};
 }
 
+
+/* v205: حواجز تزامن أحادية الاتجاه للحالات النهائية.
+   الهدف: لا يستطيع جهاز قديم إرجاع سجل وصل إلى مرحلة نهائية إلى مرحلة أقدم.
+   الحواجز لا تمنع المالك من إجراء تغيير جديد صريح على الطلب نفسه؛ هي تحمي
+   فقط الدمج التلقائي ورفع الموزع من التراجع الصامت. */
+function ak205Clone(v){return v==null?v:JSON.parse(JSON.stringify(v));}
+function ak205Unique(arr){
+  const out=[],seen=new Set();
+  for(const v of (arr||[])){const k=String(v);if(!seen.has(k)){seen.add(k);out.push(v)}}
+  return out;
+}
+function ak205Earlier(a,b){
+  if(!a)return b||''; if(!b)return a||'';
+  const ta=timeValue(a),tb=timeValue(b);
+  if(!ta)return b; if(!tb)return a;
+  return ta<=tb?a:b;
+}
+function ak205Later(a,b){
+  if(!a)return b||''; if(!b)return a||'';
+  const ta=timeValue(a),tb=timeValue(b);
+  if(!ta)return b; if(!tb)return a;
+  return ta>=tb?a:b;
+}
+function ak205DeletedWins(a,b){
+  if(!a||!b)return null;
+  if(!!a.deletedAt===!!b.deletedAt)return null;
+  const del=a.deletedAt?a:b, live=a.deletedAt?b:a;
+  const td=timeValue(del.modifiedAt||del.deletedAt),tl=timeValue(live.modifiedAt);
+  return td>=tl?ak205Clone(del):null;
+}
+function ak205ReturnRank(x){
+  if(!x)return 0;
+  if(x.status==='owner_confirmed'||x.ownerConfirmedAt)return 3;
+  if(x.status==='completed'||x.confirmedAt)return 2;
+  return 1;
+}
+function ak205MergeReturnBatchRecord(local,cloud){
+  if(!local)return ak205Clone(cloud); if(!cloud)return ak205Clone(local);
+  const deleted=ak205DeletedWins(local,cloud); if(deleted)return deleted;
+  const lr=ak205ReturnRank(local),cr=ak205ReturnRank(cloud);
+  const lt=timeValue(local.modifiedAt||local.ownerConfirmedAt||local.confirmedAt||local.createdAt);
+  const ct=timeValue(cloud.modifiedAt||cloud.ownerConfirmedAt||cloud.confirmedAt||cloud.createdAt);
+  const winner=lr>cr?local:cr>lr?cloud:(lt>ct?local:cloud);
+  const x=ak205Clone(winner);
+  x.orderIds=ak205Unique([...(cloud.orderIds||[]),...(local.orderIds||[])]);
+  x.returnedOrderIds=ak205Unique([...(cloud.returnedOrderIds||[]),...(local.returnedOrderIds||[])]);
+  x.ownerReceivedOrderIds=ak205Unique([...(cloud.ownerReceivedOrderIds||[]),...(local.ownerReceivedOrderIds||[])]);
+  x.count=x.orderIds.length;
+  const ownerAt=ak205Earlier(cloud.ownerConfirmedAt,local.ownerConfirmedAt);
+  const confirmedAt=ak205Earlier(cloud.confirmedAt,local.confirmedAt);
+  if(lr===3||cr===3||ownerAt){
+    x.status='owner_confirmed';
+    if(ownerAt)x.ownerConfirmedAt=ownerAt;
+    x.ownerConfirmedLabel=cloud.ownerConfirmedLabel||local.ownerConfirmedLabel||x.ownerConfirmedLabel;
+    if(confirmedAt&&!x.confirmedAt)x.confirmedAt=confirmedAt;
+  }else if(lr>=2||cr>=2||confirmedAt){
+    x.status='completed';
+    if(confirmedAt)x.confirmedAt=confirmedAt;
+    x.confirmedLabel=cloud.confirmedLabel||local.confirmedLabel||x.confirmedLabel;
+  }
+  x.modifiedAt=ak205Later(local.modifiedAt,cloud.modifiedAt)||x.modifiedAt;
+  return x;
+}
+function ak205TransferRank(x){return x&&(x.status==='received'||x.receivedAt)?2:(x?1:0);}
+function ak205MergeTransferRecord(local,cloud){
+  if(!local)return ak205Clone(cloud); if(!cloud)return ak205Clone(local);
+  const deleted=ak205DeletedWins(local,cloud); if(deleted)return deleted;
+  const lr=ak205TransferRank(local),cr=ak205TransferRank(cloud);
+  const lt=timeValue(local.modifiedAt||local.receivedAt||local.sentAt),ct=timeValue(cloud.modifiedAt||cloud.receivedAt||cloud.sentAt);
+  const winner=lr>cr?local:cr>lr?cloud:(lt>ct?local:cloud);
+  const x=ak205Clone(winner);
+  x.sentAt=ak205Earlier(local.sentAt,cloud.sentAt)||x.sentAt;
+  x.sentLabel=cloud.sentLabel||local.sentLabel||x.sentLabel;
+  const receivedAt=ak205Earlier(local.receivedAt,cloud.receivedAt);
+  if(lr===2||cr===2||receivedAt){
+    x.status='received';
+    if(receivedAt)x.receivedAt=receivedAt;
+    x.receivedLabel=cloud.receivedLabel||local.receivedLabel||x.receivedLabel;
+  }
+  x.modifiedAt=ak205Later(local.modifiedAt,cloud.modifiedAt)||x.modifiedAt;
+  return x;
+}
+function ak205SimpleRank(name,x){
+  if(!x)return 0;
+  if(name==='deliveryBatches')return (x.status==='received'||x.receivedAt)?2:1;
+  if(name==='customerChangeRequests')return (x.status==='received'||x.receivedAt)?2:1;
+  return 1;
+}
+function ak205MergeSimpleMonotonic(name,local,cloud){
+  if(!local)return ak205Clone(cloud); if(!cloud)return ak205Clone(local);
+  const deleted=ak205DeletedWins(local,cloud); if(deleted)return deleted;
+  const lr=ak205SimpleRank(name,local),cr=ak205SimpleRank(name,cloud);
+  const lt=timeValue(local.modifiedAt||local.receivedAt||local.createdAt),ct=timeValue(cloud.modifiedAt||cloud.receivedAt||cloud.createdAt);
+  return ak205Clone(lr>cr?local:cr>lr?cloud:(lt>ct?local:cloud));
+}
+function ak205MergeArray(localArr,cloudArr,pair){
+  const lm=new Map((localArr||[]).filter(x=>x&&x.id!=null).map(x=>[String(x.id),x]));
+  const cm=new Map((cloudArr||[]).filter(x=>x&&x.id!=null).map(x=>[String(x.id),x]));
+  const out=[];
+  for(const id of new Set([...cm.keys(),...lm.keys()]))out.push(pair(lm.get(id),cm.get(id)));
+  return out.filter(Boolean);
+}
+function ak205SettlementLocksOrder(cloudDb,orderId){
+  const id=String(orderId||'');
+  return (cloudDb?.settlements||[]).some(st=>st&&!st.deletedAt&&!st.duplicateHidden&&
+    (st.confirmedAt||st.confirmedByWorker||st.status==='confirmed')&&
+    (st.orderIds||[]).map(String).includes(id));
+}
+function ak205WorkerCloudLock(remote,cloudDb,targetStatus){
+  if(!remote)return '';
+  if(remote.status==='مرتجع'&&remote.returnOwnerConfirmedAt)return 'return-owner-confirmed';
+  if(remote.status==='مرتجع'&&remote.returnCompletedAt&&targetStatus==='طلب رجوع')return 'return-completed';
+  if(remote.deliveryReceivedAt&&targetStatus==='في الطريق')return 'delivery-received';
+  if(remote.status==='تم التسليم'&&targetStatus!=='تم التسليم'&&ak205SettlementLocksOrder(cloudDb,remote.id))return 'settlement-confirmed';
+  return '';
+}
+function ak205ProtectMergedOrderFromCloudFinal(order,cloudOrder,cloudDb){
+  if(!order||!cloudOrder)return order;
+  if(cloudOrder.status==='مرتجع'&&cloudOrder.returnOwnerConfirmedAt){
+    // تأكيد استلام المالك هو المرحلة النهائية لمسار الرجوع؛ الدمج الصامت لا يرجعه للخلف.
+    if(order.status==='طلب رجوع'||!order.returnOwnerConfirmedAt){
+      statusEventFieldsV173(order,cloudOrder);
+      for(const k of ['returnCompletedAt','returnOwnerConfirmedAt','returnOwnerConfirmedLabel','returnBatchId','returnBatchCode']){
+        if(cloudOrder[k]!==undefined)order[k]=ak205Clone(cloudOrder[k]);
+      }
+    }
+  }else if(cloudOrder.status==='مرتجع'&&cloudOrder.returnCompletedAt&&order.status==='طلب رجوع'){
+    statusEventFieldsV173(order,cloudOrder);
+    order.returnCompletedAt=cloudOrder.returnCompletedAt;
+  }
+  if(cloudOrder.deliveryReceivedAt&&order.status==='في الطريق'){
+    statusEventFieldsV173(order,cloudOrder);
+    order.deliveryReceivedAt=cloudOrder.deliveryReceivedAt;
+    order.deliveryReceivedLabel=cloudOrder.deliveryReceivedLabel;
+    order.deliveryReceivedByWorkerId=cloudOrder.deliveryReceivedByWorkerId;
+    order.deliveryReceivedByWorkerName=cloudOrder.deliveryReceivedByWorkerName;
+  }
+  if(cloudOrder.status==='تم التسليم'&&order.status!=='تم التسليم'&&ak205SettlementLocksOrder(cloudDb,cloudOrder.id)){
+    statusEventFieldsV173(order,cloudOrder);
+  }
+  return order;
+}
+function ak205MergeWorkerReturnBatch(remote,local){
+  if(!local)return ak205Clone(remote);
+  if(!remote){
+    const x=ak205Clone(local);
+    // جهاز الموزع لا يملك حق إنشاء owner_confirmed.
+    if(x.status==='owner_confirmed'||x.ownerConfirmedAt){x.status=x.confirmedAt?'completed':'pending';delete x.ownerConfirmedAt;delete x.ownerConfirmedLabel;x.ownerReceivedOrderIds=[];}
+    return x;
+  }
+  if(ak205ReturnRank(remote)>=3)return ak205Clone(remote);
+  const x=ak205Clone(remote);
+  x.orderIds=ak205Unique([...(remote.orderIds||[]),...(local.orderIds||[])]);
+  x.returnedOrderIds=ak205Unique([...(remote.returnedOrderIds||[]),...(local.returnedOrderIds||[])]);
+  const rr=Math.min(ak205ReturnRank(remote),2),lr=Math.min(ak205ReturnRank(local),2);
+  const lt=timeValue(local.modifiedAt||local.confirmedAt),rt=timeValue(remote.modifiedAt||remote.confirmedAt);
+  if(lr>rr||(lr===rr&&lt>rt)){
+    if(lr>=2){x.status='completed';x.confirmedAt=local.confirmedAt||x.confirmedAt;x.confirmedLabel=local.confirmedLabel||x.confirmedLabel;}
+    x.modifiedAt=local.modifiedAt||x.modifiedAt;x.modifiedBy=local.modifiedBy||x.modifiedBy;
+  }
+  // حقول المالك تبقى دائماً من السحابة.
+  x.ownerReceivedOrderIds=ak205Clone(remote.ownerReceivedOrderIds||[]);
+  if(remote.ownerConfirmedAt)x.ownerConfirmedAt=remote.ownerConfirmedAt;
+  if(remote.ownerConfirmedLabel)x.ownerConfirmedLabel=remote.ownerConfirmedLabel;
+  x.count=x.orderIds.length;
+  return x;
+}
+function ak205MergeWorkerTransfer(remote,local){
+  if(!remote)return ak205Clone(local);
+  if(ak205TransferRank(remote)>=2)return ak205Clone(remote);
+  return ak205MergeTransferRecord(local,remote);
+}
+function ak205MergeWorkerSimple(name,remote,local){
+  if(!remote)return ak205Clone(local);
+  const rr=ak205SimpleRank(name,remote),lr=ak205SimpleRank(name,local);
+  if(rr>lr)return ak205Clone(remote);
+  return ak205MergeSimpleMonotonic(name,local,remote);
+}
 function mergeDatabases(localDb,cloudDb){
   if(!cloudDb)return localDb;
   const out=JSON.parse(JSON.stringify(cloudDb));
@@ -2388,20 +2581,16 @@ function mergeDatabases(localDb,cloudDb){
       if(statusIsNewerV173(l,c))statusEventFieldsV173(order,l);
       else if(statusIsNewerV173(c,l))statusEventFieldsV173(order,c);
     }
-    const previous=l;
-    if(previous?.status==='مرتجع'&&order.status==='طلب رجوع'&&previous.returnBatchId&&String(previous.returnBatchId)===String(order.returnBatchId)){
-      order.status='مرتجع';order.returnCompletedAt=previous.returnCompletedAt||order.returnCompletedAt;
-      order.returnOwnerConfirmedAt=previous.returnOwnerConfirmedAt||order.returnOwnerConfirmedAt;
-      order.returnOwnerConfirmedLabel=previous.returnOwnerConfirmedLabel||order.returnOwnerConfirmedLabel;
-      order.modifiedAt=previous.modifiedAt||order.modifiedAt;
-    }
+    // v205: النسخة السحابية النهائية لا تتراجع بسبب نسخة محلية قديمة أثناء الدمج.
+    if(c)ak205ProtectMergedOrderFromCloudFinal(order,c,cloudDb);
   }
   out.workers=mergeById(localDb.workers||[],cloudDb.workers||[]);
   out.settlements=mergeUniqueById(localDb.settlements||[],cloudDb.settlements||[]);
-  out.returnBatches=mergeById(localDb.returnBatches||[],cloudDb.returnBatches||[]);
-  out.deliveryBatches=mergeById(localDb.deliveryBatches||[],cloudDb.deliveryBatches||[]);
-  out.deliveryTransfers=mergeById(localDb.deliveryTransfers||[],cloudDb.deliveryTransfers||[]);
-  out.customerChangeRequests=mergeById(localDb.customerChangeRequests||[],cloudDb.customerChangeRequests||[]);
+  // v205: سجلات سير العمل تندمج حسب تقدم الحالة، لا حسب الساعة وحدها.
+  out.returnBatches=ak205MergeArray(localDb.returnBatches||[],cloudDb.returnBatches||[],ak205MergeReturnBatchRecord);
+  out.deliveryBatches=ak205MergeArray(localDb.deliveryBatches||[],cloudDb.deliveryBatches||[],(l,c)=>ak205MergeSimpleMonotonic('deliveryBatches',l,c));
+  out.deliveryTransfers=ak205MergeArray(localDb.deliveryTransfers||[],cloudDb.deliveryTransfers||[],ak205MergeTransferRecord);
+  out.customerChangeRequests=ak205MergeArray(localDb.customerChangeRequests||[],cloudDb.customerChangeRequests||[],(l,c)=>ak205MergeSimpleMonotonic('customerChangeRequests',l,c));
   ak200RepairWorkerAssignments(out);
   ak201RepairReceivedStatus(out);
   const activePendingV175=new Set(readStatusOutbox().map(e=>String(e.orderId)));
@@ -2489,90 +2678,108 @@ async function workerCloudPush(silent=true,retries=0){
     if(!wid)throw new Error('حساب الموزع غير محدد');
     if(!silent)showToast('جارٍ إرسال تحديثاتك إلى المالك...');
 
+    // v205: كل رفع يبدأ من أحدث جيل سحابي ثم يضيف فقط تغييرات هذا الموزع.
     const loaded=await cloudRequest('loadAll',{});
-    const baseGeneration=Object.prototype.hasOwnProperty.call(loaded,'generation')
-      ?loaded.generation:undefined;
+    const baseGeneration=Object.prototype.hasOwnProperty.call(loaded,'generation')?loaded.generation:undefined;
     const cloudDb=parseCloudDb(loaded);
     if(!cloudDb)throw new Error('لا توجد قاعدة سحابية للمالك');
-    const out=JSON.parse(JSON.stringify(cloudDb));
-    if(!Array.isArray(out.orders))out.orders=[];
-    if(!Array.isArray(out.deliveryTransfers))out.deliveryTransfers=[];
-    if(!Array.isArray(out.deliveryBatches))out.deliveryBatches=[];
-    if(!Array.isArray(out.returnBatches))out.returnBatches=[];
-    if(!Array.isArray(out.customerChangeRequests))out.customerChangeRequests=[];
-    if(!Array.isArray(out.settlements))out.settlements=[];
+    const out=ak205Clone(cloudDb);
+    for(const name of ['orders','deliveryTransfers','deliveryBatches','returnBatches','customerChangeRequests','settlements']){
+      if(!Array.isArray(out[name]))out[name]=[];
+    }
 
     const cloudOrders=new Map(out.orders.map(o=>[String(o.id),o]));
+    const statusEvents=new Set(readStatusOutbox().map(ev=>String(ev.orderId)));
+    const baselineMap=ak189BaselineMap();
     const workerFields=['status','history','remarks','rejectReason','postponeDate','returnRequestedAt',
       'returnCompletedAt','deliveryReceivedAt','deliveryReceivedLabel','deliveryReceivedByWorkerId',
       'deliveryReceivedByWorkerName','recipient','phone','address','city','amount','customerTransfers',
       'cancelReason','cancelledAt','statusEnteredAt','statusChangedAtV173','statusEventIdV173','modifiedAt','modifiedBy','lastChangeKind'];
+
     for(const local of (db.orders||[])){
-      if(!local||local.id==null||!orderAssignedToWorker(local,wid))continue;
-      if(ak193IsConflict(local.id))continue;
-      const remote=cloudOrders.get(String(local.id));
-      // إذا كان الطلب موجوداً عند الموزع وغير موجود في السحابة، نعيده إلى
-      // النسخة السحابية بدل إسقاط تحديثه بالكامل.
+      if(!local||local.id==null||!orderAssignedToWorker(local,wid)||ak193IsConflict(local.id))continue;
+      const id=String(local.id),remote=cloudOrders.get(id);
       if(!remote){
-        if(!local.deletedAt){
-          const copy=JSON.parse(JSON.stringify(local));
-          out.orders.push(copy);
-          cloudOrders.set(String(local.id),copy);
+        // طلب غير موجود في السحابة لا يعاد إنشاؤه من نسخة موزع قديمة بلا حدث حقيقي.
+        if((local.pendingStatusSync||statusEvents.has(id))&&!local.deletedAt){
+          const copy=ak205Clone(local);out.orders.push(copy);cloudOrders.set(id,copy);
         }
         continue;
       }
-      // تأكيد حالة ينتظر الرفع لا يُسقطه طابع زمني أحدث من جهاز آخر.
-      const pendingEvent=readStatusOutbox().some(ev=>String(ev.orderId)===String(local.id));
-      const b0=ak189BaselineMap().get(String(local.id));
-      const localModified=b0?!ak189SameBaseline(local,b0):false;
+
+      // إذا كانت السحابة وصلت إلى مرحلة نهائية، النسخة القديمة على جهاز الموزع لا تستطيع إرجاعها للخلف.
+      const finalLock=ak205WorkerCloudLock(remote,cloudDb,local.status);
+      if(finalLock){
+        const li=(db.orders||[]).findIndex(o=>String(o?.id)===id);
+        if(li>=0)db.orders[li]=ak205Clone(remote);
+        removeStatusEventV173(id,local.statusEventIdV173);
+        continue;
+      }
+
+      const pendingEvent=statusEvents.has(id);
+      const base=baselineMap.get(id);
+      const localModified=base?!ak189SameBaseline(local,base):false;
       if(!local.pendingStatusSync&&!pendingEvent&&!localModified)continue;
-      const baseline=ak189BaselineMap().get(String(local.id));
-      if(baseline && !ak189SameBaseline(remote,baseline) && !ak189Equal(local,remote)){
+      if(base && !ak189SameBaseline(remote,base) && !ak189Equal(local,remote)){
         ak189Record(local,remote,'تغيير موزع متزامن مع تحديث السحابة');continue;
       }
-      if(!baseline && !pendingEvent && !ak189Equal(local,remote)){
+      if(!base && !pendingEvent && !ak189Equal(local,remote)){
         ak189Record(local,remote,'تغييرات الموزع تحتاج مقارنة أولية');continue;
       }
+
+      const before=ak205Clone(remote);
       for(const key of workerFields){
-        if(local[key]!==undefined)remote[key]=JSON.parse(JSON.stringify(local[key]));
+        if(local[key]!==undefined)remote[key]=ak205Clone(local[key]);
         else if(key in remote)delete remote[key];
       }
+      ak205ProtectMergedOrderFromCloudFinal(remote,before,cloudDb);
     }
 
-    function mergeWorkerRows(name){
+    function mergeWorkerArray(name,mergePair){
       const remote=Array.isArray(out[name])?out[name]:[];
       const index=new Map(remote.map((x,i)=>[String(x.id),i]));
       for(const local of (db[name]||[])){
         if(!local||local.id==null||String(local.workerId)!==wid)continue;
-        const i=index.get(String(local.id));
-        if(i===undefined){remote.push(JSON.parse(JSON.stringify(local)));continue;}
-        if(timeValue(local.modifiedAt||local.receivedAt||local.completedAt)>
-           timeValue(remote[i].modifiedAt||remote[i].receivedAt||remote[i].completedAt)){
-          remote[i]=JSON.parse(JSON.stringify(local));
-        }
+        const id=String(local.id),i=index.get(id);
+        if(i===undefined){remote.push(mergePair(null,local));index.set(id,remote.length-1);continue;}
+        remote[i]=mergePair(remote[i],local);
       }
-      out[name]=remote;
+      out[name]=remote.filter(Boolean);
     }
-    mergeWorkerRows('deliveryTransfers');
-    mergeWorkerRows('deliveryBatches');
-    mergeWorkerRows('returnBatches');
-    mergeWorkerRows('customerChangeRequests');
-    // v191: تأكيدات الدفع الخاصة بالموزع جزء من المزامنة مثل بقية العمليات.
-    mergeWorkerRows('settlements');
+
+    // الموزع يستطيع فقط التقدم إلى الأمام في هذه المسارات.
+    mergeWorkerArray('deliveryTransfers',ak205MergeWorkerTransfer);
+    mergeWorkerArray('deliveryBatches',(r,l)=>ak205MergeWorkerSimple('deliveryBatches',r,l));
+    mergeWorkerArray('returnBatches',ak205MergeWorkerReturnBatch);
+    mergeWorkerArray('customerChangeRequests',(r,l)=>ak205MergeWorkerSimple('customerChangeRequests',r,l));
+
+    // التسوية التي أنشأها هذا الموزع تُضاف أو تُحدّث فقط إن لم توجد نسخة سحابية أحدث.
+    const settlements=out.settlements||[];
+    const si=new Map(settlements.map((x,i)=>[String(x.id),i]));
+    for(const local of (db.settlements||[])){
+      if(!local||local.id==null||String(local.workerId)!==wid)continue;
+      const i=si.get(String(local.id));
+      if(i===undefined){settlements.push(ak205Clone(local));continue;}
+      const remote=settlements[i];
+      if(timeValue(local.modifiedAt||local.confirmedAt)>timeValue(remote.modifiedAt||remote.confirmedAt))settlements[i]=ak205Clone(local);
+    }
+    out.settlements=settlements;
 
     ak200RepairWorkerAssignments(out);
     ak201RepairReceivedStatus(out);
-    const payload={db:stripTransientSyncFlagsV175(out),updatedAt:isoNow(),updatedBy:'worker:'+wid};
+    const payload={db:stripTransientSyncFlagsV175(out),updatedAt:isoNow(),updatedBy:'worker-v205:'+wid};
     if(baseGeneration!==undefined)payload._baseGeneration=baseGeneration;
     const result=await cloudRequest('saveAll',payload);
     if(!result||!result.verified)throw new Error('لم يتم تأكيد حفظ تحديثات الموزع');
+
+    ak204SetVerified(result.generation||baseGeneration,'worker-write-v205');
     localStorage.setItem(CLOUD_LAST_OK_KEY,isoNow());
     if(cloudEditGeneration===startedGeneration)localStorage.removeItem(CLOUD_PENDING_KEY);
     localStorage.removeItem(CLOUD_LAST_ERROR_KEY);
-    if(!silent)showToast('✅ وصلت تحديثاتك إلى المالك');
+    if(!silent)showToast('✅ وصلت تحديثاتك إلى المالك وتأكدت السحابة');
     return true;
   }catch(e){
-    if(e&&e.code==='cloud_conflict'&&retries<2)return workerCloudPush(silent,retries+1);
+    if(e&&e.code==='cloud_conflict'&&retries<3)return workerCloudPush(silent,retries+1);
     localStorage.setItem(CLOUD_PENDING_KEY,'1');
     localStorage.setItem(CLOUD_LAST_ERROR_KEY,e&&e.message?e.message:'خطأ غير معروف');
     if(!silent)showToast('تعذر إرسال التحديث: '+(e&&e.message?e.message:'خطأ غير معروف'));
@@ -2581,14 +2788,13 @@ async function workerCloudPush(silent=true,retries=0){
   }
 }
 
-
 // v159: تنفيذ تغيير حالة الطلب عند الموزع كمعاملة سحابية مستقلة ذات أولوية.
 async function waitForCloudIdle(maxMs=8000){
   const started=Date.now();
-  while((cloudSyncBusy||cloudPullBusy) && Date.now()-started<maxMs){
+  while((cloudSyncBusy||cloudPullBusy||ak204AdoptBusy) && Date.now()-started<maxMs){
     await new Promise(r=>setTimeout(r,160));
   }
-  return !(cloudSyncBusy||cloudPullBusy);
+  return !(cloudSyncBusy||cloudPullBusy||ak204AdoptBusy);
 }
 
 async function workerPushOrderStatusTransaction(orderId,targetStatus,attempts=0){
@@ -2606,6 +2812,20 @@ async function workerPushOrderStatusTransaction(orderId,targetStatus,attempts=0)
     const out=JSON.parse(JSON.stringify(cloudDb));if(!Array.isArray(out.orders))out.orders=[];
     let remote=out.orders.find(x=>String(x.id)===String(orderId));
     if(!remote){remote=JSON.parse(JSON.stringify(local));out.orders.push(remote);}
+
+    // v205: حدث قديم في طابور جهاز الموزع لا يتجاوز حالة نهائية موجودة فعلاً في السحابة.
+    const cloudLockV205=ak205WorkerCloudLock(remote,cloudDb,targetStatus);
+    if(cloudLockV205){
+      const localIndex=(db.orders||[]).findIndex(x=>String(x?.id)===String(orderId));
+      if(localIndex>=0)db.orders[localIndex]=ak205Clone(remote);
+      removeStatusEventV173(orderId,local.statusEventIdV173);
+      localStorage.setItem(K,JSON.stringify(db));
+      localStorage.setItem(CLOUD_LAST_OK_KEY,isoNow());
+      localStorage.removeItem(CLOUD_LAST_ERROR_KEY);
+      try{akLogV180('stale-worker-event-dropped','تم تجاهل حدث موزع قديم لأن السحابة في حالة نهائية',cloudLockV205+' '+orderId);}catch(_){}
+      updateSyncIndicators();
+      return true;
+    }
     // v189: تأكيد حالة الموزع لا يستبدل بيانات الزبون أو العنوان أو المبلغ
     // بنسخة ربما أصبحت قديمة على جهاز الموزع.
     const statusFields=['status','statusEnteredAt','statusChangedAtV173','statusEventIdV173',
@@ -2775,90 +2995,129 @@ async function ownerCloudPull(){
   }
   return ok;
 }
+/* v204: اعتماد سحابي موثوق للموزع.
+   بعد كل رفع ناجح أو تحديث يدوي، تصبح نسخة السحابة هي الأصل على جهاز الموزع.
+   الاستثناء الوحيد: تغييرات محلية حقيقية لم تُؤكد بعد أو طلبات معزولة بسبب تعارض. */
+async function ak204AdoptWorkerCloud(silent=true){
+  if(!session||session.role!=='worker')return false;
+  if(!navigator.onLine)return false;
+  if(ak204AdoptBusy)return false;
+  ak204AdoptBusy=true;
+  cloudLastPullStarted=Date.now();
+  const startedGeneration=cloudEditGeneration;
+  const beforeDigest=cloudDbDigest(db);
+  try{
+    const loaded=await cloudRequest('loadAll',{});
+    const cloudDb=parseCloudDb(loaded);
+    if(!cloudDb)throw new Error('لا توجد قاعدة سحابية صالحة');
+
+    let fresh=JSON.parse(JSON.stringify(cloudDb));
+    for(const name of ['orders','workers','deliveryTransfers','deliveryBatches','returnBatches','customerChangeRequests','settlements']){
+      if(!Array.isArray(fresh[name]))fresh[name]=[];
+    }
+
+    // إصلاحات تعتمد فقط على أدلة موجودة داخل السحابة نفسها.
+    ak200RepairWorkerAssignments(fresh);
+    ak201RepairReceivedStatus(fresh);
+
+    // الطلبات المتعارضة تبقى معزولة محلياً حتى يراجعها المالك.
+    fresh=ak193PreserveLocalConflicts(fresh,db);
+
+    // لا نضيّع أي تغيير حالة حقيقي ما زال في طابور الجهاز.
+    const cloudIndex=new Map((fresh.orders||[]).filter(Boolean).map((o,i)=>[String(o.id),i]));
+    const cloudOriginalIndex=new Map((cloudDb.orders||[]).filter(Boolean).map(o=>[String(o.id),o]));
+    const pendingIds=new Set(readStatusOutbox().map(e=>String(e.orderId)));
+    for(const local of (db.orders||[])){
+      if(!local||local.id==null)continue;
+      const id=String(local.id);
+      if(ak193IsConflict(id))continue;
+      if(!pendingIds.has(id)&&!local.pendingStatusSync)continue;
+      const remoteOriginal=cloudOriginalIndex.get(id);
+      if(cloudConfirmsOrderV175(local,remoteOriginal)){
+        removeStatusEventV173(id,local.statusEventIdV173);
+        continue;
+      }
+      const i=cloudIndex.get(id);
+      if(i===undefined){
+        const copy=JSON.parse(JSON.stringify(local));
+        fresh.orders.push(copy);cloudIndex.set(id,fresh.orders.length-1);
+      }else{
+        statusEventFieldsV173(fresh.orders[i],local);
+        fresh.orders[i].pendingStatusSync=true;
+        fresh.orders[i].pendingStatusTarget=local.pendingStatusTarget||local.status;
+      }
+    }
+
+    // إذا عدّل المستخدم شيئاً أثناء انتظار الشبكة، نحافظ على ذلك التعديل فقط.
+    if(cloudEditGeneration!==startedGeneration){
+      fresh=mergeDatabases(db,fresh);
+    }
+
+    db=fresh;
+    reconcilePendingWithCloudV175(cloudDb);
+    applyStatusOutboxV173();
+    reconcilePendingWithCloudV175(cloudDb);
+    ak195ClearOrphanPendingStatus(cloudDb);
+    ak189Remember(cloudDb);
+
+    const realPending=readStatusOutbox().length>0 || (db.orders||[]).some(o=>o&&o.pendingStatusSync);
+    if(!realPending && cloudEditGeneration===startedGeneration){
+      localStorage.removeItem(CLOUD_PENDING_KEY);
+      localStorage.removeItem(CLOUD_LAST_ERROR_KEY);
+      ak198ClearEvents();
+    }
+
+    localStorage.setItem(K,JSON.stringify(db));
+    localStorage.setItem(CLOUD_LAST_OK_KEY,isoNow());
+    localStorage.setItem('ak_delivery_last_cloud_pull',isoNow());
+    ak204SetVerified(loaded&&loaded.generation,'worker-adopt');
+    cloudPullFailures=0;
+
+    const afterDigest=cloudDbDigest(db);
+    if(beforeDigest!==afterDigest){
+      try{menu();render();renderWorkers();accountsRender();refreshLoginWorkers();refreshActiveCloudPage();}catch(_){}
+    }
+    updateSyncIndicators();
+    return true;
+  }catch(e){
+    cloudPullFailures=Math.min(cloudPullFailures+1,4);
+    localStorage.setItem(CLOUD_LAST_ERROR_KEY,e&&e.message?e.message:'خطأ غير معروف');
+    if(!silent)showToast('تعذر اعتماد السحابة: '+(e&&e.message?e.message:'خطأ غير معروف'));
+    updateSyncIndicators();
+    return false;
+  }finally{
+    ak204AdoptBusy=false;
+    cloudLastPullStarted=Date.now();
+  }
+}
+
 async function workerRefreshOrders(){
  const btn=document.getElementById('workerRefreshBtn');
  if(!session||session.role!=='worker')return false;
  if(!navigator.onLine){showToast('لا يوجد اتصال بالإنترنت');return false;}
- const refreshGeneration=cloudEditGeneration;
  if(btn){btn.disabled=true;btn.textContent='⏳ جارٍ التحديث';}
- showToast('جارٍ جلب نسخة السحابة المؤكدة...');
+ showToast('جارٍ التحقق من السحابة واعتماد النسخة المؤكدة...');
  try{
-   // v203: قبل اعتماد السحابة، نرفع أي تغييرات حقيقية معلقة لدى الموزع.
-   // بعد نجاح الرفع لا نسمح لعلم مزامنة قديم بأن يعيد دمج نسخة محلية متقادمة.
+   // نرسل أولاً أي تغيير محلي حقيقي، ولا نستبدل الجهاز إن فشل الرفع.
    if(localStorage.getItem(CLOUD_PENDING_KEY)==='1'){
      const pushed=await workerCloudPush(true);
      if(!pushed){
-       showToast('تعذر إرسال التغييرات المعلقة؛ لم يتم استبدال بيانات جهازك');
+       showToast('تعذر إرسال التغييرات المعلقة؛ بقيت بيانات جهازك محفوظة');
        return false;
      }
    }
-
-   const loaded=await cloudRequest('loadAll',{});
-   const cloudDb=parseCloudDb(loaded);
-   if(!cloudDb)throw new Error('لا توجد قاعدة سحابية صالحة');
-
-   let fresh=JSON.parse(JSON.stringify(cloudDb));
-   if(!Array.isArray(fresh.orders))fresh.orders=[];
-   if(!Array.isArray(fresh.workers))fresh.workers=[];
-   if(!Array.isArray(fresh.deliveryTransfers))fresh.deliveryTransfers=[];
-   if(!Array.isArray(fresh.deliveryBatches))fresh.deliveryBatches=[];
-   if(!Array.isArray(fresh.returnBatches))fresh.returnBatches=[];
-   if(!Array.isArray(fresh.customerChangeRequests))fresh.customerChangeRequests=[];
-   if(!Array.isArray(fresh.settlements))fresh.settlements=[];
-
-   // أصلح فقط الروابط/حالة الاستلام المثبتة في السحابة نفسها.
-   ak200RepairWorkerAssignments(fresh);
-   ak201RepairReceivedStatus(fresh);
-
-   // إذا بقي حدث حالة حقيقي في طابور هذا الجهاز، نحافظ على ذلك الطلب فقط.
-   // لا ندمج بقية قاعدة الجهاز القديمة مع السحابة.
-   const pendingIds=new Set(readStatusOutbox().map(e=>String(e.orderId)));
-   if(pendingIds.size){
-     const cloudIndex=new Map(fresh.orders.map((o,i)=>[String(o.id),i]));
-     for(const local of (db.orders||[])){
-       if(!local||!pendingIds.has(String(local.id)))continue;
-       const i=cloudIndex.get(String(local.id));
-       if(i===undefined){
-         fresh.orders.push(JSON.parse(JSON.stringify(local)));
-         continue;
-       }
-       statusEventFieldsV173(fresh.orders[i],local);
-       fresh.orders[i].pendingStatusSync=true;
-       fresh.orders[i].pendingStatusTarget=local.pendingStatusTarget||local.status;
-     }
-   }
-
-   // إن حدث تعديل جديد أثناء عملية التحديث، لا نمسحه.
-   if(cloudEditGeneration!==refreshGeneration){
-     fresh=mergeDatabases(db,fresh);
-   }
-
-   db=fresh;
-   localStorage.setItem(K,JSON.stringify(db));
-   reconcilePendingWithCloudV175(cloudDb);
-   applyStatusOutboxV173();
-   ak195ClearOrphanPendingStatus(cloudDb);
-   if(!readStatusOutbox().length && !(db.orders||[]).some(o=>o&&o.pendingStatusSync)){
-     localStorage.removeItem(CLOUD_PENDING_KEY);
-     localStorage.removeItem(CLOUD_LAST_ERROR_KEY);
-   }
-   localStorage.setItem(CLOUD_LAST_OK_KEY,isoNow());
-   localStorage.setItem('ak_delivery_last_cloud_pull',isoNow());
-
+   const ok=await ak204AdoptWorkerCloud(true);
+   if(!ok){showToast('تعذر اعتماد النسخة السحابية الآن');return false;}
    markAssignedSeen();
-   try{
-     menu();render();renderWorkers();accountsRender();refreshLoginWorkers();refreshActiveCloudPage();
-   }catch(e){console.error('worker hard refresh UI',e);}
-
+   try{menu();render();}catch(_){}
    const wid=String(session.workerId||'');
    const visible=(db.orders||[]).filter(o=>o&&!o.deletedAt&&!o.duplicateHidden&&workerCanSeeOrder(o,wid));
    const inDistribution=visible.filter(o=>o.status==='قيد التوزيع').length;
-   showToast('✅ تم اعتماد السحابة — قيد التوزيع: '+inDistribution,4200);
-   updateSyncIndicators();
+   showToast('✅ السحابة مؤكدة — قيد التوزيع: '+inDistribution,4200);
    return true;
  }catch(e){
    localStorage.setItem(CLOUD_LAST_ERROR_KEY,e&&e.message?e.message:'خطأ غير معروف');
-   showToast('تعذر تحديث الطلبات: '+(e&&e.message?e.message:'خطأ غير معروف'));
+   showToast('تعذر التحديث: '+(e&&e.message?e.message:'خطأ غير معروف'));
    updateSyncIndicators();
    return false;
  }finally{
@@ -2868,8 +3127,8 @@ async function workerRefreshOrders(){
 async function syncNow(silent=true){
   if(!navigator.onLine)return false;
   clearTimeout(cloudSyncTimer);cloudSyncTimer=null;
-  if(cloudSyncBusy||cloudPullBusy){
-    queueCloudSync(400);
+  if(cloudSyncBusy||cloudPullBusy||ak204AdoptBusy){
+    queueCloudSync(500);
     return false;
   }
   cloudSyncBusy=true;
@@ -2877,33 +3136,34 @@ async function syncNow(silent=true){
   try{
     let ok=false;
     if(session&&session.role==='worker'){
-      // v137: يرفع الموزع تعديلاته أولاً، ثم يجلب النسخة المدمجة المؤكدة.
-      // الآن نرفع تغييراته المصرح بها أولاً، ثم نجلب النسخة المدمجة المؤكدة.
+      // v204: رفع مؤكد ثم اعتماد نسخة السحابة نفسها، بلا دمج عشوائي مع نسخة قديمة.
       ok=await workerCloudPush(silent);
-      if(ok)ok=await cloudPull(true,false);
+      if(ok)ok=await ak204AdoptWorkerCloud(true);
     }else{
-      // v131: المالك هو المصدر الآمن الآن؛ لا نجلب القاعدة الفارغة قبل رفع بياناته.
+      // المالك يرفع بعد دمج آخر نسخة سحابية، ثم يعيد التحقق منها.
       ok=await cloudPush(silent);
       if(ok)ok=await cloudPull(true,true);
     }
     if(ok){
       cloudSyncFailures=0;
       localStorage.setItem(CLOUD_LAST_OK_KEY,isoNow());
-      if(cloudEditGeneration===startedGeneration){
+      if(cloudEditGeneration===startedGeneration && !readStatusOutbox().length &&
+         !(db.orders||[]).some(o=>o&&o.pendingStatusSync)){
         localStorage.removeItem(CLOUD_PENDING_KEY);
         ak198ClearEvents();
       }
       localStorage.removeItem(CLOUD_LAST_ERROR_KEY);
       ak198BroadcastChange();
+    }else{
+      cloudSyncFailures=Math.min(cloudSyncFailures+1,4);
     }
-    else cloudSyncFailures=Math.min(cloudSyncFailures+1,4);
     updateSyncIndicators();
     return ok;
   }finally{
     cloudSyncBusy=false;
     if(localStorage.getItem(CLOUD_PENDING_KEY)==='1' && navigator.onLine){
-      const backoff=Math.min(30000,3500*Math.pow(2,Math.max(0,cloudSyncFailures-1)));
-      queueCloudSync(cloudEditGeneration===startedGeneration?backoff:500);
+      const backoff=Math.min(45000,3500*Math.pow(2,Math.max(0,cloudSyncFailures-1)));
+      queueCloudSync(cloudEditGeneration===startedGeneration?backoff:600);
     }
   }
 }
@@ -2966,23 +3226,26 @@ window.addEventListener('online',()=>{
   if(!session?.role)return;
   showToast('عاد الاتصال بالإنترنت — جارٍ استئناف المزامنة');
   if(localStorage.getItem(CLOUD_PENDING_KEY)==='1'){
-    queueCloudSync(120);
-  }else if(!cloudPullBusy&&!cloudSyncBusy){
-    setTimeout(()=>cloudPull(true,session.role==='owner'),180);
+    queueCloudSync(150);
+  }else if(!cloudPullBusy&&!cloudSyncBusy&&!ak204AdoptBusy){
+    setTimeout(()=>session.role==='worker'?ak204AdoptWorkerCloud(true):cloudPull(true,true),220);
   }
-  if(session.role==='worker')setTimeout(retryStatusOutboxV173,350);
+  if(session.role==='worker')setTimeout(retryStatusOutboxV173,500);
 });
 window.addEventListener('offline',()=>{updateSyncIndicators();showToast('لا يوجد إنترنت — سيتم حفظ التغييرات وإرسالها عند عودة الاتصال');});
 // v199: الجلب الدوري شبكة أمان فقط؛ لا يزاحم المزامنة الحدثية.
 setInterval(()=>{
-  if(!navigator.onLine||document.visibilityState==='hidden'||cloudSyncBusy||cloudPullBusy||!session?.role)return;
+  if(!navigator.onLine||document.visibilityState==='hidden'||cloudSyncBusy||cloudPullBusy||ak204AdoptBusy||!session?.role)return;
   if(localStorage.getItem(CLOUD_PENDING_KEY)==='1'){
-    if(!cloudSyncTimer)queueCloudSync(150);
+    if(!cloudSyncTimer)queueCloudSync(180);
     return;
   }
   const activeRecently=(Date.now()-ak198LastActivity)<120000;
-  const interval=activeRecently?20000:60000;
-  if(Date.now()-cloudLastPullStarted>=interval)cloudPull(true,session.role==='owner');
+  const interval=activeRecently?25000:75000;
+  if(Date.now()-cloudLastPullStarted>=interval){
+    if(session.role==='worker')ak204AdoptWorkerCloud(true);
+    else cloudPull(true,true);
+  }
 },5000);
 /* v199: استئناف موحد للصفحة بدلاً من عدة عمليات جلب متنافسة. */
 let ak199LastResume=0;
@@ -2992,15 +3255,18 @@ function ak199ResumeSync(){
   if(now-ak199LastResume<1800)return;
   ak199LastResume=now;
   ak198LastActivity=now;
-  if(cloudSyncBusy||cloudPullBusy)return;
-  if(localStorage.getItem(CLOUD_PENDING_KEY)==='1')queueCloudSync(120);
-  else if(now-cloudLastPullStarted>=5000)cloudPull(true,session.role==='owner');
+  if(cloudSyncBusy||cloudPullBusy||ak204AdoptBusy)return;
+  if(localStorage.getItem(CLOUD_PENDING_KEY)==='1')queueCloudSync(150);
+  else if(now-cloudLastPullStarted>=5000){
+    if(session.role==='worker')ak204AdoptWorkerCloud(true);
+    else cloudPull(true,true);
+  }
 }
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')setTimeout(ak199ResumeSync,180);});
 window.addEventListener('pageshow',()=>setTimeout(ak199ResumeSync,180));
 window.addEventListener('focus',()=>setTimeout(ak199ResumeSync,220));
 async function retryStatusOutboxV173(){
-  if(!navigator.onLine||!session||session.role!=='worker'||cloudSyncBusy||cloudPullBusy)return;
+  if(!navigator.onLine||!session||session.role!=='worker'||cloudSyncBusy||cloudPullBusy||ak204AdoptBusy)return;
   const ev=readStatusOutbox().find(ev=>!ak193IsConflict(ev.orderId));if(!ev)return;
   const o=db.orders.find(x=>String(x.id)===String(ev.orderId));if(!o){removeStatusEventV173(ev.orderId,ev.statusEventIdV173);return;}
   try{await workerPushOrderStatusTransaction(ev.orderId,ev.status)}catch(_){}
@@ -3012,7 +3278,7 @@ async function retryStatusOutboxV173(){
 let ak199WatchdogLast=0;
 async function ak199SyncWatchdog(){
   if(!navigator.onLine||!session?.role||document.visibilityState==='hidden')return;
-  if(cloudSyncBusy||cloudPullBusy)return;
+  if(cloudSyncBusy||cloudPullBusy||ak204AdoptBusy)return;
   const now=Date.now();
   if(now-ak199WatchdogLast<12000)return;
   ak199WatchdogLast=now;
@@ -6331,6 +6597,17 @@ function scanIntegrityV180(){
       issues.push({kind:'assignment',text:'طلب في الطريق فقد إسناد الموزع رغم وجود سجل إرسال: '+(o.clientNo||o.seq||o.id)});
     }
   }
+  // v205: فحص التراجع في الحالات النهائية.
+  for(const b of returns.filter(b=>b&&!b.deletedAt&&!b.duplicateHidden&&(b.status==='owner_confirmed'||b.ownerConfirmedAt))){
+    for(const id of (b.orderIds||[])){
+      const o=orders.find(x=>String(x?.id)===String(id));
+      if(o&&!o.deletedAt&&o.status==='طلب رجوع')issues.push({kind:'return-regression',text:'تراجع طلب من رجوع مؤكد إلى «طلب رجوع»: '+(o.clientNo||o.seq||o.id)});
+    }
+  }
+  for(const t of transfers.filter(t=>t&&!t.deletedAt&&(t.status==='received'||t.receivedAt))){
+    const o=orders.find(x=>String(x?.id)===String(t.orderId));
+    if(o&&!o.deletedAt&&o.status==='في الطريق')issues.push({kind:'delivery-regression',text:'طلب مستلم لدى الموزع عاد إلى «في الطريق»: '+(o.clientNo||o.seq||o.id)});
+  }
   return issues.slice(0,200);
 }
 
@@ -6541,7 +6818,7 @@ function diagnosticsTextV180(){
   const issues=scanIntegrityV180();
   let outbox=[];try{outbox=readStatusOutbox()}catch(_){}
   const payload={
-    app:'AK Delivery 202 Safe Sync',
+    app:'AK Delivery 205 Strong Sync',
     time:new Date().toISOString(),
     online:navigator.onLine,
     role:session?.role||null,
@@ -6661,7 +6938,7 @@ setInterval(()=>{
   }catch(_){}
 },15000);
 
-akLogV180('boot','تشغيل AK Delivery 202 Safe Sync');
+akLogV180('boot','تشغيل AK Delivery 205 Safe Sync');
 try{updateCloudReadWriteStatusV180();}catch(_){}
 setTimeout(()=>{
   try{
@@ -6675,5 +6952,7 @@ setTimeout(()=>{
     try{renderSystemHealthV180();}catch(_){}
   }catch(e){akLogV180('repair-error','تعذر إصلاح الاتساق القديم',e.message)}
 },900);
+
+// AK Delivery build v205 — monotonic cloud guards enabled
 </script>
 </body></html>
