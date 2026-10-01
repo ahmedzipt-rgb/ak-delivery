@@ -562,7 +562,7 @@ html[data-lang="fr"] #overlay > .drawer .actions{justify-content:flex-start!impo
  <select id="loginWorker"><option value="">اختر حسابك</option></select>
 <input id="loginPin" type="password" inputmode="numeric" placeholder="الرمز السري">
 <div id="loginStatus" style="margin-top:8px;font-weight:700;min-height:22px"></div>
-<div style="margin-top:6px;font-size:12px;opacity:.7">الإصدار 193</div>
+<div style="margin-top:6px;font-size:12px;opacity:.7">الإصدار 194</div>
 <button id="workerLoginBtn" type="button" onclick="workerLogin(event)" class="btn" style="width:100%">دخول الموزع</button>
 <hr>
 <h3>إنشاء حساب موزع</h3>
@@ -667,7 +667,7 @@ html[data-lang="fr"] #overlay > .drawer .actions{justify-content:flex-start!impo
 
 <section id="systemHealth" class="page">
   <div class="card">
-    <h2>🩺 صحة النظام — AK Delivery 193</h2>
+    <h2>🩺 صحة النظام — AK Delivery 194</h2>
     <div id="healthSummaryV180">جارٍ الفحص...</div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">
       <button class="btn g" onclick="renderSystemHealthV180()">🔄 تحديث الفحص</button>
@@ -695,7 +695,7 @@ html[data-lang="fr"] #overlay > .drawer .actions{justify-content:flex-start!impo
 </section>
 
 <section id="ak189Recovery" class="page"><div class="card">
-<h2>🛡️ مراجعة تعارضات طلبات AK Delivery 193</h2>
+<h2>🛡️ مراجعة تعارضات طلبات AK Delivery 194</h2>
 <p>تُعرض هنا الطلبات التي تختلف بياناتها بين هذا الجهاز والسحابة. لا تُحذف أي نسخة تلقائيًا.</p>
 <div id="ak189ConflictStatus"></div>
 <button type="button" class="btn g" onclick="ak189RefreshReport()">تحديث المراجعة</button>
@@ -1951,6 +1951,72 @@ function ak193ConflictIds(){
   return new Set(ak189Conflicts().map(x=>String(x&&x.id||'')).filter(Boolean));
 }
 function ak193IsConflict(id){return ak193ConflictIds().has(String(id||''));}
+
+function ak194OwnerReviewEvent(ev){
+  return !!(ev && String(ev.statusEventIdV173||'').startsWith('REVIEW189-'));
+}
+function ak194RecoverOwnerReviewOutbox(cloudDb){
+  if(!session || session.role!=='owner' || !cloudDb || !Array.isArray(cloudDb.orders))return 0;
+  const cm=new Map(cloudDb.orders.filter(Boolean).map(o=>[String(o.id),o]));
+  const q=readStatusOutbox();
+  let changed=0;
+  for(const ev of q){
+    if(!ak194OwnerReviewEvent(ev))continue;
+    const local=(db.orders||[]).find(o=>String(o.id)===String(ev.orderId));
+    const remote=cm.get(String(ev.orderId));
+    if(!local){
+      removeStatusEventV173(ev.orderId,ev.statusEventIdV173);
+      changed++;
+      continue;
+    }
+    if(cloudConfirmsOrderV175(local,remote)){
+      delete local.pendingStatusSync;
+      delete local.pendingStatusTarget;
+      local.lastStatusConfirmedAt=isoNow();
+      removeStatusEventV173(local.id,ev.statusEventIdV173);
+      changed++;
+      continue;
+    }
+    if(!ak189Conflicts().some(x=>String(x.id)===String(local.id))){
+      ak189Record(local,remote||null,'قرار مراجعة محلي لم يصل إلى السحابة');
+    }
+    delete local.pendingStatusSync;
+    delete local.pendingStatusTarget;
+    removeStatusEventV173(local.id,ev.statusEventIdV173);
+    changed++;
+  }
+  if(changed)localStorage.setItem(K,JSON.stringify(db));
+  return changed;
+}
+async function ak194SaveResolvedLocalOrder(order,attempts=0){
+  try{
+    const loaded=await cloudRequest('loadAll',{});
+    const baseGeneration=Object.prototype.hasOwnProperty.call(loaded,'generation')?loaded.generation:undefined;
+    const cloudDb=parseCloudDb(loaded);
+    if(!cloudDb)throw new Error('لا توجد قاعدة سحابية');
+    const out=JSON.parse(JSON.stringify(cloudDb));
+    if(!Array.isArray(out.orders))out.orders=[];
+    const clean=JSON.parse(JSON.stringify(order));
+    delete clean.pendingStatusSync;
+    delete clean.pendingStatusTarget;
+    clean.modifiedAt=isoNow();
+    clean.modifiedBy='مراجعة المالك v194';
+    clean.statusEnteredAt=clean.statusEnteredAt||isoNow();
+    clean.statusEventIdV173='REVIEW194-'+Date.now()+'-'+Math.random().toString(36).slice(2,7);
+    clean.statusChangedAtV173=isoNow();
+    const i=out.orders.findIndex(o=>String(o.id)===String(clean.id));
+    if(i<0)out.orders.push(clean); else out.orders[i]=clean;
+    const payload={db:stripTransientSyncFlagsV175(out),updatedAt:isoNow(),updatedBy:'owner-review-v194'};
+    if(baseGeneration!==undefined)payload._baseGeneration=baseGeneration;
+    const result=await cloudRequest('saveAll',payload);
+    if(!result||!result.verified)throw new Error('لم يتم تأكيد الحفظ');
+    return clean;
+  }catch(e){
+    if(e&&e.code==='cloud_conflict'&&attempts<2)return ak194SaveResolvedLocalOrder(order,attempts+1);
+    throw e;
+  }
+}
+
 function ak193PreserveLocalConflicts(merged,localDb){
   if(!merged||!Array.isArray(merged.orders))return merged;
   const ids=ak193ConflictIds(); if(!ids.size)return merged;
@@ -2040,38 +2106,39 @@ function ak189RefreshReport(){
  </div>`).join('');
 }
 function ak189DownloadRecovery(){
- const data={app:'AK Delivery 193',exportedAt:new Date().toISOString(),deviceDb:db,conflicts:ak189Conflicts(),
+ const data={app:'AK Delivery 194',exportedAt:new Date().toISOString(),deviceDb:db,conflicts:ak189Conflicts(),
  baseline:ak189Read(AK189_BASE,[]),statusQueue:readStatusOutbox()};
  const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
  const a=document.createElement('a');a.href=URL.createObjectURL(blob);
  a.download='AK189_Recovery_'+new Date().toISOString().slice(0,10)+'.json';document.body.appendChild(a);a.click();a.remove();
  setTimeout(()=>URL.revokeObjectURL(a.href),3000);
 }
-function ak189Choose(i,chosen){
+async function ak189Choose(i,chosen){
  if(!session||session.role!=='owner'){alert('حل التعارضات متاح للمالك فقط. صدّر التقرير وأرسله إليه بشكل خاص.');return;}
  const all=ak189Conflicts();const x=all[i];if(!x)return;
  if(!confirm('راجع بيانات الطلب قبل التأكيد. هل تريد اعتماد '+(chosen==='cloud'?'بيانات السحابة':'بيانات هذا الجهاز')+'؟'))return;
- // لا نعتمد مجرد اختيار على قاعدة بعيدة قبل التحقق منها مجدداً.
  const picked=chosen==='cloud'?x.cloud:x.local;
  if(!picked){alert('هذه النسخة غير متوفرة. نزّل التقرير لمراجعتها.');return;}
- const idx=(db.orders||[]).findIndex(o=>String(o.id)===String(x.id));
- if(idx<0)db.orders.push(JSON.parse(JSON.stringify(picked)));else db.orders[idx]=JSON.parse(JSON.stringify(picked));
+ let finalOrder=JSON.parse(JSON.stringify(picked));
  if(chosen==='local'){
-  const o=db.orders.find(o=>String(o.id)===String(x.id));
-  o.modifiedAt=isoNow();o.modifiedBy='مراجعة مالك البيانات v189';
-  o.statusEnteredAt=o.statusEnteredAt||isoNow();
-  o.statusEventIdV173='REVIEW189-'+Date.now();o.statusChangedAtV173=isoNow();
-  o.pendingStatusSync=true;o.pendingStatusTarget=o.status;enqueueStatusEventV173(o,o.status);
-  localStorage.setItem(CLOUD_PENDING_KEY,'1');
+   try{
+     finalOrder=await ak194SaveResolvedLocalOrder(finalOrder);
+   }catch(e){
+     alert('لم يتم حفظ قرار المراجعة في السحابة. لم يُحذف التعارض. حاول مرة أخرى عند استقرار الإنترنت.\n'+(e&&e.message?e.message:e));
+     return;
+   }
  }
+ const idx=(db.orders||[]).findIndex(o=>String(o.id)===String(x.id));
+ if(idx<0)db.orders.push(finalOrder);else db.orders[idx]=finalOrder;
+ removeStatusEventV173(x.id);
+ delete finalOrder.pendingStatusSync;
+ delete finalOrder.pendingStatusTarget;
  ak189Store(AK189_CONFLICT,all.filter((_,j)=>i!==j));
  localStorage.setItem(K,JSON.stringify(db));
- if(!ak189Conflicts().length){
-   localStorage.removeItem(AK189_HOLD);
-   if(localStorage.getItem(CLOUD_PENDING_KEY)==='1')scheduleCloudSync();
-   else cloudPull(true,true);
- }
+ if(!ak189Conflicts().length)localStorage.removeItem(AK189_HOLD);
+ localStorage.removeItem(CLOUD_LAST_ERROR_KEY);
  ak189RefreshReport();menu();render();
+ if(chosen==='cloud')setTimeout(()=>cloudPull(true,true),250);
 }
 
 function mergeDatabases(localDb,cloudDb){
@@ -2381,6 +2448,8 @@ async function cloudPull(silent=false,merge=true){
    const beforeAssigned=session.role==='worker'?new Set(db.orders.filter(o=>!o.duplicateHidden&&!o.deletedAt&&orderAssignedToWorker(o,session.workerId)).map(o=>String(o.id))):null;
    // نحفظ شاهدًا محليًا قبل أي جلب قد يغيّر حالة طلب سبق عرضها على الجهاز.
    if(session.role==='owner'&&cloudDbDigest(db)!==cloudDbDigest(cloudDb))createLocalSnapshot();
+   // v194: إصلاح أي قرار مراجعة قديم بقي في طابور المالك دون وصول للسحابة.
+   try{ak194RecoverOwnerReviewOutbox(cloudDb);}catch(_){ }
    // v159: لا يسمح الجلب السحابي بالكتابة فوق حالة محلية تنتظر التأكيد.
    const pendingStatusOrders=(db.orders||[]).filter(o=>o&&o.pendingStatusSync).map(o=>JSON.parse(JSON.stringify(o)));
    // لا يستبدل الجلب تعديلًا تم على الجهاز أثناء انتظار رد السحابة.
