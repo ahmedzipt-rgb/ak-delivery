@@ -562,7 +562,7 @@ html[data-lang="fr"] #overlay > .drawer .actions{justify-content:flex-start!impo
  <select id="loginWorker"><option value="">اختر حسابك</option></select>
 <input id="loginPin" type="password" inputmode="numeric" placeholder="الرمز السري">
 <div id="loginStatus" style="margin-top:8px;font-weight:700;min-height:22px"></div>
-<div style="margin-top:6px;font-size:12px;opacity:.7">الإصدار 206</div>
+<div style="margin-top:6px;font-size:12px;opacity:.7">الإصدار 207</div>
 <button id="workerLoginBtn" type="button" onclick="workerLogin(event)" class="btn" style="width:100%">دخول الموزع</button>
 <hr>
 <h3>إنشاء حساب موزع</h3>
@@ -677,7 +677,7 @@ html[data-lang="fr"] #overlay > .drawer .actions{justify-content:flex-start!impo
 
 <section id="systemHealth" class="page">
   <div class="card">
-    <h2>🩺 صحة النظام — AK Delivery 206</h2>
+    <h2>🩺 صحة النظام — AK Delivery 207</h2>
     <div id="healthSummaryV180">جارٍ الفحص...</div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">
       <button class="btn g" onclick="renderSystemHealthV180()">🔄 تحديث الفحص</button>
@@ -705,7 +705,7 @@ html[data-lang="fr"] #overlay > .drawer .actions{justify-content:flex-start!impo
 </section>
 
 <section id="ak189Recovery" class="page"><div class="card">
-<h2>🛡️ مراجعة تعارضات طلبات AK Delivery 206</h2>
+<h2>🛡️ مراجعة تعارضات طلبات AK Delivery 207</h2>
 <p>تُعرض هنا الطلبات التي تختلف بياناتها بين هذا الجهاز والسحابة. لا تُحذف أي نسخة تلقائيًا.</p>
 <div id="ak189ConflictStatus"></div>
 <button type="button" class="btn g" onclick="ak189RefreshReport()">تحديث المراجعة</button>
@@ -1227,7 +1227,7 @@ async function workerLogin(ev){
    if(navigator.onLine){
      setTimeout(async()=>{
        try{
-         await cloudPull(true,false);
+         await ak204AdoptWorkerCloud(true);
          const currentWorker=(db.workers||[]).find(x=>String(x.id)===String(session.workerId) && !x.deletedAt);
          if(currentWorker && !currentWorker.blocked && currentWorker.approved!==false){
            try{menu();render();renderWorkers();accountsRender();}catch(e){console.error(e);}
@@ -1266,7 +1266,7 @@ function ownerLogin(ev){
       setTimeout(async()=>{
         try{
           if(localStorage.getItem(CLOUD_PENDING_KEY)==='1')await syncNow(true);
-          else await cloudPull(true,true);
+          else await ak207OwnerAdoptCloud(true);
           safeUIRefresh();
         }catch(e){ console.error('cloudPull',e); }
       },500);
@@ -1602,6 +1602,128 @@ function ak204SetVerified(generation,reason=''){
     if(generation!=null)localStorage.setItem(AK204_LAST_GENERATION_KEY,String(generation));
     localStorage.setItem(AK204_LAST_VERIFY_KEY,JSON.stringify({time:isoNow(),generation:generation==null?null:String(generation),reason:String(reason||'')}));
   }catch(_){}
+}
+
+/* v207: مزامنة سريعة تعتمد على رقم الجيل السحابي.
+   نفحص الجيل برد صغير أولاً، ولا ننزل قاعدة البيانات الكاملة إلا إذا تغيرت فعلاً. */
+const AK207_GENERATION_KEY='ak_delivery_cloud_generation_v207';
+const AK207_META_OK_KEY='ak_delivery_cloud_meta_ok_v207';
+let ak207MetaBusy=false;
+let ak207LastMetaCheck=0;
+function ak207SetGeneration(generation,reason=''){
+  try{
+    if(generation!=null)localStorage.setItem(AK207_GENERATION_KEY,String(generation));
+    localStorage.setItem(AK207_META_OK_KEY,JSON.stringify({time:isoNow(),generation:generation==null?null:String(generation),reason:String(reason||'')}));
+  }catch(_){}
+}
+function ak207KnownGeneration(){
+  try{return String(localStorage.getItem(AK207_GENERATION_KEY)||localStorage.getItem(AK204_LAST_GENERATION_KEY)||'')}catch(_){return ''}
+}
+function ak207SyncEvents(){
+  try{return typeof ak198ReadEvents==='function'?ak198ReadEvents():[]}catch(_){return []}
+}
+function ak207HasRealPendingWork(){
+  try{
+    return readStatusOutbox().length>0 ||
+      (db.orders||[]).some(o=>o&&o.pendingStatusSync) ||
+      ak207SyncEvents().length>0;
+  }catch(_){return true}
+}
+function ak207HasPendingWork(){
+  try{return localStorage.getItem(CLOUD_PENDING_KEY)==='1'||ak207HasRealPendingWork()}catch(_){return true}
+}
+function ak207RemoveSyncEvent(kind,entityId){
+  try{
+    const k=String(kind||''),id=String(entityId||'');
+    const a=ak207SyncEvents().filter(x=>!(String(x?.kind||'')===k&&String(x?.entityId||'')===id));
+    if(a.length)localStorage.setItem(AK198_EVENT_KEY,JSON.stringify(a));
+    else localStorage.removeItem(AK198_EVENT_KEY);
+  }catch(_){}
+}
+function ak207ClearPendingIfSettled(reason=''){
+  try{
+    if(ak207HasRealPendingWork())return false;
+    localStorage.removeItem(CLOUD_PENDING_KEY);
+    localStorage.removeItem(CLOUD_LAST_ERROR_KEY);
+    try{akLogV180('sync-settled','تم تنظيف علامات الانتظار بعد تأكيد السحابة',reason)}catch(_){}
+    updateSyncIndicators();
+    return true;
+  }catch(_){return false}
+}
+async function ak207OwnerAdoptCloud(silent=true){
+  if(!session||session.role!=='owner'||!navigator.onLine)return false;
+  if(ak207HasPendingWork())return false;
+  if(cloudPullBusy||cloudSyncBusy||ak204AdoptBusy)return false;
+  cloudPullBusy=true;
+  cloudLastPullStarted=Date.now();
+  const beforeDigest=cloudDbDigest(db);
+  try{
+    const loaded=await cloudRequest('loadAll',{});
+    const cloudDb=parseCloudDb(loaded);
+    if(!cloudDb)throw new Error('لا توجد قاعدة سحابية صالحة');
+    let fresh=JSON.parse(JSON.stringify(cloudDb));
+    for(const name of ['orders','workers','deliveryTransfers','deliveryBatches','returnBatches','customerChangeRequests','settlements']){
+      if(!Array.isArray(fresh[name]))fresh[name]=[];
+    }
+    fresh=ak193PreserveLocalConflicts(fresh,db);
+    ak200RepairWorkerAssignments(fresh);
+    ak201RepairReceivedStatus(fresh);
+    db=fresh;
+    ak189Remember(cloudDb);
+    localStorage.setItem(K,JSON.stringify(db));
+    localStorage.setItem(CLOUD_LAST_OK_KEY,isoNow());
+    localStorage.setItem('ak_delivery_last_cloud_pull',isoNow());
+    ak207SetGeneration(loaded&&loaded.generation,'owner-adopt');
+    cloudPullFailures=0;
+    localStorage.removeItem(CLOUD_LAST_ERROR_KEY);
+    if(beforeDigest!==cloudDbDigest(db)){
+      try{menu();render();renderWorkers();accountsRender();refreshLoginWorkers();refreshActiveCloudPage();}catch(_){}
+    }
+    updateSyncIndicators();
+    if(!silent)showToast('✅ تم اعتماد آخر نسخة سحابية');
+    return true;
+  }catch(e){
+    cloudPullFailures=Math.min(cloudPullFailures+1,4);
+    try{localStorage.setItem(CLOUD_LAST_ERROR_KEY,e&&e.message?e.message:'خطأ غير معروف')}catch(_){}
+    if(!silent)showToast('تعذر جلب آخر تحديث: '+(e&&e.message?e.message:'خطأ غير معروف'));
+    updateSyncIndicators();
+    return false;
+  }finally{
+    cloudPullBusy=false;
+    cloudLastPullStarted=Date.now();
+  }
+}
+async function ak207FastGenerationCheck(force=false){
+  if(!navigator.onLine||document.visibilityState==='hidden'||!session?.role)return false;
+  if(ak207MetaBusy||cloudSyncBusy||cloudPullBusy||ak204AdoptBusy)return false;
+  const now=Date.now();
+  const active=(now-ak198LastActivity)<120000;
+  const minGap=active?2500:6500;
+  if(!force && now-ak207LastMetaCheck<minGap)return false;
+  ak207LastMetaCheck=now;
+  if(localStorage.getItem(CLOUD_PENDING_KEY)==='1'&&!ak207HasRealPendingWork()){
+    localStorage.removeItem(CLOUD_PENDING_KEY);
+    localStorage.removeItem(CLOUD_LAST_ERROR_KEY);
+  }
+  if(ak207HasPendingWork()){
+    if(session.role==='worker')setTimeout(retryStatusOutboxV173,40);
+    else if(!cloudSyncTimer)queueCloudSync(80);
+    return false;
+  }
+  ak207MetaBusy=true;
+  try{
+    const meta=await cloudRequestOnceV187('ping',{});
+    const remote=String(meta&&meta.generation||'');
+    const known=ak207KnownGeneration();
+    if(remote && remote!==known){
+      const ok=session.role==='worker'?await ak204AdoptWorkerCloud(true):await ak207OwnerAdoptCloud(true);
+      if(ok)ak207SetGeneration(remote,'fast-change-detected');
+      return ok;
+    }
+    if(remote)ak207SetGeneration(remote,'fast-check');
+    return true;
+  }catch(_){return false}
+  finally{ak207MetaBusy=false;}
 }
 
 
@@ -2286,7 +2408,7 @@ function ak189RefreshReport(){
  </div>`).join('');
 }
 function ak189DownloadRecovery(){
- const data={app:'AK Delivery 205',exportedAt:new Date().toISOString(),deviceDb:db,conflicts:ak189Conflicts(),
+ const data={app:'AK Delivery 207',exportedAt:new Date().toISOString(),deviceDb:db,conflicts:ak189Conflicts(),
  baseline:ak189Read(AK189_BASE,[]),statusQueue:readStatusOutbox()};
  const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
  const a=document.createElement('a');a.href=URL.createObjectURL(blob);
@@ -2823,6 +2945,25 @@ async function workerPushOrderStatusTransaction(orderId,targetStatus,attempts=0)
     let remote=out.orders.find(x=>String(x.id)===String(orderId));
     if(!remote){remote=JSON.parse(JSON.stringify(local));out.orders.push(remote);}
 
+    // v207: إذا كانت السحابة أكدت نفس حدث الحالة بالفعل، لا نعيد رفعه ولا نبقي عبارة الانتظار.
+    if(cloudConfirmsOrderV175(local,remote)){
+      const li=(db.orders||[]).findIndex(x=>String(x?.id)===String(orderId));
+      if(li>=0){
+        db.orders[li]=ak205Clone(remote);
+        db.orders[li].lastStatusConfirmedAt=isoNow();
+        delete db.orders[li].pendingStatusSync;
+        delete db.orders[li].pendingStatusTarget;
+      }
+      removeStatusEventV173(orderId,local.statusEventIdV173);
+      ak207RemoveSyncEvent('status',orderId);
+      if(loaded&&loaded.generation)ak207SetGeneration(loaded.generation,'status-already-confirmed');
+      localStorage.setItem(K,JSON.stringify(db));
+      localStorage.setItem(CLOUD_LAST_OK_KEY,isoNow());
+      ak207ClearPendingIfSettled('status already confirmed');
+      try{menu();render();accountsRender();if(String(current||'')===String(orderId))openOrder(orderId);}catch(_){}
+      return true;
+    }
+
     // v205: حدث قديم في طابور جهاز الموزع لا يتجاوز حالة نهائية موجودة فعلاً في السحابة.
     const cloudLockV205=ak205WorkerCloudLock(remote,cloudDb,targetStatus);
     if(cloudLockV205){
@@ -2867,18 +3008,23 @@ async function workerPushOrderStatusTransaction(orderId,targetStatus,attempts=0)
       body,cache:'no-store'
     },75000);
 
-    let confirmedDb=null,confirmed=null;
-    const waits=[300,500,800,1200,1800,2500,3500];
-    for(const delay of waits){
+    // v207: ننتظر تغير الجيل برد صغير، ثم ننزل القاعدة مرة واحدة للتحقق من الطلب نفسه.
+    for(const delay of [120,180,260,380,550,800,1200]){
       await new Promise(r=>setTimeout(r,delay));
-      const check=await cloudRequest('loadAll',{});
+      try{
+        const meta=await cloudRequestOnceV187('ping',{});
+        const g=String(meta&&meta.generation||'');
+        if(g && g!==String(baseGeneration||''))break;
+      }catch(_){}
+    }
+    let confirmedDb=null,confirmed=null,check=null;
+    for(let attempt=0;attempt<2;attempt++){
+      if(attempt)await new Promise(r=>setTimeout(r,450));
+      check=await cloudRequest('loadAll',{});
       confirmedDb=parseCloudDb(check);
       confirmed=confirmedDb?.orders?.find(x=>String(x.id)===String(orderId))||null;
-      if(confirmed &&
-         confirmed.status===targetStatus &&
-         String(confirmed.statusEventIdV173||'')===String(remote.statusEventIdV173||'')){
-        break;
-      }
+      if(confirmed && confirmed.status===targetStatus &&
+         String(confirmed.statusEventIdV173||'')===String(remote.statusEventIdV173||''))break;
       confirmed=null;
     }
     if(!confirmed)throw new Error('لم تؤكد السحابة حالة هذا الطلب بعد');
@@ -2886,8 +3032,13 @@ async function workerPushOrderStatusTransaction(orderId,targetStatus,attempts=0)
     const fresh=db.orders.find(x=>String(x.id)===String(orderId));
     if(fresh){fresh.status=targetStatus;fresh.lastStatusConfirmedAt=isoNow();delete fresh.pendingStatusSync;delete fresh.pendingStatusTarget;}
     removeStatusEventV173(orderId,remote.statusEventIdV173);
+    ak207RemoveSyncEvent('status',orderId);
+    if(check&&check.generation)ak207SetGeneration(check.generation,'status-confirmed');
     localStorage.setItem(K,JSON.stringify(db));localStorage.setItem(CLOUD_LAST_OK_KEY,isoNow());
-    localStorage.removeItem(CLOUD_LAST_ERROR_KEY);updateSyncIndicators();return true;
+    localStorage.removeItem(CLOUD_LAST_ERROR_KEY);
+    ak207ClearPendingIfSettled('status '+targetStatus);
+    try{menu();render();accountsRender();if(String(current||'')===String(orderId))openOrder(orderId);}catch(_){}
+    updateSyncIndicators();return true;
   }catch(e){
     if(e&&e.code==='cloud_conflict'&&attempts<3){cloudSyncBusy=false;await new Promise(r=>setTimeout(r,250*(attempts+1)));return workerPushOrderStatusTransaction(orderId,targetStatus,attempts+1);}
     throw e;
@@ -2902,6 +3053,7 @@ async function cloudPull(silent=false,merge=true){
  try{
    if(!silent)updateCloudStatus('جاري جلب البيانات...');
    const j=await cloudRequest('loadAll',{});
+   if(j&&j.generation)ak207SetGeneration(j.generation,'cloud-pull');
    const cloudDb=parseCloudDb(j);
    if(!cloudDb)throw new Error('لا توجد بيانات في السحابة بعد');
    const beforeDigestV176=cloudDbDigest(db);
@@ -2957,7 +3109,7 @@ async function cloudPull(silent=false,merge=true){
      localStorage.setItem(K,JSON.stringify(db));
      localStorage.setItem(CLOUD_PENDING_KEY,'1');
      try{akLogV180('assignment-repair','تم تصحيح الإسناد/حالة الاستلام',repairedAssignmentsV200.ids.concat(repairedReceiptV201.ids).join(','));}catch(_){}
-     if(session?.role==='owner'&&navigator.onLine)queueCloudSync(250);
+     if(session?.role==='owner'&&navigator.onLine)queueCloudSync(90);
    }
    ak189Remember(cloudDb);
    const recoveredReturns=recoverArchivedReturns171();
@@ -3081,6 +3233,7 @@ async function ak204AdoptWorkerCloud(silent=true){
     localStorage.setItem(CLOUD_LAST_OK_KEY,isoNow());
     localStorage.setItem('ak_delivery_last_cloud_pull',isoNow());
     ak204SetVerified(loaded&&loaded.generation,'worker-adopt');
+    ak207SetGeneration(loaded&&loaded.generation,'worker-adopt');
     cloudPullFailures=0;
 
     const afterDigest=cloudDbDigest(db);
@@ -3152,7 +3305,7 @@ async function syncNow(silent=true){
     }else{
       // المالك يرفع بعد دمج آخر نسخة سحابية، ثم يعيد التحقق منها.
       ok=await cloudPush(silent);
-      if(ok)ok=await cloudPull(true,true);
+      if(ok)ok=await ak207OwnerAdoptCloud(true);
     }
     if(ok){
       cloudSyncFailures=0;
@@ -3202,16 +3355,16 @@ function ak198RecordEvent(kind='change',entityId=''){
 function ak198ClearEvents(){
   try{localStorage.removeItem(AK198_EVENT_KEY)}catch(_){}
 }
-function queueCloudSync(delay=180){
+function queueCloudSync(delay=90){
   clearTimeout(cloudSyncTimer);
-  cloudSyncTimer=setTimeout(()=>{cloudSyncTimer=null;syncNow(true);},Math.max(80,delay));
+  cloudSyncTimer=setTimeout(()=>{cloudSyncTimer=null;syncNow(true);},Math.max(40,delay));
 }
 function scheduleCloudSync(kind='change',entityId=''){
   cloudEditGeneration++;
   ak198RecordEvent(kind,entityId);
   localStorage.setItem(CLOUD_PENDING_KEY,'1');
   updateSyncIndicators();
-  if(navigator.onLine)queueCloudSync(250);
+  if(navigator.onLine)queueCloudSync(90);
 }
 
 /* إذا كان التطبيق مفتوحاً في أكثر من تبويب على نفس الجهاز، لا ننتظر الجلب الدوري. */
@@ -3220,7 +3373,7 @@ try{
   window.ak198Channel=ak198Channel;
   ak198Channel.onmessage=ev=>{
     if(ev?.data?.type==='changed' && navigator.onLine && session?.role && !cloudPullBusy && !cloudSyncBusy){
-      setTimeout(()=>cloudPull(true,session.role==='owner'),220);
+      setTimeout(()=>session.role==='owner'?ak207OwnerAdoptCloud(true):ak204AdoptWorkerCloud(true),80);
     }
   };
 }catch(_){}
@@ -3238,7 +3391,7 @@ window.addEventListener('online',()=>{
   if(localStorage.getItem(CLOUD_PENDING_KEY)==='1'){
     queueCloudSync(150);
   }else if(!cloudPullBusy&&!cloudSyncBusy&&!ak204AdoptBusy){
-    setTimeout(()=>session.role==='worker'?ak204AdoptWorkerCloud(true):cloudPull(true,true),220);
+    setTimeout(()=>session.role==='worker'?ak204AdoptWorkerCloud(true):ak207OwnerAdoptCloud(true),80);
   }
   if(session.role==='worker')setTimeout(retryStatusOutboxV173,500);
 });
@@ -3251,35 +3404,40 @@ setInterval(()=>{
     return;
   }
   const activeRecently=(Date.now()-ak198LastActivity)<120000;
-  const interval=activeRecently?25000:75000;
+  const interval=activeRecently?12000:30000;
   if(Date.now()-cloudLastPullStarted>=interval){
     if(session.role==='worker')ak204AdoptWorkerCloud(true);
-    else cloudPull(true,true);
+    else ak207OwnerAdoptCloud(true);
   }
 },5000);
+// v207: مسار سريع بين الأجهزة. Ping خفيف كل بضع ثوانٍ، وتنزيل كامل فقط عند تغير الجيل.
+setInterval(()=>{ak207FastGenerationCheck(false)},1000);
 /* v199: استئناف موحد للصفحة بدلاً من عدة عمليات جلب متنافسة. */
 let ak199LastResume=0;
 function ak199ResumeSync(){
   if(!navigator.onLine||!session?.role||document.visibilityState==='hidden')return;
   const now=Date.now();
-  if(now-ak199LastResume<1800)return;
+  if(now-ak199LastResume<700)return;
   ak199LastResume=now;
   ak198LastActivity=now;
   if(cloudSyncBusy||cloudPullBusy||ak204AdoptBusy)return;
-  if(localStorage.getItem(CLOUD_PENDING_KEY)==='1')queueCloudSync(150);
-  else if(now-cloudLastPullStarted>=5000){
+  if(localStorage.getItem(CLOUD_PENDING_KEY)==='1')queueCloudSync(70);
+  else if(now-cloudLastPullStarted>=1200){
     if(session.role==='worker')ak204AdoptWorkerCloud(true);
-    else cloudPull(true,true);
+    else ak207OwnerAdoptCloud(true);
   }
 }
-document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')setTimeout(ak199ResumeSync,180);});
-window.addEventListener('pageshow',()=>setTimeout(ak199ResumeSync,180));
-window.addEventListener('focus',()=>setTimeout(ak199ResumeSync,220));
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'){setTimeout(ak199ResumeSync,60);setTimeout(()=>ak207FastGenerationCheck(true),120);}});
+window.addEventListener('pageshow',()=>{setTimeout(ak199ResumeSync,60);setTimeout(()=>ak207FastGenerationCheck(true),140);});
+window.addEventListener('focus',()=>{setTimeout(ak199ResumeSync,70);setTimeout(()=>ak207FastGenerationCheck(true),150);});
 async function retryStatusOutboxV173(){
   if(!navigator.onLine||!session||session.role!=='worker'||cloudSyncBusy||cloudPullBusy||ak204AdoptBusy)return;
   const ev=readStatusOutbox().find(ev=>!ak193IsConflict(ev.orderId));if(!ev)return;
   const o=db.orders.find(x=>String(x.id)===String(ev.orderId));if(!o){removeStatusEventV173(ev.orderId,ev.statusEventIdV173);return;}
-  try{await workerPushOrderStatusTransaction(ev.orderId,ev.status)}catch(_){}
+  try{
+    const ok=await workerPushOrderStatusTransaction(ev.orderId,ev.status);
+    if(ok){ak207ClearPendingIfSettled('outbox retry');try{menu();render();accountsRender();}catch(_){}}
+  }catch(_){}
 }
 
 
@@ -4029,7 +4187,8 @@ async function commitOrderStatus(targetStatus){
     if(ok&&fresh?.status===targetStatus){
       delete fresh.pendingStatusSync;delete fresh.pendingStatusTarget;fresh.lastStatusConfirmedAt=isoNow();
       removeStatusEventV173(id,fresh.statusEventIdV173||o.statusEventIdV173);
-      localStorage.setItem(K,JSON.stringify(db));showToast('✅ تم حفظ الحالة ومزامنتها بنجاح',3800);
+      ak207RemoveSyncEvent('status',id);
+      localStorage.setItem(K,JSON.stringify(db));ak207ClearPendingIfSettled('commit status');showToast('✅ تم حفظ الحالة ومزامنتها بنجاح',2600);
       menu();render();accountsRender();openOrder(id);return true;
     }
     localStorage.setItem(CLOUD_PENDING_KEY,'1');showToast('⚠️ الحالة محفوظة محلياً وستعاد محاولة إرسالها تلقائياً',5200);return false;
@@ -6413,9 +6572,10 @@ if(!session || !session.role){
 setTimeout(()=>{
   if(navigator.onLine && session?.role&&!cloudPullBusy&&!cloudSyncBusy){
     if(localStorage.getItem(CLOUD_PENDING_KEY)==='1')syncNow(true);
-    else cloudPull(true,session.role==='owner');
+    else if(session.role==='worker')ak204AdoptWorkerCloud(true);
+    else ak207OwnerAdoptCloud(true);
   }
-},1800);
+},650);
 
 // v151: واجهة ثنائية اللغة. تبقى القيم والبيانات الداخلية كما هي، وتتغير النصوص المعروضة فقط.
 const AK_LANG_KEY='ak_delivery_language';
@@ -6868,7 +7028,7 @@ function diagnosticsTextV180(){
   const issues=scanIntegrityV180();
   let outbox=[];try{outbox=readStatusOutbox()}catch(_){}
   const payload={
-    app:'AK Delivery 205 Strong Sync',
+    app:'AK Delivery 207 Fast Sync',
     time:new Date().toISOString(),
     online:navigator.onLine,
     role:session?.role||null,
@@ -6988,7 +7148,7 @@ setInterval(()=>{
   }catch(_){}
 },15000);
 
-akLogV180('boot','تشغيل AK Delivery 206 Safe Sync');
+akLogV180('boot','تشغيل AK Delivery 207 Fast Safe Sync');
 try{updateCloudReadWriteStatusV180();}catch(_){}
 setTimeout(()=>{
   try{
@@ -7003,8 +7163,9 @@ setTimeout(()=>{
   }catch(e){akLogV180('repair-error','تعذر إصلاح الاتساق القديم',e.message)}
 },900);
 
-setTimeout(()=>{try{renderImportWorkerSelectorsV206()}catch(_){}},500);
+setTimeout(()=>{try{renderImportWorkerSelectorsV206()}catch(_){}},300);
+setTimeout(()=>{try{ak207FastGenerationCheck(true)}catch(_){}},450);
 
-// AK Delivery build v206 — choose distributor per batch before bulk/PDF import; v205 sync guards retained
+// AK Delivery build v207 — fast generation sync + owner cloud adoption + immediate pending cleanup; v205 safety guards retained
 </script>
 </body></html>
