@@ -562,7 +562,7 @@ html[data-lang="fr"] #overlay > .drawer .actions{justify-content:flex-start!impo
  <select id="loginWorker"><option value="">اختر حسابك</option></select>
 <input id="loginPin" type="password" inputmode="numeric" placeholder="الرمز السري">
 <div id="loginStatus" style="margin-top:8px;font-weight:700;min-height:22px"></div>
-<div style="margin-top:6px;font-size:12px;opacity:.7">الإصدار 208</div>
+<div style="margin-top:6px;font-size:12px;opacity:.7">الإصدار 209</div>
 <button id="workerLoginBtn" type="button" onclick="workerLogin(event)" class="btn" style="width:100%">دخول الموزع</button>
 <hr>
 <h3>إنشاء حساب موزع</h3>
@@ -677,7 +677,7 @@ html[data-lang="fr"] #overlay > .drawer .actions{justify-content:flex-start!impo
 
 <section id="systemHealth" class="page">
   <div class="card">
-    <h2>🩺 صحة النظام — AK Delivery 208</h2>
+    <h2>🩺 صحة النظام — AK Delivery 209</h2>
     <div id="healthSummaryV180">جارٍ الفحص...</div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">
       <button class="btn g" onclick="renderSystemHealthV180()">🔄 تحديث الفحص</button>
@@ -705,7 +705,7 @@ html[data-lang="fr"] #overlay > .drawer .actions{justify-content:flex-start!impo
 </section>
 
 <section id="ak189Recovery" class="page"><div class="card">
-<h2>🛡️ مراجعة تعارضات طلبات AK Delivery 208</h2>
+<h2>🛡️ مراجعة تعارضات طلبات AK Delivery 209</h2>
 <p>تُعرض هنا الطلبات التي تختلف بياناتها بين هذا الجهاز والسحابة. لا تُحذف أي نسخة تلقائيًا.</p>
 <div id="ak189ConflictStatus"></div>
 <button type="button" class="btn g" onclick="ak189RefreshReport()">تحديث المراجعة</button>
@@ -1687,11 +1687,14 @@ async function ak208OwnerAdoptCloud(silent=true,opts={}){
     ak200RepairWorkerAssignments(fresh);
     ak201RepairReceivedStatus(fresh);
     db=fresh;
+    ak209ReconcileStatusOutboxAgainstCloud(cloudDb);
     ak189Remember(cloudDb);
     localStorage.setItem(K,JSON.stringify(db));
+    ak209ClearStatusDirtyIfResolved();
     ak208ClearLegacyQueueIfSafe();
     ak208MarkReadSuccess();
     ak208SetAdoptedGeneration(loaded&&loaded.generation,'owner-adopt');
+    ak209MarkFullVerify();
     cloudPullFailures=0;
     localStorage.removeItem(CLOUD_LAST_ERROR_KEY);
     try{menu();render();renderWorkers();accountsRender();refreshLoginWorkers();refreshActiveCloudPage();}catch(_){}
@@ -1722,6 +1725,16 @@ async function ak208WorkerAdoptCloud(silent=true){
   }
   return ok;
 }
+const AK209_LAST_FULL_VERIFY_KEY='ak_delivery_last_full_verify_v209';
+function ak209FullVerifyDue(active){
+  try{
+    const t=Date.parse(localStorage.getItem(AK209_LAST_FULL_VERIFY_KEY)||localStorage.getItem('ak_delivery_cloud_last_read_v180')||'');
+    if(!Number.isFinite(t))return true;
+    return Date.now()-t>(active?8000:20000);
+  }catch(_){return true}
+}
+function ak209MarkFullVerify(){try{localStorage.setItem(AK209_LAST_FULL_VERIFY_KEY,isoNow())}catch(_){}}
+
 async function ak208FastGenerationCheck(force=false){
   if(!navigator.onLine||document.visibilityState==='hidden'||!session?.role)return false;
   if(ak208MetaBusy||cloudSyncBusy||cloudPullBusy||ak204AdoptBusy)return false;
@@ -1731,26 +1744,56 @@ async function ak208FastGenerationCheck(force=false){
   const minGap=active?2200:6000;
   if(!force && now-ak208LastMetaCheck<minGap)return false;
   ak208LastMetaCheck=now;
-
-  // لا نجعل أعلاماً قديمة تمنع الاستقبال. التغيير الحقيقي في v208 له dirty marker أو status outbox.
-  if(!ak208HasLocalDirty())ak208ClearLegacyQueueIfSafe();
-  if(ak208HasLocalDirty()){
-    if(session.role==='worker'&&ak208StatusPending())setTimeout(retryStatusOutboxV173,30);
-    else if(!cloudSyncTimer)queueCloudSync(60);
-    return false;
-  }
-
   ak208MetaBusy=true;
   try{
+    // إذا كان هناك حدث حالة معلق، نقرأ السحابة أولاً قبل التفكير في رفعه.
+    // هذا يمنع حدثاً قديماً على جهاز المالك من إعادة حالة أحدث أرسلها الموزع.
+    if(ak208StatusPending()){
+      const loaded=await cloudRequest('loadAll',{});
+      const cloudDb=parseCloudDb(loaded);
+      if(cloudDb){
+        ak209ReconcileStatusOutboxAgainstCloud(cloudDb);
+        if(!ak208StatusPending()){
+          if(session.role==='owner'){
+            let fresh=JSON.parse(JSON.stringify(cloudDb));
+            for(const name of ['orders','workers','deliveryTransfers','deliveryBatches','returnBatches','customerChangeRequests','settlements'])if(!Array.isArray(fresh[name]))fresh[name]=[];
+            fresh=ak193PreserveLocalConflicts(fresh,db);
+            ak200RepairWorkerAssignments(fresh);ak201RepairReceivedStatus(fresh);
+            db=fresh;ak189Remember(cloudDb);localStorage.setItem(K,JSON.stringify(db));
+            ak208MarkReadSuccess();ak208SetAdoptedGeneration(loaded&&loaded.generation,'v209-stale-status-resolved');ak209MarkFullVerify();
+            ak209ClearStatusDirtyIfResolved();ak208ClearLegacyQueueIfSafe();
+            try{menu();render();renderWorkers();accountsRender();refreshLoginWorkers();refreshActiveCloudPage();}catch(_){}
+            updateSyncIndicators();return true;
+          }
+          const ok=await ak204AdoptWorkerCloud(true);if(ok)ak209MarkFullVerify();return ok;
+        }
+      }
+      // بقي حدث أحدث من السحابة: هذا تعديل حقيقي يجب إرساله.
+      if(session.role==='worker')setTimeout(retryStatusOutboxV173,30);
+      else if(!cloudSyncTimer)queueCloudSync(60);
+      return false;
+    }
+
+    if(!ak208HasLocalDirty())ak208ClearLegacyQueueIfSafe();
+    if(ak208HasLocalDirty()){
+      if(!cloudSyncTimer)queueCloudSync(60);
+      return false;
+    }
+
     const meta=await cloudRequestOnceV187('ping',{});
     const remote=String(meta&&meta.generation||'');
     try{localStorage.setItem(CLOUD_LAST_OK_KEY,isoNow())}catch(_){}
     updateSyncIndicators();
     const adopted=ak208AdoptedGeneration();
-    // أول تشغيل v208 أو أي تغير في الجيل => تنزيل فعلي وتحديث الشاشة.
-    if(!remote || remote===adopted)return true;
-    const ok=session.role==='worker'?await ak208WorkerAdoptCloud(true):await ak208OwnerAdoptCloud(true);
-    return ok;
+    const fullDue=force||ak209FullVerifyDue(active);
+
+    // تغير الجيل أو حان فحص كامل دوري: نقرأ البيانات فعلياً ونحدث الشاشة.
+    if((remote && remote!==adopted)||fullDue||!adopted){
+      const ok=session.role==='worker'?await ak208WorkerAdoptCloud(true):await ak208OwnerAdoptCloud(true);
+      if(ok)ak209MarkFullVerify();
+      return ok;
+    }
+    return true;
   }catch(_){return false}
   finally{ak208MetaBusy=false;}
 }
@@ -2205,6 +2248,63 @@ function cloudConfirmsOrderV175(localOrder,cloudOrder){
   if(le||ce)return !!le && le===ce;
   return timeValue(cloudOrder.modifiedAt)>=timeValue(localOrder.modifiedAt);
 }
+
+/* v209: يمنع حدث حالة محلي قديم من إعادة الطلب للخلف بعد قراءة السحابة.
+   إذا كان للسحابة حدث مؤكد أحدث، تُحذف نسخة الحدث القديمة من الطابور فوراً. */
+function ak209StatusEventStamp(ev){
+  if(!ev)return 0;
+  return timeValue(ev.statusChangedAtV173)||timeValue(ev.statusEnteredAt)||timeValue(ev.createdAt)||0;
+}
+function ak209DirtyRecord(){
+  try{return JSON.parse(localStorage.getItem(AK208_LOCAL_DIRTY_KEY)||'null')}catch(_){return null}
+}
+function ak209ClearStatusDirtyIfResolved(){
+  try{
+    if(readStatusOutbox().length || (db.orders||[]).some(o=>o&&o.pendingStatusSync))return false;
+    const d=ak209DirtyRecord();
+    if(d && String(d.kind||'')==='status')localStorage.removeItem(AK208_LOCAL_DIRTY_KEY);
+    localStorage.removeItem(CLOUD_PENDING_KEY);
+    return true;
+  }catch(_){return false}
+}
+function ak209ReconcileStatusOutboxAgainstCloud(cloudDb){
+  if(!cloudDb||!Array.isArray(cloudDb.orders))return {dropped:0,confirmed:0,kept:readStatusOutbox().length};
+  const cm=new Map(cloudDb.orders.filter(Boolean).map(o=>[String(o.id),o]));
+  const q=readStatusOutbox();
+  const keep=[];
+  let dropped=0,confirmed=0;
+  for(const ev of q){
+    const id=String(ev&&ev.orderId||'');
+    const remote=cm.get(id);
+    if(!id||!remote){keep.push(ev);continue;}
+    const eventId=String(ev.statusEventIdV173||'');
+    const remoteEventId=String(remote.statusEventIdV173||'');
+    const sameStatus=String(ev.status||'')===String(remote.status||'');
+    const sameEvent=!!eventId && eventId===remoteEventId && sameStatus;
+    const remoteStamp=statusStampV173(remote);
+    const eventStamp=ak209StatusEventStamp(ev);
+    const remoteNewer=(remoteStamp>eventStamp) || (remoteStamp===eventStamp && remoteEventId && eventId && remoteEventId>eventId);
+    if(sameEvent || remoteNewer){
+      const i=(db.orders||[]).findIndex(o=>String(o&&o.id)===id);
+      if(i>=0 && !ak193IsConflict(id)){
+        db.orders[i]=JSON.parse(JSON.stringify(remote));
+        delete db.orders[i].pendingStatusSync;
+        delete db.orders[i].pendingStatusTarget;
+        db.orders[i].lastStatusConfirmedAt=isoNow();
+      }
+      if(sameEvent)confirmed++; else dropped++;
+      continue;
+    }
+    keep.push(ev);
+  }
+  writeStatusOutbox(keep);
+  if(dropped||confirmed){
+    localStorage.setItem(K,JSON.stringify(db));
+    ak209ClearStatusDirtyIfResolved();
+    try{akLogV180('v209-outbox-reconcile','تم حذف أحداث حالة قديمة بعد مقارنة السحابة','old='+dropped+', confirmed='+confirmed)}catch(_){}
+  }
+  return {dropped,confirmed,kept:keep.length};
+}
 function reconcilePendingWithCloudV175(cloudDb){
   if(!cloudDb||!Array.isArray(cloudDb.orders)||!Array.isArray(db?.orders))return 0;
   const cm=new Map(cloudDb.orders.filter(Boolean).map(o=>[String(o.id),o]));
@@ -2275,12 +2375,22 @@ function ak195ClearResolvedCloudState(reason=''){
   }catch(_){}
 }
 
-function applyStatusOutboxV173(){
+function applyStatusOutboxV173(cloudDb=null){
+  if(cloudDb)ak209ReconcileStatusOutboxAgainstCloud(cloudDb);
   const q=readStatusOutbox();
   if(!Array.isArray(db?.orders)||!q.length)return 0;
+  const cm=cloudDb&&Array.isArray(cloudDb.orders)?new Map(cloudDb.orders.filter(Boolean).map(o=>[String(o.id),o])):null;
   let n=0;
   for(const ev of q){
-    const o=db.orders.find(x=>String(x.id)===String(ev.orderId));if(!o)continue;
+    const id=String(ev.orderId||'');
+    const o=db.orders.find(x=>String(x.id)===id);if(!o)continue;
+    if(cm){
+      const remote=cm.get(id);
+      if(remote){
+        const rs=statusStampV173(remote), es=ak209StatusEventStamp(ev);
+        if(rs>es)continue;
+      }
+    }
     if(o.status===ev.status&&String(o.statusEventIdV173||'')===String(ev.statusEventIdV173||''))continue;
     o.status=ev.status;o.statusEnteredAt=ev.statusEnteredAt||o.statusEnteredAt||isoNow();
     o.statusChangedAtV173=ev.statusChangedAtV173||o.statusChangedAtV173||isoNow();
@@ -2460,7 +2570,7 @@ function ak189RefreshReport(){
  </div>`).join('');
 }
 function ak189DownloadRecovery(){
- const data={app:'AK Delivery 208',exportedAt:new Date().toISOString(),deviceDb:db,conflicts:ak189Conflicts(),
+ const data={app:'AK Delivery 209',exportedAt:new Date().toISOString(),deviceDb:db,conflicts:ak189Conflicts(),
  baseline:ak189Read(AK189_BASE,[]),statusQueue:readStatusOutbox()};
  const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
  const a=document.createElement('a');a.href=URL.createObjectURL(blob);
@@ -3147,7 +3257,7 @@ async function cloudPull(silent=false,merge=true){
      }
    }
    reconcilePendingWithCloudV175(cloudDb);
-   applyStatusOutboxV173();
+   applyStatusOutboxV173(cloudDb);
    reconcilePendingWithCloudV175(cloudDb);
    const cleanedOrphanV196=ak195ClearOrphanPendingStatus(cloudDb);
    if(cleanedOrphanV196 && !readStatusOutbox().length &&
@@ -3276,7 +3386,7 @@ async function ak204AdoptWorkerCloud(silent=true){
 
     db=fresh;
     reconcilePendingWithCloudV175(cloudDb);
-    applyStatusOutboxV173();
+    applyStatusOutboxV173(cloudDb);
     reconcilePendingWithCloudV175(cloudDb);
     ak195ClearOrphanPendingStatus(cloudDb);
     ak189Remember(cloudDb);
@@ -7219,7 +7329,7 @@ setInterval(()=>{
   }catch(_){}
 },15000);
 
-akLogV180('boot','تشغيل AK Delivery 208 Auto Safe Sync');
+akLogV180('boot','تشغيل AK Delivery 209 Auto Safe Sync');
 try{updateCloudReadWriteStatusV180();}catch(_){}
 setTimeout(()=>{
   try{
@@ -7237,6 +7347,6 @@ setTimeout(()=>{
 setTimeout(()=>{try{renderImportWorkerSelectorsV206()}catch(_){}},300);
 setTimeout(()=>{try{ak208FirstBootCleanup();ak208FastGenerationCheck(true)}catch(_){}},320);
 
-// AK Delivery build v208 — automatic bidirectional generation sync; adopted generation only after real data read; stale legacy queues cannot block receive; v205 safety guards retained
+// AK Delivery build v209 — automatic bidirectional sync; stale status outbox is reconciled against newer cloud events before apply; periodic full verification self-heals local drift; v205 safety guards retained
 </script>
 </body></html>
