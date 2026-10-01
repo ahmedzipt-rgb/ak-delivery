@@ -2779,23 +2779,87 @@ async function workerRefreshOrders(){
  const btn=document.getElementById('workerRefreshBtn');
  if(!session||session.role!=='worker')return false;
  if(!navigator.onLine){showToast('لا يوجد اتصال بالإنترنت');return false;}
+ const refreshGeneration=cloudEditGeneration;
  if(btn){btn.disabled=true;btn.textContent='⏳ جارٍ التحديث';}
- showToast('جارٍ جلب طلباتك من السحابة...');
+ showToast('جارٍ جلب نسخة السحابة المؤكدة...');
  try{
-   const pending=localStorage.getItem(CLOUD_PENDING_KEY)==='1';
-   let ok=true;
-   if(pending)ok=await workerCloudPush(true);
-   if(ok)ok=await cloudPull(true,false);
-   if(ok){
-     markAssignedSeen();
-     try{menu();render();}catch(_){}
-     showToast('✅ تم تحديث طلباتك من السحابة');
-     return true;
+   // v203: قبل اعتماد السحابة، نرفع أي تغييرات حقيقية معلقة لدى الموزع.
+   // بعد نجاح الرفع لا نسمح لعلم مزامنة قديم بأن يعيد دمج نسخة محلية متقادمة.
+   if(localStorage.getItem(CLOUD_PENDING_KEY)==='1'){
+     const pushed=await workerCloudPush(true);
+     if(!pushed){
+       showToast('تعذر إرسال التغييرات المعلقة؛ لم يتم استبدال بيانات جهازك');
+       return false;
+     }
    }
-   showToast('تعذر تحديث الطلبات: '+(localStorage.getItem(CLOUD_LAST_ERROR_KEY)||'تحقق من الاتصال'));
-   return false;
+
+   const loaded=await cloudRequest('loadAll',{});
+   const cloudDb=parseCloudDb(loaded);
+   if(!cloudDb)throw new Error('لا توجد قاعدة سحابية صالحة');
+
+   let fresh=JSON.parse(JSON.stringify(cloudDb));
+   if(!Array.isArray(fresh.orders))fresh.orders=[];
+   if(!Array.isArray(fresh.workers))fresh.workers=[];
+   if(!Array.isArray(fresh.deliveryTransfers))fresh.deliveryTransfers=[];
+   if(!Array.isArray(fresh.deliveryBatches))fresh.deliveryBatches=[];
+   if(!Array.isArray(fresh.returnBatches))fresh.returnBatches=[];
+   if(!Array.isArray(fresh.customerChangeRequests))fresh.customerChangeRequests=[];
+   if(!Array.isArray(fresh.settlements))fresh.settlements=[];
+
+   // أصلح فقط الروابط/حالة الاستلام المثبتة في السحابة نفسها.
+   ak200RepairWorkerAssignments(fresh);
+   ak201RepairReceivedStatus(fresh);
+
+   // إذا بقي حدث حالة حقيقي في طابور هذا الجهاز، نحافظ على ذلك الطلب فقط.
+   // لا ندمج بقية قاعدة الجهاز القديمة مع السحابة.
+   const pendingIds=new Set(readStatusOutbox().map(e=>String(e.orderId)));
+   if(pendingIds.size){
+     const cloudIndex=new Map(fresh.orders.map((o,i)=>[String(o.id),i]));
+     for(const local of (db.orders||[])){
+       if(!local||!pendingIds.has(String(local.id)))continue;
+       const i=cloudIndex.get(String(local.id));
+       if(i===undefined){
+         fresh.orders.push(JSON.parse(JSON.stringify(local)));
+         continue;
+       }
+       statusEventFieldsV173(fresh.orders[i],local);
+       fresh.orders[i].pendingStatusSync=true;
+       fresh.orders[i].pendingStatusTarget=local.pendingStatusTarget||local.status;
+     }
+   }
+
+   // إن حدث تعديل جديد أثناء عملية التحديث، لا نمسحه.
+   if(cloudEditGeneration!==refreshGeneration){
+     fresh=mergeDatabases(db,fresh);
+   }
+
+   db=fresh;
+   localStorage.setItem(K,JSON.stringify(db));
+   reconcilePendingWithCloudV175(cloudDb);
+   applyStatusOutboxV173();
+   ak195ClearOrphanPendingStatus(cloudDb);
+   if(!readStatusOutbox().length && !(db.orders||[]).some(o=>o&&o.pendingStatusSync)){
+     localStorage.removeItem(CLOUD_PENDING_KEY);
+     localStorage.removeItem(CLOUD_LAST_ERROR_KEY);
+   }
+   localStorage.setItem(CLOUD_LAST_OK_KEY,isoNow());
+   localStorage.setItem('ak_delivery_last_cloud_pull',isoNow());
+
+   markAssignedSeen();
+   try{
+     menu();render();renderWorkers();accountsRender();refreshLoginWorkers();refreshActiveCloudPage();
+   }catch(e){console.error('worker hard refresh UI',e);}
+
+   const wid=String(session.workerId||'');
+   const visible=(db.orders||[]).filter(o=>o&&!o.deletedAt&&!o.duplicateHidden&&workerCanSeeOrder(o,wid));
+   const inDistribution=visible.filter(o=>o.status==='قيد التوزيع').length;
+   showToast('✅ تم اعتماد السحابة — قيد التوزيع: '+inDistribution,4200);
+   updateSyncIndicators();
+   return true;
  }catch(e){
-   showToast('تعذر التحديث: '+(e&&e.message?e.message:'خطأ غير معروف'));
+   localStorage.setItem(CLOUD_LAST_ERROR_KEY,e&&e.message?e.message:'خطأ غير معروف');
+   showToast('تعذر تحديث الطلبات: '+(e&&e.message?e.message:'خطأ غير معروف'));
+   updateSyncIndicators();
    return false;
  }finally{
    if(btn){btn.disabled=false;btn.textContent='🔄 تحديث طلباتي';}
