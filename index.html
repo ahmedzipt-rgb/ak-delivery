@@ -562,7 +562,7 @@ html[data-lang="fr"] #overlay > .drawer .actions{justify-content:flex-start!impo
  <select id="loginWorker"><option value="">اختر حسابك</option></select>
 <input id="loginPin" type="password" inputmode="numeric" placeholder="الرمز السري">
 <div id="loginStatus" style="margin-top:8px;font-weight:700;min-height:22px"></div>
-<div style="margin-top:6px;font-size:12px;opacity:.7">الإصدار 199</div>
+<div style="margin-top:6px;font-size:12px;opacity:.7">الإصدار 200</div>
 <button id="workerLoginBtn" type="button" onclick="workerLogin(event)" class="btn" style="width:100%">دخول الموزع</button>
 <hr>
 <h3>إنشاء حساب موزع</h3>
@@ -667,7 +667,7 @@ html[data-lang="fr"] #overlay > .drawer .actions{justify-content:flex-start!impo
 
 <section id="systemHealth" class="page">
   <div class="card">
-    <h2>🩺 صحة النظام — AK Delivery 199</h2>
+    <h2>🩺 صحة النظام — AK Delivery 200</h2>
     <div id="healthSummaryV180">جارٍ الفحص...</div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">
       <button class="btn g" onclick="renderSystemHealthV180()">🔄 تحديث الفحص</button>
@@ -695,7 +695,7 @@ html[data-lang="fr"] #overlay > .drawer .actions{justify-content:flex-start!impo
 </section>
 
 <section id="ak189Recovery" class="page"><div class="card">
-<h2>🛡️ مراجعة تعارضات طلبات AK Delivery 199</h2>
+<h2>🛡️ مراجعة تعارضات طلبات AK Delivery 200</h2>
 <p>تُعرض هنا الطلبات التي تختلف بياناتها بين هذا الجهاز والسحابة. لا تُحذف أي نسخة تلقائيًا.</p>
 <div id="ak189ConflictStatus"></div>
 <button type="button" class="btn g" onclick="ak189RefreshReport()">تحديث المراجعة</button>
@@ -2191,7 +2191,7 @@ function ak189RefreshReport(){
  </div>`).join('');
 }
 function ak189DownloadRecovery(){
- const data={app:'AK Delivery 199',exportedAt:new Date().toISOString(),deviceDb:db,conflicts:ak189Conflicts(),
+ const data={app:'AK Delivery 200',exportedAt:new Date().toISOString(),deviceDb:db,conflicts:ak189Conflicts(),
  baseline:ak189Read(AK189_BASE,[]),statusQueue:readStatusOutbox()};
  const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
  const a=document.createElement('a');a.href=URL.createObjectURL(blob);
@@ -2224,6 +2224,42 @@ async function ak189Choose(i,chosen){
  localStorage.removeItem(CLOUD_LAST_ERROR_KEY);
  ak189RefreshReport();menu();render();
  if(chosen==='cloud')setTimeout(()=>cloudPull(true,true),250);
+}
+
+
+/* v200: حماية إسناد الموزع.
+   إذا كان الطلب في مرحلة عمل لدى الموزع لكن worker فارغ،
+   نسترجع الموزع فقط من سجل إرسال/استلام صريح لنفس orderId.
+   لا نغيّر الحالة ولا اسم الزبون ولا المبلغ. */
+function ak200RepairWorkerAssignments(targetDb){
+  if(!targetDb||!Array.isArray(targetDb.orders))return {changed:0,ids:[]};
+  const transfers=Array.isArray(targetDb.deliveryTransfers)?targetDb.deliveryTransfers:[];
+  const byOrder=new Map();
+  for(const t of transfers){
+    if(!t||t.deletedAt||!t.orderId||!t.workerId)continue;
+    const id=String(t.orderId);
+    const prev=byOrder.get(id);
+    const tv=timeValue(t.modifiedAt||t.receivedAt||t.sentAt);
+    const pv=prev?timeValue(prev.modifiedAt||prev.receivedAt||prev.sentAt):0;
+    if(!prev||tv>=pv)byOrder.set(id,t);
+  }
+  let changed=0; const ids=[];
+  for(const o of targetDb.orders){
+    if(!o||o.deletedAt||o.duplicateHidden||o.worker)continue;
+    if(!['في الطريق','قيد التوزيع','مؤجل','تعذر الاتصال','موعد ثابت'].includes(String(o.status||'')))continue;
+    const t=byOrder.get(String(o.id));
+    if(!t||!t.workerId)continue;
+    o.worker=String(t.workerId);
+    o.assignmentRecoveredAt=isoNow();
+    o.assignmentRecoveredFrom='deliveryTransfer';
+    if(!Array.isArray(o.history))o.history=[];
+    const note='استرجاع إسناد الموزع من سجل الإرسال — حماية v200';
+    if(!o.history.some(h=>String(h&&h.text||'').includes(note))){
+      o.history.push({time:tm(),text:note});
+    }
+    changed++; ids.push(String(o.id));
+  }
+  return {changed,ids};
 }
 
 function mergeDatabases(localDb,cloudDb){
@@ -2262,6 +2298,7 @@ function mergeDatabases(localDb,cloudDb){
   out.deliveryBatches=mergeById(localDb.deliveryBatches||[],cloudDb.deliveryBatches||[]);
   out.deliveryTransfers=mergeById(localDb.deliveryTransfers||[],cloudDb.deliveryTransfers||[]);
   out.customerChangeRequests=mergeById(localDb.customerChangeRequests||[],cloudDb.customerChangeRequests||[]);
+  ak200RepairWorkerAssignments(out);
   const activePendingV175=new Set(readStatusOutbox().map(e=>String(e.orderId)));
   for(const o of (out.orders||[])){
     if(!o||activePendingV175.has(String(o.id)))continue;
@@ -2313,6 +2350,7 @@ async function cloudPush(silent=false,retries=0){
     // حماية من مسح السحابة بقاعدة فارغة.
     if(localOrders===0 && localWorkers===0)throw new Error('تم منع رفع قاعدة فارغة');
 
+    ak200RepairWorkerAssignments(db);
     const payload={db:ak193SafePayloadDb(db,latestDbForSafe),updatedAt:isoNow()};
     if(baseGeneration!==undefined)payload._baseGeneration=baseGeneration;
     const result=await cloudRequest('saveAll',payload);
@@ -2416,6 +2454,7 @@ async function workerCloudPush(silent=true,retries=0){
     // v191: تأكيدات الدفع الخاصة بالموزع جزء من المزامنة مثل بقية العمليات.
     mergeWorkerRows('settlements');
 
+    ak200RepairWorkerAssignments(out);
     const payload={db:stripTransientSyncFlagsV175(out),updatedAt:isoNow(),updatedBy:'worker:'+wid};
     if(baseGeneration!==undefined)payload._baseGeneration=baseGeneration;
     const result=await cloudRequest('saveAll',payload);
@@ -2575,6 +2614,13 @@ async function cloudPull(silent=false,merge=true){
      try{localStorage.removeItem(CLOUD_LAST_ERROR_KEY);}catch(_){}
    }
    ak195ClearResolvedCloudState('cloud pull success');
+   const repairedAssignmentsV200=ak200RepairWorkerAssignments(db);
+   if(repairedAssignmentsV200.changed){
+     localStorage.setItem(K,JSON.stringify(db));
+     localStorage.setItem(CLOUD_PENDING_KEY,'1');
+     try{akLogV180('assignment-repair','تم استرجاع إسناد موزع مفقود',repairedAssignmentsV200.ids.join(','));}catch(_){}
+     if(session?.role==='owner'&&navigator.onLine)queueCloudSync(250);
+   }
    ak189Remember(cloudDb);
    const recoveredReturns=recoverArchivedReturns171();
    const correctedReturns=applyRequestedReturnRemoval165();
@@ -6106,6 +6152,13 @@ function scanIntegrityV180(){
   for(const ev of outbox){
     if(!orderIds.has(String(ev.orderId)))issues.push({kind:'sync',text:'حدث مزامنة معلق لطلب غير موجود: '+ev.orderId});
   }
+  const transferWorkerByOrder=new Map((transfers||[]).filter(t=>t&&!t.deletedAt&&t.orderId&&t.workerId)
+    .map(t=>[String(t.orderId),String(t.workerId)]));
+  for(const o of activeOrders){
+    if(o.status==='في الطريق'&&!o.worker&&transferWorkerByOrder.has(String(o.id))){
+      issues.push({kind:'assignment',text:'طلب في الطريق فقد إسناد الموزع رغم وجود سجل إرسال: '+(o.clientNo||o.seq||o.id)});
+    }
+  }
   return issues.slice(0,200);
 }
 
@@ -6316,7 +6369,7 @@ function diagnosticsTextV180(){
   const issues=scanIntegrityV180();
   let outbox=[];try{outbox=readStatusOutbox()}catch(_){}
   const payload={
-    app:'AK Delivery 199 Safe Sync',
+    app:'AK Delivery 200 Safe Sync',
     time:new Date().toISOString(),
     online:navigator.onLine,
     role:session?.role||null,
@@ -6436,7 +6489,7 @@ setInterval(()=>{
   }catch(_){}
 },15000);
 
-akLogV180('boot','تشغيل AK Delivery 199 Safe Sync');
+akLogV180('boot','تشغيل AK Delivery 200 Safe Sync');
 try{updateCloudReadWriteStatusV180();}catch(_){}
 setTimeout(()=>{
   try{
