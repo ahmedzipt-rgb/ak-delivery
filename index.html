@@ -677,7 +677,7 @@ html[data-lang="fr"] #overlay > .drawer .actions{justify-content:flex-start!impo
 
 <section id="systemHealth" class="page">
   <div class="card">
-    <h2>🩺 صحة النظام — AK Delivery 209</h2>
+    <h2>🩺 صحة النظام — AK Delivery 211</h2>
     <div id="healthSummaryV180">جارٍ الفحص...</div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">
       <button class="btn g" onclick="renderSystemHealthV180()">🔄 تحديث الفحص</button>
@@ -705,7 +705,7 @@ html[data-lang="fr"] #overlay > .drawer .actions{justify-content:flex-start!impo
 </section>
 
 <section id="ak189Recovery" class="page"><div class="card">
-<h2>🛡️ مراجعة تعارضات طلبات AK Delivery 209</h2>
+<h2>🛡️ مراجعة تعارضات طلبات AK Delivery 211</h2>
 <p>تُعرض هنا الطلبات التي تختلف بياناتها بين هذا الجهاز والسحابة. لا تُحذف أي نسخة تلقائيًا.</p>
 <div id="ak189ConflictStatus"></div>
 <button type="button" class="btn g" onclick="ak189RefreshReport()">تحديث المراجعة</button>
@@ -1602,6 +1602,7 @@ const AKV4_ARRAY_TYPES=['orders','workers','returnBatches','deliveryBatches','de
 const AKV4_META_TYPE='__meta__', AKV4_META_ID='root';
 const AKV4_BASE_KEY='ak_delivery_v4_baseline_v210';
 const AKV4_REV_KEY='ak_delivery_v4_rev_v210';
+const AKV4_MIGRATION_KEY='ak_delivery_v4_migrated_v211';
 let akV4PollBusy=false, akV4LastPoll=0;
 
 function akV4Clone(v){return v==null?v:JSON.parse(JSON.stringify(v));}
@@ -1753,16 +1754,43 @@ function akV4ApplyRemoteChanges(events){
   }
   return {changed,conflicts,lastRev};
 }
+async function akV4InitialBootstrapV211(silent=true){
+  if(!AKV4_ACTIVE||!navigator.onLine||!session?.role)return false;
+  if(localStorage.getItem(AKV4_MIGRATION_KEY)==='done')return true;
+  try{
+    // v211: عند الانتقال من V3/V209/V210 تكون CloudV4 هي المرجع الوحيد للبداية.
+    // نحفظ نسخة محلية احتياطية أولاً ثم نعتمد السحابة كاملة، ولا نسمح لأعلام قديمة
+    // أو قائمة تعارضات قديمة بأن تعيد بيانات الجهاز فوق CloudV4.
+    try{if(typeof createLocalSnapshot==='function')createLocalSnapshot()}catch(_){}
+    const full=await akV4FetchFull();
+    db=akV4Clone(full.data.db);
+    localStorage.setItem(K,JSON.stringify(db));
+    try{if(typeof writeStatusOutbox==='function')writeStatusOutbox([])}catch(_){}
+    try{if(typeof AK198_EVENT_KEY!=='undefined')localStorage.removeItem(AK198_EVENT_KEY)}catch(_){}
+    try{localStorage.removeItem(AK208_LOCAL_DIRTY_KEY)}catch(_){}
+    try{localStorage.removeItem(CLOUD_PENDING_KEY)}catch(_){}
+    try{localStorage.removeItem(CLOUD_LAST_ERROR_KEY)}catch(_){}
+    try{localStorage.removeItem(AK189_CONFLICT);localStorage.removeItem(AK189_HOLD);localStorage.removeItem(AK189_BASE)}catch(_){}
+    try{ak189Remember(db)}catch(_){}
+    localStorage.setItem(AKV4_MIGRATION_KEY,'done');
+    try{ak208MarkReadSuccess()}catch(_){}
+    try{menu();render();renderWorkers();accountsRender();refreshLoginWorkers();refreshActiveCloudPage();ak189RefreshReport();}catch(_){}
+    try{updateSyncIndicators()}catch(_){}
+    if(!silent)showToast('✅ تم اعتماد CloudV4 وتنظيف آثار المزامنة القديمة');
+    return true;
+  }catch(e){
+    try{localStorage.setItem(CLOUD_LAST_ERROR_KEY,e.message||String(e));updateSyncIndicators()}catch(_){}
+    return false;
+  }
+}
+
 async function akV4PollChanges(force=false){
   if(!AKV4_ACTIVE||!navigator.onLine||document.visibilityState==='hidden'||!session?.role||akV4PollBusy)return false;
   const now=Date.now();if(!force&&now-akV4LastPoll<1100)return false;akV4LastPoll=now;akV4PollBusy=true;
   try{
     const base=akV4ReadBase();
     if(!base.rev && !Object.keys(base.entries||{}).length){
-      if(typeof ak208HasLocalDirty==='function'&&ak208HasLocalDirty()){if(!cloudSyncTimer)queueCloudSync(40);return false;}
-      const full=await akV4FetchFull();db=akV4Clone(full.data.db);localStorage.setItem(K,JSON.stringify(db));
-      try{menu();render();renderWorkers();accountsRender();refreshLoginWorkers();refreshActiveCloudPage();}catch(_){}
-      try{ak208MarkReadSuccess()}catch(_){};return true;
+      return await akV4InitialBootstrapV211(true);
     }
     const j=await akV4Get('v4_changes',{since:String(base.rev),max:'80'},30000);
     const res=akV4ApplyRemoteChanges(j.events||[]);
@@ -1774,7 +1802,13 @@ async function akV4PollChanges(force=false){
 async function akV4SaveAll(payload={}){
   if(!payload||!payload.db)throw new Error('لا توجد بيانات للحفظ');
   let base=akV4ReadBase();
-  if(!Object.keys(base.entries||{}).length){await akV4FetchFull();base=akV4ReadBase();}
+  if(!Object.keys(base.entries||{}).length){
+    const ready=await akV4InitialBootstrapV211(true);
+    if(!ready)throw new Error('تعذر تهيئة CloudV4 قبل الحفظ');
+    base=akV4ReadBase();
+    // أول تهيئة هدفها اعتماد السحابة، لذلك لا نرسل لقطة قديمة من الجهاز في نفس الدورة.
+    return {ok:true,verified:true,backend:'4',generation:'v4-'+base.rev,rev:base.rev,noChanges:true,bootstrapped:true};
+  }
   const diff=akV4DiffDb(payload.db);
   if(!diff.changes.length)return {ok:true,verified:true,backend:'4',generation:'v4-'+diff.base.rev,rev:diff.base.rev,noChanges:true};
   if(!payload._v4OpId)payload._v4OpId='AKV4-'+Date.now()+'-'+Math.random().toString(36).slice(2,9);
@@ -7545,9 +7579,9 @@ try{ak204AdoptWorkerCloud=async function(silent=true){return cloudSyncBusy?akV4P
 
 // v210: كل فحوص التغيير القديمة تمر الآن عبر سجل أحداث CloudV4 الصغير.
 try{ak208FastGenerationCheck=async function(force=false){return akV4PollChanges(force)}}catch(_){}
-setTimeout(()=>{try{akV4PollChanges(true)}catch(_){}},220);
+setTimeout(()=>{try{akV4InitialBootstrapV211(true).then(()=>akV4PollChanges(true))}catch(_){}},80);
 
-akLogV180('boot','تشغيل AK Delivery 210 V4 Incremental Sync');
+akLogV180('boot','تشغيل AK Delivery 211 V4 Safe Bootstrap');
 try{updateCloudReadWriteStatusV180();}catch(_){}
 setTimeout(()=>{
   try{
@@ -7563,8 +7597,8 @@ setTimeout(()=>{
 },900);
 
 setTimeout(()=>{try{renderImportWorkerSelectorsV206()}catch(_){}},300);
-setTimeout(()=>{try{ak208FirstBootCleanup();ak208FastGenerationCheck(true)}catch(_){}},320);
+setTimeout(()=>{try{akV4InitialBootstrapV211(true).then(()=>{ak208FirstBootCleanup();ak208FastGenerationCheck(true)})}catch(_){}},420);
 
-// AK Delivery build v210 — CloudV4 entity transactions + incremental event polling; no full database transfer for normal changes; v205 safety guards retained
+// AK Delivery build v211 — CloudV4 safe first bootstrap + stale legacy conflict cleanup + incremental event polling; v205 safety guards retained
 </script>
 </body></html>
