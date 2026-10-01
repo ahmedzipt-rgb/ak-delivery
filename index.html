@@ -562,7 +562,7 @@ html[data-lang="fr"] #overlay > .drawer .actions{justify-content:flex-start!impo
  <select id="loginWorker"><option value="">اختر حسابك</option></select>
 <input id="loginPin" type="password" inputmode="numeric" placeholder="الرمز السري">
 <div id="loginStatus" style="margin-top:8px;font-weight:700;min-height:22px"></div>
-<div style="margin-top:6px;font-size:12px;opacity:.7">الإصدار 194</div>
+<div style="margin-top:6px;font-size:12px;opacity:.7">الإصدار 195</div>
 <button id="workerLoginBtn" type="button" onclick="workerLogin(event)" class="btn" style="width:100%">دخول الموزع</button>
 <hr>
 <h3>إنشاء حساب موزع</h3>
@@ -667,7 +667,7 @@ html[data-lang="fr"] #overlay > .drawer .actions{justify-content:flex-start!impo
 
 <section id="systemHealth" class="page">
   <div class="card">
-    <h2>🩺 صحة النظام — AK Delivery 194</h2>
+    <h2>🩺 صحة النظام — AK Delivery 195</h2>
     <div id="healthSummaryV180">جارٍ الفحص...</div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">
       <button class="btn g" onclick="renderSystemHealthV180()">🔄 تحديث الفحص</button>
@@ -695,7 +695,7 @@ html[data-lang="fr"] #overlay > .drawer .actions{justify-content:flex-start!impo
 </section>
 
 <section id="ak189Recovery" class="page"><div class="card">
-<h2>🛡️ مراجعة تعارضات طلبات AK Delivery 194</h2>
+<h2>🛡️ مراجعة تعارضات طلبات AK Delivery 195</h2>
 <p>تُعرض هنا الطلبات التي تختلف بياناتها بين هذا الجهاز والسحابة. لا تُحذف أي نسخة تلقائيًا.</p>
 <div id="ak189ConflictStatus"></div>
 <button type="button" class="btn g" onclick="ak189RefreshReport()">تحديث المراجعة</button>
@@ -1921,6 +1921,51 @@ function reconcilePendingWithCloudV175(cloudDb){
   }
   return cleared;
 }
+
+/* v195: تنظيف آمن لعلامات انتظار الحالة اليتيمة.
+   لا نمس الطلب إلا إذا:
+   1) لا يوجد له حدث حقيقي في طابور المزامنة،
+   2) والسحابة تؤكد نفس الحالة/الحدث بالفعل.
+   هذا يمنع بقاء pendingStatusSync عالقاً بعد نجاح المزامنة. */
+function ak195ClearOrphanPendingStatus(cloudDb){
+  if(!cloudDb||!Array.isArray(cloudDb.orders)||!Array.isArray(db?.orders))return 0;
+  const queued=new Set(readStatusOutbox().map(ev=>String(ev.orderId)));
+  const cm=new Map(cloudDb.orders.filter(Boolean).map(o=>[String(o.id),o]));
+  let cleared=0;
+  for(const o of db.orders){
+    if(!o||!o.pendingStatusSync)continue;
+    const id=String(o.id||'');
+    if(!id||queued.has(id))continue;
+    const remote=cm.get(id);
+    if(!remote)continue;
+    if(!cloudConfirmsOrderV175(o,remote))continue;
+    delete o.pendingStatusSync;
+    delete o.pendingStatusTarget;
+    o.lastStatusConfirmedAt=isoNow();
+    cleared++;
+  }
+  if(cleared){
+    localStorage.setItem(K,JSON.stringify(db));
+    try{akLogV180('pending-cleanup','تم تنظيف انتظار حالة مؤكد من السحابة',String(cleared));}catch(_){}
+  }
+  return cleared;
+}
+
+/* v195: بعد نجاح الجلب، إذا لم يبق أي عمل معلق نمسح رسالة الخطأ المؤقت القديمة. */
+function ak195ClearResolvedCloudState(reason=''){
+  try{
+    const q=readStatusOutbox();
+    const pendingOrders=Array.isArray(db?.orders)?db.orders.filter(o=>o&&o.pendingStatusSync).length:0;
+    const pendingLocal=localStorage.getItem(CLOUD_PENDING_KEY)==='1';
+    if(!q.length && !pendingOrders && !pendingLocal){
+      if(localStorage.getItem(CLOUD_LAST_ERROR_KEY)){
+        localStorage.removeItem(CLOUD_LAST_ERROR_KEY);
+        try{akLogV180('cloud-error-cleared','تم مسح خطأ مؤقت بعد تأكيد سلامة المزامنة',reason);}catch(_){}
+      }
+    }
+  }catch(_){}
+}
+
 function applyStatusOutboxV173(){
   const q=readStatusOutbox();
   if(!Array.isArray(db?.orders)||!q.length)return 0;
@@ -2106,7 +2151,7 @@ function ak189RefreshReport(){
  </div>`).join('');
 }
 function ak189DownloadRecovery(){
- const data={app:'AK Delivery 194',exportedAt:new Date().toISOString(),deviceDb:db,conflicts:ak189Conflicts(),
+ const data={app:'AK Delivery 195',exportedAt:new Date().toISOString(),deviceDb:db,conflicts:ak189Conflicts(),
  baseline:ak189Read(AK189_BASE,[]),statusQueue:readStatusOutbox()};
  const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
  const a=document.createElement('a');a.href=URL.createObjectURL(blob);
@@ -2483,6 +2528,8 @@ async function cloudPull(silent=false,merge=true){
    reconcilePendingWithCloudV175(cloudDb);
    applyStatusOutboxV173();
    reconcilePendingWithCloudV175(cloudDb);
+   ak195ClearOrphanPendingStatus(cloudDb);
+   ak195ClearResolvedCloudState('cloud pull success');
    ak189Remember(cloudDb);
    const recoveredReturns=recoverArchivedReturns171();
    const correctedReturns=applyRequestedReturnRemoval165();
@@ -6178,7 +6225,7 @@ function diagnosticsTextV180(){
   const issues=scanIntegrityV180();
   let outbox=[];try{outbox=readStatusOutbox()}catch(_){}
   const payload={
-    app:'AK Delivery 189 Safe Sync',
+    app:'AK Delivery 195 Safe Sync',
     time:new Date().toISOString(),
     online:navigator.onLine,
     role:session?.role||null,
@@ -6298,7 +6345,7 @@ setInterval(()=>{
   }catch(_){}
 },15000);
 
-akLogV180('boot','تشغيل AK Delivery 189 Safe Sync');
+akLogV180('boot','تشغيل AK Delivery 195 Safe Sync');
 try{updateCloudReadWriteStatusV180();}catch(_){}
 setTimeout(()=>{
   try{
