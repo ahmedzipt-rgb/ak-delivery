@@ -562,7 +562,7 @@ html[data-lang="fr"] #overlay > .drawer .actions{justify-content:flex-start!impo
  <select id="loginWorker"><option value="">اختر حسابك</option></select>
 <input id="loginPin" type="password" inputmode="numeric" placeholder="الرمز السري">
 <div id="loginStatus" style="margin-top:8px;font-weight:700;min-height:22px"></div>
-<div style="margin-top:6px;font-size:12px;opacity:.7">الإصدار 196</div>
+<div style="margin-top:6px;font-size:12px;opacity:.7">الإصدار 199</div>
 <button id="workerLoginBtn" type="button" onclick="workerLogin(event)" class="btn" style="width:100%">دخول الموزع</button>
 <hr>
 <h3>إنشاء حساب موزع</h3>
@@ -667,7 +667,7 @@ html[data-lang="fr"] #overlay > .drawer .actions{justify-content:flex-start!impo
 
 <section id="systemHealth" class="page">
   <div class="card">
-    <h2>🩺 صحة النظام — AK Delivery 196</h2>
+    <h2>🩺 صحة النظام — AK Delivery 199</h2>
     <div id="healthSummaryV180">جارٍ الفحص...</div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">
       <button class="btn g" onclick="renderSystemHealthV180()">🔄 تحديث الفحص</button>
@@ -695,7 +695,7 @@ html[data-lang="fr"] #overlay > .drawer .actions{justify-content:flex-start!impo
 </section>
 
 <section id="ak189Recovery" class="page"><div class="card">
-<h2>🛡️ مراجعة تعارضات طلبات AK Delivery 196</h2>
+<h2>🛡️ مراجعة تعارضات طلبات AK Delivery 199</h2>
 <p>تُعرض هنا الطلبات التي تختلف بياناتها بين هذا الجهاز والسحابة. لا تُحذف أي نسخة تلقائيًا.</p>
 <div id="ak189ConflictStatus"></div>
 <button type="button" class="btn g" onclick="ak189RefreshReport()">تحديث المراجعة</button>
@@ -1683,13 +1683,13 @@ async function cloudRequestOnceV187(action,payload={}){
   if(action==='ping'){
     r=await fetch(
       CLOUD_URL+'?key='+encodeURIComponent(CLOUD_KEY)+'&action=ping&_t='+Date.now(),
-      {method:'GET',cache:'no-store',signal:AbortSignal.timeout(12000)}
+      {method:'GET',cache:'no-store',signal:AbortSignal.timeout(18000)}
     );
 
   }else if(action==='loadAll'){
     r=await fetch(
       CLOUD_URL+'?key='+encodeURIComponent(CLOUD_KEY)+'&action=load&_t='+Date.now()+'-'+Math.random().toString(36).slice(2),
-      {method:'GET',cache:'no-store',signal:AbortSignal.timeout(20000)}
+      {method:'GET',cache:'no-store',signal:AbortSignal.timeout(35000)}
     );
 
   }else if(action==='saveAll'){
@@ -1705,7 +1705,7 @@ async function cloudRequestOnceV187(action,payload={}){
     await fetch(CLOUD_URL,{
       method:'POST',mode:'no-cors',
       headers:{'Content-Type':'text/plain;charset=UTF-8'},
-      body,cache:'no-store',signal:AbortSignal.timeout(20000)
+      body,cache:'no-store',signal:AbortSignal.timeout(35000)
     });
 
     for(let i=0;i<6;i++){
@@ -1782,12 +1782,43 @@ function clearResolvedCloudErrorV188(reason=''){
   }catch(_){}
 }
 
+
+/* v197: حماية الجلب من التداخل على الهاتف.
+   إذا كان هناك loadAll جارٍ، تستخدم المحاولات اللاحقة نفس الوعد بدلاً من فتح اتصال جديد. */
+let ak197LoadInFlight=null;
+async function ak197LoadOnce(payload={}){
+  if(ak197LoadInFlight)return ak197LoadInFlight;
+  ak197LoadInFlight=(async()=>{
+    try{
+      return await cloudRequestOnceV187('loadAll',payload);
+    }finally{
+      ak197LoadInFlight=null;
+    }
+  })();
+  return ak197LoadInFlight;
+}
+
+/* v197: نجاح اتصال جديد يمسح رسالة شبكة مؤقتة قديمة، حتى لو بقيت
+   علامة انتظار محلية لسبب مختلف. */
+function ak197ClearTransientNetworkError(){
+  try{
+    const old=localStorage.getItem(CLOUD_LAST_ERROR_KEY)||'';
+    if(/failed to fetch|timed out|timeout|network|aborted|load failed|connection/i.test(old)){
+      localStorage.removeItem(CLOUD_LAST_ERROR_KEY);
+      try{akLogV180('cloud-network-recovered','عاد الاتصال بالسحابة وتم مسح خطأ الشبكة القديم');}catch(_){}
+    }
+  }catch(_){}
+}
+
 async function cloudRequest(action,payload={}){
-  const maxAttempts=3;
+  const maxAttempts=4;
   let lastErr=null;
   for(let attempt=0;attempt<maxAttempts;attempt++){
     try{
-      const result=await cloudRequestOnceV187(action,payload);
+      const result=action==='loadAll'
+        ?await ak197LoadOnce(payload)
+        :await cloudRequestOnceV187(action,payload);
+      if(action==='ping'||action==='loadAll')ak197ClearTransientNetworkError();
       if(attempt>0){
         try{akLogV180('cloud-auto-retry-ok','نجحت المزامنة تلقائياً بعد إعادة المحاولة','attempt '+(attempt+1));}catch(_){}
       }
@@ -1797,7 +1828,7 @@ async function cloudRequest(action,payload={}){
       lastErr=err;
       if(action==='saveAll' && payload && payload.db){
         try{
-          const check=await cloudRequestOnceV187('loadAll',{});
+          const check=await ak197LoadOnce({});
           const cdb=parseCloudDb(check);
           if(cdb && JSON.stringify(cdb)===JSON.stringify(payload.db)){
             try{
@@ -1814,7 +1845,7 @@ async function cloudRequest(action,payload={}){
         localStorage.setItem(CLOUD_LAST_ERROR_KEY,'محاولة تلقائية '+(attempt+1)+'/'+maxAttempts+': '+String(err&&err.message||err));
         akLogV180('cloud-auto-retry','إعادة محاولة المزامنة تلقائياً',String(err&&err.message||err));
       }catch(_){}
-      await sleepV187([900,2200,4500][attempt]||4500);
+      await sleepV187([1200,3000,6000,9000][attempt]||9000);
     }
   }
   throw lastErr||new Error('فشل الاتصال بالسحابة');
@@ -2160,7 +2191,7 @@ function ak189RefreshReport(){
  </div>`).join('');
 }
 function ak189DownloadRecovery(){
- const data={app:'AK Delivery 196',exportedAt:new Date().toISOString(),deviceDb:db,conflicts:ak189Conflicts(),
+ const data={app:'AK Delivery 199',exportedAt:new Date().toISOString(),deviceDb:db,conflicts:ak189Conflicts(),
  baseline:ak189Read(AK189_BASE,[]),statusQueue:readStatusOutbox()};
  const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
  const a=document.createElement('a');a.href=URL.createObjectURL(blob);
@@ -2457,7 +2488,7 @@ async function workerPushOrderStatusTransaction(orderId,targetStatus,attempts=0)
     await fetch(CLOUD_URL,{
       method:'POST',mode:'no-cors',
       headers:{'Content-Type':'text/plain;charset=UTF-8'},
-      body,cache:'no-store',signal:AbortSignal.timeout(20000)
+      body,cache:'no-store',signal:AbortSignal.timeout(35000)
     });
 
     let confirmedDb=null,confirmed=null;
@@ -2640,8 +2671,12 @@ async function syncNow(silent=true){
     if(ok){
       cloudSyncFailures=0;
       localStorage.setItem(CLOUD_LAST_OK_KEY,isoNow());
-      if(cloudEditGeneration===startedGeneration)localStorage.removeItem(CLOUD_PENDING_KEY);
+      if(cloudEditGeneration===startedGeneration){
+        localStorage.removeItem(CLOUD_PENDING_KEY);
+        ak198ClearEvents();
+      }
       localStorage.removeItem(CLOUD_LAST_ERROR_KEY);
+      ak198BroadcastChange();
     }
     else cloudSyncFailures=Math.min(cloudSyncFailures+1,4);
     updateSyncIndicators();
@@ -2655,92 +2690,133 @@ async function syncNow(silent=true){
   }
 }
 
-function queueCloudSync(delay){
-  clearTimeout(cloudSyncTimer);
-  cloudSyncTimer=setTimeout(()=>{cloudSyncTimer=null;syncNow(true);},delay);
+/* v199: مزامنة حدثية موحدة وخفيفة.
+   كل تعديل يسجل حدثاً محلياً صغيراً، ثم تُدمج الأحداث المتقاربة في مزامنة واحدة.
+   لا نفتح عدة اتصالات لنفس سلسلة التعديلات. */
+const AK198_EVENT_KEY='ak_delivery_sync_events_v198';
+let ak198LastActivity=Date.now();
+
+function ak198ReadEvents(){
+  try{
+    const a=JSON.parse(localStorage.getItem(AK198_EVENT_KEY)||'[]');
+    return Array.isArray(a)?a:[];
+  }catch(_){return []}
 }
-function scheduleCloudSync(){
+function ak198RecordEvent(kind='change',entityId=''){
+  try{
+    const k=String(kind||'change'), id=String(entityId||'');
+    const a=ak198ReadEvents().filter(x=>!(String(x?.kind||'')===k && String(x?.entityId||'')===id));
+    a.push({kind:k,entityId:id,time:isoNow()});
+    localStorage.setItem(AK198_EVENT_KEY,JSON.stringify(a.slice(-40)));
+  }catch(_){}
+  ak198LastActivity=Date.now();
+}
+function ak198ClearEvents(){
+  try{localStorage.removeItem(AK198_EVENT_KEY)}catch(_){}
+}
+function queueCloudSync(delay=180){
+  clearTimeout(cloudSyncTimer);
+  cloudSyncTimer=setTimeout(()=>{cloudSyncTimer=null;syncNow(true);},Math.max(80,delay));
+}
+function scheduleCloudSync(kind='change',entityId=''){
   cloudEditGeneration++;
+  ak198RecordEvent(kind,entityId);
   localStorage.setItem(CLOUD_PENDING_KEY,'1');
   updateSyncIndicators();
-  queueCloudSync(450);
+  if(navigator.onLine)queueCloudSync(250);
 }
-window.addEventListener('online',()=>{
-  if(session&&session.role==='worker'){
-    showToast('عاد الاتصال بالإنترنت — جارٍ تبادل التحديثات');
-    if(localStorage.getItem(CLOUD_PENDING_KEY)==='1')syncNow(true);
-    else cloudPull(true,false);
-  }else{
-    updateSyncIndicators();
-    showToast('عاد الاتصال بالإنترنت — جارٍ جلب التحديثات');
-    if(session&&session.role==='owner'){
-      if(localStorage.getItem(CLOUD_PENDING_KEY)==='1')syncNow(true);
-      else cloudPull(true,true);
+
+/* إذا كان التطبيق مفتوحاً في أكثر من تبويب على نفس الجهاز، لا ننتظر الجلب الدوري. */
+try{
+  const ak198Channel=new BroadcastChannel('ak-delivery-v198');
+  window.ak198Channel=ak198Channel;
+  ak198Channel.onmessage=ev=>{
+    if(ev?.data?.type==='changed' && navigator.onLine && session?.role && !cloudPullBusy && !cloudSyncBusy){
+      setTimeout(()=>cloudPull(true,session.role==='owner'),220);
     }
+  };
+}catch(_){}
+
+function ak198BroadcastChange(){
+  try{window.ak198Channel?.postMessage({type:'changed',time:Date.now()})}catch(_){}
+}
+
+/* v199: نقطة واحدة فقط لمعالجة عودة الإنترنت. */
+window.addEventListener('online',()=>{
+  ak198LastActivity=Date.now();
+  updateSyncIndicators();
+  if(!session?.role)return;
+  showToast('عاد الاتصال بالإنترنت — جارٍ استئناف المزامنة');
+  if(localStorage.getItem(CLOUD_PENDING_KEY)==='1'){
+    queueCloudSync(120);
+  }else if(!cloudPullBusy&&!cloudSyncBusy){
+    setTimeout(()=>cloudPull(true,session.role==='owner'),180);
   }
+  if(session.role==='worker')setTimeout(retryStatusOutboxV173,350);
 });
 window.addEventListener('offline',()=>{updateSyncIndicators();showToast('لا يوجد إنترنت — سيتم حفظ التغييرات وإرسالها عند عودة الاتصال');});
-// جلب دوري أثناء عرض التطبيق؛ لا يرفع المالك شيئاً إن لم توجد تعديلات محلية.
+// v199: الجلب الدوري شبكة أمان فقط؛ لا يزاحم المزامنة الحدثية.
 setInterval(()=>{
   if(!navigator.onLine||document.visibilityState==='hidden'||cloudSyncBusy||cloudPullBusy||!session?.role)return;
   if(localStorage.getItem(CLOUD_PENDING_KEY)==='1'){
-    if(!cloudSyncTimer)syncNow(true);
+    if(!cloudSyncTimer)queueCloudSync(150);
     return;
   }
-  const interval=Math.min(30000,(session.role==='worker'?4000:4500)*Math.pow(2,cloudPullFailures));
+  const activeRecently=(Date.now()-ak198LastActivity)<120000;
+  const interval=activeRecently?20000:60000;
   if(Date.now()-cloudLastPullStarted>=interval)cloudPull(true,session.role==='owner');
-},2000);
-document.addEventListener('visibilitychange',()=>{
-  if(document.visibilityState==='visible' && navigator.onLine){
-    if(localStorage.getItem(CLOUD_PENDING_KEY)==='1')syncNow(true);
-    else if(session?.role&&!cloudPullBusy&&Date.now()-cloudLastPullStarted>=2000)
-      cloudPull(true,session.role==='owner');
-  }
-});
-window.addEventListener('pageshow',()=>{
-  if(navigator.onLine && session?.role&&!cloudPullBusy&&Date.now()-cloudLastPullStarted>=2000){
-    if(localStorage.getItem(CLOUD_PENDING_KEY)==='1')syncNow(true);
-    else cloudPull(true,session.role==='owner');
-  }
-});
+},5000);
+/* v199: استئناف موحد للصفحة بدلاً من عدة عمليات جلب متنافسة. */
+let ak199LastResume=0;
+function ak199ResumeSync(){
+  if(!navigator.onLine||!session?.role||document.visibilityState==='hidden')return;
+  const now=Date.now();
+  if(now-ak199LastResume<1800)return;
+  ak199LastResume=now;
+  ak198LastActivity=now;
+  if(cloudSyncBusy||cloudPullBusy)return;
+  if(localStorage.getItem(CLOUD_PENDING_KEY)==='1')queueCloudSync(120);
+  else if(now-cloudLastPullStarted>=5000)cloudPull(true,session.role==='owner');
+}
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')setTimeout(ak199ResumeSync,180);});
+window.addEventListener('pageshow',()=>setTimeout(ak199ResumeSync,180));
+window.addEventListener('focus',()=>setTimeout(ak199ResumeSync,220));
 async function retryStatusOutboxV173(){
   if(!navigator.onLine||!session||session.role!=='worker'||cloudSyncBusy||cloudPullBusy)return;
   const ev=readStatusOutbox().find(ev=>!ak193IsConflict(ev.orderId));if(!ev)return;
   const o=db.orders.find(x=>String(x.id)===String(ev.orderId));if(!o){removeStatusEventV173(ev.orderId,ev.statusEventIdV173);return;}
   try{await workerPushOrderStatusTransaction(ev.orderId,ev.status)}catch(_){}
 }
-setInterval(retryStatusOutboxV173,5000);
 
-/* v187: حارس مزامنة إضافي للهاتف.
-   يعيد تشغيل المزامنة إذا بقيت تغييرات محلية معلقة، ويجلب التحديثات دورياً
-   بعد استئناف الصفحة أو عند تعطل مؤقت سابق. */
-let cloudWatchdogLastV187=0;
-async function cloudWatchdogV187(){
+
+/* v199: حارس واحد خفيف فقط كشبكة أمان.
+   الحدث الحقيقي يزامن فوراً؛ الحارس يتدخل فقط إذا بقي شيء عالقاً. */
+let ak199WatchdogLast=0;
+async function ak199SyncWatchdog(){
   if(!navigator.onLine||!session?.role||document.visibilityState==='hidden')return;
   if(cloudSyncBusy||cloudPullBusy)return;
   const now=Date.now();
-  if(now-cloudWatchdogLastV187<4500)return;
-  cloudWatchdogLastV187=now;
+  if(now-ak199WatchdogLast<12000)return;
+  ak199WatchdogLast=now;
   try{
+    if(session.role==='worker' && readStatusOutbox().some(ev=>!ak193IsConflict(ev.orderId))){
+      await retryStatusOutboxV173();
+      return;
+    }
     if(localStorage.getItem(CLOUD_PENDING_KEY)==='1'){
       clearTimeout(cloudSyncTimer);cloudSyncTimer=null;
       await syncNow(true);
-    }else if(now-cloudLastPullStarted>=15000){
-      await cloudPull(true,session.role==='owner');
     }
   }catch(_){}
 }
-setInterval(cloudWatchdogV187,6000);
-window.addEventListener('focus',()=>setTimeout(cloudWatchdogV187,250));
-document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')setTimeout(cloudWatchdogV187,250);});
-window.addEventListener('pageshow',()=>setTimeout(cloudWatchdogV187,250));
-window.addEventListener('online',()=>setTimeout(retryStatusOutboxV173,500));
+setInterval(ak199SyncWatchdog,12000);
 applyStatusOutboxV173();
 
 function save(){
   dedupeDatabase();
   persistDbV180('save');
-  scheduleAutoSnapshot();scheduleCloudSync();
+  scheduleAutoSnapshot();
+  scheduleCloudSync('save',current||'');
   requestUiRefreshV180();
 }
 
@@ -3364,7 +3440,7 @@ async function workerConfirmPayment(){
       return alert('تم تأكيد الدفع ووصل إلى السحابة ✓');
     }
   }
-  queueCloudSync(800);
+  scheduleCloudSync('settlement');
   alert('تم حفظ تأكيد الدفع على الجهاز وسيعاد إرساله تلقائياً حتى تؤكده السحابة.');
 }
 
@@ -3410,6 +3486,7 @@ async function commitOrderStatus(targetStatus){
     appendOrderHistory(o,targetStatus);o.pendingStatusSync=true;o.pendingStatusTarget=targetStatus;
     enqueueStatusEventV173(o,targetStatus);
     localStorage.setItem(K,JSON.stringify(db));localStorage.setItem(CLOUD_PENDING_KEY,'1');
+    ak198RecordEvent('status',id);
     menu();render();accountsRender();openOrder(id);
     if(!navigator.onLine){showToast('✅ تم الحفظ على الجهاز — سيُرسل تلقائياً عند عودة الإنترنت',4800);return true;}
     let ok=false;
@@ -4962,7 +5039,7 @@ function workerRegister(){
  if(pin!==pc)return alert('تأكيد الرقم السري غير مطابق');
  let isFirstWorker=db.workers.length===0;
  db.workers.push({id:Date.now()+'',name:name,rate:0,pin:pin,blocked:false,approved:isFirstWorker,autoApprovedFirst:isFirstWorker,modifiedAt:isoNow(),modifiedBy:actorName()});
- localStorage.setItem(K,JSON.stringify(db));scheduleCloudSync();refreshLoginWorkers();renderWorkers();
+ localStorage.setItem(K,JSON.stringify(db));scheduleCloudSync('worker-register');refreshLoginWorkers();renderWorkers();
  regName.value='';regPin.value='';regPinConfirm.value='';
  if(isFirstWorker){
    alert('تم إنشاء حساب الموزع الأول وتفعيله تلقائياً. يمكنك تسجيل الدخول الآن.');
@@ -5010,7 +5087,7 @@ async function deleteWorkerAccount(id){
      appendOrderHistory(o,'تم إلغاء إسناد الطلب بسبب حذف حساب الموزع '+w.name);
    }
  }
- localStorage.setItem(K,JSON.stringify(db));scheduleCloudSync();
+ localStorage.setItem(K,JSON.stringify(db));scheduleCloudSync('worker-delete',id);
  renderWorkers();render();menu();accountsRender();refreshLoginWorkers();
  if(navigator.onLine){
    const ok=await syncNow();
@@ -6239,7 +6316,7 @@ function diagnosticsTextV180(){
   const issues=scanIntegrityV180();
   let outbox=[];try{outbox=readStatusOutbox()}catch(_){}
   const payload={
-    app:'AK Delivery 196 Safe Sync',
+    app:'AK Delivery 199 Safe Sync',
     time:new Date().toISOString(),
     online:navigator.onLine,
     role:session?.role||null,
@@ -6359,7 +6436,7 @@ setInterval(()=>{
   }catch(_){}
 },15000);
 
-akLogV180('boot','تشغيل AK Delivery 196 Safe Sync');
+akLogV180('boot','تشغيل AK Delivery 199 Safe Sync');
 try{updateCloudReadWriteStatusV180();}catch(_){}
 setTimeout(()=>{
   try{
