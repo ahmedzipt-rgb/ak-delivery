@@ -718,7 +718,7 @@ html[data-lang="fr"] #overlay > .drawer .actions{justify-content:flex-start!impo
 
 <div style="display:flex;gap:8px;flex-wrap:wrap">
 <button class="btn gr" onclick="cloudTest()">اختبار الاتصال</button>
-<button class="btn g" onclick="ownerCloudPull()">⬇️ جلب البيانات</button>
+<button id="ownerCloudPullBtn" class="btn g" onclick="ownerCloudPull()">⬇️ جلب البيانات</button>
 <button class="btn" onclick="cloudPush()">⬆️ رفع البيانات</button>
 </div>
 <div style="margin-top:10px;padding:9px 11px;border-radius:8px;background:#ecfdf5;color:#166534;font-weight:800">⚡ المزامنة التلقائية v208 مفعّلة: أي تغيير يُرفع تلقائياً، وأي جيل سحابي جديد يُجلب تلقائياً إلى شاشة المالك والموزع.</div>
@@ -7598,6 +7598,46 @@ setTimeout(()=>{
 
 setTimeout(()=>{try{renderImportWorkerSelectorsV206()}catch(_){}},300);
 setTimeout(()=>{try{akV4InitialBootstrapV211(true).then(()=>{ak208FirstBootCleanup();ak208FastGenerationCheck(true)})}catch(_){}},420);
+
+/* v210 hotfix: avoid frozen native confirm dialogs on Android Chrome.
+   First tap arms the action; second tap saves a local snapshot and adopts cloud. */
+let akOwnerPullConfirmUntil=0;
+window.ownerCloudPull=async function(){
+  const btn=document.getElementById('ownerCloudPullBtn');
+  const normalText='⬇️ جلب البيانات';
+  if(!session||session.role!=='owner'){
+    showToast('هذا الزر مخصص لجهاز المالك');
+    return false;
+  }
+  if(!navigator.onLine){showToast('لا يوجد اتصال بالإنترنت');return false;}
+
+  const now=Date.now();
+  if(now>akOwnerPullConfirmUntil){
+    akOwnerPullConfirmUntil=now+15000;
+    if(btn)btn.textContent='⚠️ اضغط مرة ثانية للتأكيد';
+    showToast('اضغط الزر مرة ثانية خلال 15 ثانية لجلب السحابة',5000);
+    setTimeout(()=>{
+      if(Date.now()>akOwnerPullConfirmUntil&&btn){btn.textContent=normalText;}
+    },15500);
+    return false;
+  }
+
+  akOwnerPullConfirmUntil=0;
+  if(btn){btn.disabled=true;btn.textContent='⏳ جاري جلب السحابة...';}
+  try{
+    createLocalSnapshot();
+    const ok=await ak208OwnerAdoptCloud(false,{force:true});
+    if(!ok)throw new Error('لم يتم جلب السحابة');
+    updateCloudStatus('تم اعتماد نسخة السحابة على جهاز المالك ✓');
+    showToast('✅ تم جلب البيانات من السحابة',4200);
+    return true;
+  }catch(e){
+    showToast('❌ '+String(e&&e.message||e),6000);
+    return false;
+  }finally{
+    if(btn){btn.disabled=false;btn.textContent=normalText;}
+  }
+};
 
 // AK Delivery build v211 — CloudV4 safe first bootstrap + stale legacy conflict cleanup + incremental event polling; v205 safety guards retained
 </script>
