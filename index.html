@@ -677,7 +677,7 @@ html[data-lang="fr"] #overlay > .drawer .actions{justify-content:flex-start!impo
 
 <section id="systemHealth" class="page">
   <div class="card">
-    <h2>🩺 صحة النظام — AK Delivery 211</h2>
+    <h2>🩺 صحة النظام — AK Delivery 212</h2>
     <div id="healthSummaryV180">جارٍ الفحص...</div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">
       <button class="btn g" onclick="renderSystemHealthV180()">🔄 تحديث الفحص</button>
@@ -705,7 +705,7 @@ html[data-lang="fr"] #overlay > .drawer .actions{justify-content:flex-start!impo
 </section>
 
 <section id="ak189Recovery" class="page"><div class="card">
-<h2>🛡️ مراجعة تعارضات طلبات AK Delivery 211</h2>
+<h2>🛡️ مراجعة تعارضات طلبات AK Delivery 212</h2>
 <p>تُعرض هنا الطلبات التي تختلف بياناتها بين هذا الجهاز والسحابة. لا تُحذف أي نسخة تلقائيًا.</p>
 <div id="ak189ConflictStatus"></div>
 <button type="button" class="btn g" onclick="ak189RefreshReport()">تحديث المراجعة</button>
@@ -2752,25 +2752,10 @@ function ak189DownloadRecovery(){
  a.download='AK189_Recovery_'+new Date().toISOString().slice(0,10)+'.json';document.body.appendChild(a);a.click();a.remove();
  setTimeout(()=>URL.revokeObjectURL(a.href),3000);
 }
-/* v212 hotfix: a worker may clear only a cloud conflict whose business data
-   is identical on both sides. Technical status-event ids are intentionally
-   ignored; every customer, assignment, amount and workflow field is checked. */
-function ak212WorkerCloudConflictSafe(x){
- if(!x||!x.local||!x.cloud)return false;
- const keys=['id','clientNo','seq','status','recipient','phone','address','city','amount','worker','deletedAt',
-  'deliveryReceivedAt','returnRequestedAt','returnCompletedAt','returnOwnerConfirmedAt','postponeDate'];
- const pick=o=>keys.map(k=>[k,o[k]===undefined?null:o[k]]);
- return JSON.stringify(pick(x.local))===JSON.stringify(pick(x.cloud));
-}
 async function ak189Choose(i,chosen){
+ if(!session||session.role!=='owner'){alert('حل التعارضات متاح للمالك فقط. صدّر التقرير وأرسله إليه بشكل خاص.');return;}
  const all=ak189Conflicts();const x=all[i];if(!x)return;
- const isOwner=!!(session&&session.role==='owner');
- const workerSafe=!!(session&&session.role==='worker'&&chosen==='cloud'&&ak212WorkerCloudConflictSafe(x));
- if(!isOwner&&!workerSafe){
-  showToast('⛔ يوجد اختلاف حقيقي في بيانات الطلب؛ يجب أن يراجعه المالك',6000);
-  return;
- }
- if(isOwner&&!confirm('راجع بيانات الطلب قبل التأكيد. هل تريد اعتماد '+(chosen==='cloud'?'بيانات السحابة':'بيانات هذا الجهاز')+'؟'))return;
+ if(!confirm('راجع بيانات الطلب قبل التأكيد. هل تريد اعتماد '+(chosen==='cloud'?'بيانات السحابة':'بيانات هذا الجهاز')+'؟'))return;
  const picked=chosen==='cloud'?x.cloud:x.local;
  if(!picked){alert('هذه النسخة غير متوفرة. نزّل التقرير لمراجعتها.');return;}
  let finalOrder=JSON.parse(JSON.stringify(picked));
@@ -2792,7 +2777,6 @@ async function ak189Choose(i,chosen){
  if(!ak189Conflicts().length)localStorage.removeItem(AK189_HOLD);
  localStorage.removeItem(CLOUD_LAST_ERROR_KEY);
  ak189RefreshReport();menu();render();
- if(workerSafe)showToast('✅ تم اعتماد نسخة السحابة المطابقة بأمان',3500);
  if(chosen==='cloud')setTimeout(()=>cloudPull(true,true),250);
 }
 
@@ -7597,7 +7581,7 @@ try{ak204AdoptWorkerCloud=async function(silent=true){return cloudSyncBusy?akV4P
 try{ak208FastGenerationCheck=async function(force=false){return akV4PollChanges(force)}}catch(_){}
 setTimeout(()=>{try{akV4InitialBootstrapV211(true).then(()=>akV4PollChanges(true))}catch(_){}},80);
 
-akLogV180('boot','تشغيل AK Delivery 211 V4 Safe Bootstrap');
+akLogV180('boot','تشغيل AK Delivery 212 V4 Safe Bootstrap');
 try{updateCloudReadWriteStatusV180();}catch(_){}
 setTimeout(()=>{
   try{
@@ -7655,6 +7639,191 @@ window.ownerCloudPull=async function(){
   }
 };
 
-// AK Delivery build v211 — CloudV4 safe first bootstrap + stale legacy conflict cleanup + incremental event polling; v205 safety guards retained
+
+/* v212: حل التعارضات داخلياً بدون تدخل المالك أو الموزع.
+   CloudV4 يبقى المرجع المؤكد، مع الحفاظ على تغيير حالة الموزع المعلّق وإعادة إرساله
+   فوق آخر نسخة سحابية. التعارضات القديمة تُحفظ كسجل تشخيصي فقط ولا تعزل الطلب. */
+const AK212_AUDIT_KEY='ak_delivery_auto_conflict_audit_v212';
+function ak212Audit(local,remote,merged,mode='cloud-wins'){
+  try{
+    const a=JSON.parse(localStorage.getItem(AK212_AUDIT_KEY)||'[]');
+    a.push({
+      at:isoNow(),
+      id:String((local||remote||merged)?.id||''),
+      clientNo:String((local||remote||merged)?.clientNo||''),
+      mode:String(mode||''),
+      local:typeof ak189Relevant==='function'?ak189Relevant(local):null,
+      remote:typeof ak189Relevant==='function'?ak189Relevant(remote):null,
+      merged:typeof ak189Relevant==='function'?ak189Relevant(merged):null
+    });
+    localStorage.setItem(AK212_AUDIT_KEY,JSON.stringify(a.slice(-60)));
+  }catch(_){}
+}
+function ak212PendingStatusEvent(id){
+  try{return readStatusOutbox().find(ev=>String(ev?.orderId)===String(id))||null}catch(_){return null}
+}
+function ak212CloudFinalBlocksLocal(remote,targetStatus){
+  if(!remote)return false;
+  try{
+    if(remote.status==='مرتجع'&&remote.returnOwnerConfirmedAt)return true;
+    if(remote.status==='مرتجع'&&remote.returnCompletedAt&&targetStatus==='طلب رجوع')return true;
+    if(remote.deliveryReceivedAt&&targetStatus==='في الطريق')return true;
+    if(remote.status==='تم التسليم'&&targetStatus!=='تم التسليم'){
+      const locked=(db.settlements||[]).some(st=>st&&!st.deletedAt&&!st.duplicateHidden&&
+        (st.confirmedAt||st.confirmedByWorker||st.status==='confirmed')&&
+        (st.orderIds||[]).map(String).includes(String(remote.id)));
+      if(locked)return true;
+    }
+  }catch(_){}
+  return false;
+}
+function ak212CopyStatusFields(dst,src){
+  if(!dst||!src)return dst;
+  const fields=['status','statusEnteredAt','statusChangedAtV173','statusEventIdV173','history','remarks',
+    'rejectReason','postponeDate','returnRequestedAt','returnCompletedAt','deliveryReceivedAt','deliveryReceivedLabel',
+    'deliveryReceivedByWorkerId','deliveryReceivedByWorkerName','cancelReason','cancelledAt','recipient','phone','address',
+    'city','amount','customerTransfers','modifiedAt','modifiedBy','lastChangeKind'];
+  for(const k of fields){if(src[k]!==undefined)dst[k]=akV4Clone(src[k]);}
+  for(const k of ['returnOwnerConfirmedAt','returnOwnerConfirmedLabel','returnBatchId','returnBatchCode']){
+    if(src[k]!==undefined)dst[k]=akV4Clone(src[k]);
+  }
+  return dst;
+}
+function ak212ResolveOrderConflict(local,remote){
+  if(!local)return {order:akV4Clone(remote),needsPush:false,mode:'cloud-only'};
+  if(!remote)return {order:null,needsPush:false,mode:'cloud-delete'};
+
+  // السحابة هي الأساس لأنها تحمل revision مؤكداً من الخادم.
+  const merged=akV4Clone(remote);
+  const ev=ak212PendingStatusEvent(local.id);
+  const pendingStatus=!!ev||!!local.pendingStatusSync;
+  const targetStatus=String(ev?.status||local.pendingStatusTarget||local.status||'');
+
+  // إذا كان لدى الموزع تغيير حالة لم يصل بعد، نركبه فوق أحدث بيانات السحابة ثم نعيد إرساله.
+  if(pendingStatus && !ak212CloudFinalBlocksLocal(remote,targetStatus)){
+    ak212CopyStatusFields(merged,local);
+    merged.pendingStatusSync=true;
+    merged.pendingStatusTarget=targetStatus||merged.status;
+    ak212Audit(local,remote,merged,'preserve-pending-status');
+    return {order:merged,needsPush:true,mode:'preserve-pending-status'};
+  }
+
+  // سجل استلام الموزع دليل مستقل أقوى من نسخة طلب قديمة؛ لا نضيعه عند تعارض الطلب نفسه.
+  try{
+    const received=(db.deliveryTransfers||[]).find(t=>t&&!t.deletedAt&&t.status==='received'&&String(t.orderId)===String(local.id));
+    if(received && !remote.deliveryReceivedAt && String(remote.status||'')==='في الطريق'){
+      merged.status='قيد التوزيع';
+      merged.statusEnteredAt=received.receivedAt||merged.statusEnteredAt||isoNow();
+      merged.deliveryReceivedAt=received.receivedAt||local.deliveryReceivedAt||isoNow();
+      merged.deliveryReceivedLabel=received.receivedLabel||local.deliveryReceivedLabel||'';
+      merged.deliveryReceivedByWorkerId=String(received.workerId||local.deliveryReceivedByWorkerId||local.worker||'');
+      merged.deliveryReceivedByWorkerName=received.workerName||local.deliveryReceivedByWorkerName||'';
+      merged.modifiedAt=isoNow();
+      merged.modifiedBy='النظام v212';
+      merged.lastChangeKind='استرجاع حالة الاستلام تلقائياً v212';
+      ak212Audit(local,remote,merged,'recover-received-transfer');
+      return {order:merged,needsPush:true,mode:'recover-received-transfer'};
+    }
+  }catch(_){}
+
+  // عند تعارض حقيقي على نفس الحقول بدون عملية حالة معلّقة: نعتمد revision السحابي.
+  // هذا يمنع تكرار التعارض أو توقف المزامنة، مع الاحتفاظ بنسخة تشخيصية داخلية.
+  if(local.pendingStatusSync){delete local.pendingStatusSync;delete local.pendingStatusTarget;}
+  try{removeStatusEventV173(local.id)}catch(_){}
+  ak212Audit(local,remote,merged,'cloud-revision-wins');
+  return {order:merged,needsPush:false,mode:'cloud-revision-wins'};
+}
+
+akV4ApplyRemoteChanges=function(events){
+  const base=akV4ReadBase();let changed=false,autoResolved=0,lastRev=base.rev,needsPush=false;
+  const pushIds=new Set();
+  for(const ev of (events||[])){
+    lastRev=Math.max(lastRev,Number(ev.rev)||0);
+    for(const ch of (ev.changes||[])){
+      const key=akV4Key(ch.type,ch.id), dirty=akV4KeyDirtyAgainstBase(key,base);
+      if(dirty&&ch.type==='orders'){
+        const local=akV4LocalItem(ch.type,ch.id), remote=ch.deleted?null:ch.entity;
+        const resolved=ak212ResolveOrderConflict(local,remote);
+        akV4ReplaceLocal(ch.type,ch.id,resolved.order,!resolved.order);
+        akV4ApplyBaselineChange(base,ch);
+        if(resolved.needsPush){needsPush=true;pushIds.add(String(ch.id));}
+        autoResolved++;changed=true;continue;
+      }
+      akV4ReplaceLocal(ch.type,ch.id,ch.entity,!!ch.deleted);
+      akV4ApplyBaselineChange(base,ch);changed=true;
+    }
+  }
+  base.rev=lastRev;akV4WriteBase(base);
+  if(changed){
+    try{dedupeDatabase()}catch(_){}
+    try{ak200RepairWorkerAssignments(db);ak201RepairReceivedStatus(db)}catch(_){}
+    localStorage.setItem(K,JSON.stringify(db));
+    try{menu();render();renderWorkers();accountsRender();refreshLoginWorkers();refreshActiveCloudPage();}catch(_){}
+  }
+  // لا توجد بعد v212 قائمة تعارضات يدوية أو طلبات معزولة.
+  try{localStorage.removeItem(AK189_CONFLICT);localStorage.removeItem(AK189_HOLD)}catch(_){}
+  if(needsPush){
+    try{
+      ak208MarkDirty('auto-conflict-v212',Array.from(pushIds).join(','));
+      localStorage.setItem(CLOUD_PENDING_KEY,'1');
+      if(navigator.onLine&&!cloudSyncBusy&&!cloudPullBusy)queueCloudSync(180);
+    }catch(_){}
+  }
+  if(changed||autoResolved){
+    try{localStorage.setItem(CLOUD_LAST_OK_KEY,isoNow());localStorage.setItem('ak_delivery_last_cloud_pull',isoNow());localStorage.setItem('ak_delivery_cloud_last_read_v180',isoNow());updateCloudReadWriteStatusV180();updateSyncIndicators();}catch(_){}
+  }
+  return {changed,conflicts:0,autoResolved,lastRev};
+};
+
+// إعادة المحاولة التلقائية عند تعارض revision بدلاً من عرض مراجعة يدوية.
+async function ak212OwnerPush(silent=true,attempts=0){
+  if(!session||session.role==='worker'||!navigator.onLine)return false;
+  try{
+    const r=await akV4SaveAll({db:stripTransientSyncFlagsV175(db),updatedAt:isoNow(),updatedBy:'owner-v212'});
+    if(!r||!r.verified)return false;
+    try{ak208ClearDirty('owner-v212');if(!ak208StatusPending()){ak198ClearEvents();localStorage.removeItem(CLOUD_PENDING_KEY);}localStorage.removeItem(CLOUD_LAST_ERROR_KEY);}catch(_){}
+    updateSyncIndicators();return true;
+  }catch(e){
+    if(e&&e.code==='cloud_conflict'&&attempts<3){await akV4PollChanges(true);return ak212OwnerPush(silent,attempts+1);}
+    try{localStorage.setItem(CLOUD_PENDING_KEY,'1');localStorage.setItem(CLOUD_LAST_ERROR_KEY,e.message||String(e));updateSyncIndicators()}catch(_){}
+    return false;
+  }
+}
+async function ak212WorkerPush(silent=true,attempts=0){
+  if(!session||session.role!=='worker'||!navigator.onLine)return false;
+  try{
+    const r=await akV4SaveAll({db:stripTransientSyncFlagsV175(db),updatedAt:isoNow(),updatedBy:'worker-v212:'+String(session.workerId||'')});
+    if(!r||!r.verified)return false;
+    try{ak208ClearDirty('worker-v212');if(!ak208StatusPending()){ak198ClearEvents();localStorage.removeItem(CLOUD_PENDING_KEY);}localStorage.removeItem(CLOUD_LAST_ERROR_KEY);}catch(_){}
+    updateSyncIndicators();return true;
+  }catch(e){
+    if(e&&e.code==='cloud_conflict'&&attempts<3){await akV4PollChanges(true);return ak212WorkerPush(silent,attempts+1);}
+    try{localStorage.setItem(CLOUD_PENDING_KEY,'1');localStorage.setItem(CLOUD_LAST_ERROR_KEY,e.message||String(e));updateSyncIndicators()}catch(_){}
+    return false;
+  }
+}
+cloudPush=ak212OwnerPush;
+workerCloudPush=ak212WorkerPush;
+
+// تعطيل المراجعة اليدوية: تُنظف السجلات القديمة وتبقى تفاصيلها في سجل داخلي فقط.
+ak189Record=function(local,cloud,reason){
+  ak212Audit(local,cloud,cloud||local,'legacy-auto-cleared:'+String(reason||''));
+  try{localStorage.removeItem(AK189_CONFLICT);localStorage.removeItem(AK189_HOLD)}catch(_){}
+};
+ak189RefreshReport=function(){
+  try{localStorage.removeItem(AK189_CONFLICT);localStorage.removeItem(AK189_HOLD)}catch(_){}
+  const count=document.getElementById('ak189Count');if(count)count.textContent='0';
+  const label=document.getElementById('ak189ConflictStatus');if(label)label.innerHTML='<b style="color:#166534">✅ يعالج النظام التعارضات تلقائياً في الخلفية — لا يلزم أي تدخل.</b>';
+  const box=document.getElementById('ak189ConflictRows');if(box)box.innerHTML='';
+};
+try{
+  localStorage.removeItem(AK189_CONFLICT);localStorage.removeItem(AK189_HOLD);
+  const oldBtn=document.querySelector('button[data-menu-key="ak189Recovery"]');
+  if(oldBtn)oldBtn.style.display='none';
+  ak189RefreshReport();
+}catch(_){}
+
+
+// AK Delivery build v212 — CloudV4 internal automatic conflict resolution + retry; v205 safety guards retained
 </script>
 </body></html>
