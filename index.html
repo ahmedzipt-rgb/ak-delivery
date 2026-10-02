@@ -2752,10 +2752,25 @@ function ak189DownloadRecovery(){
  a.download='AK189_Recovery_'+new Date().toISOString().slice(0,10)+'.json';document.body.appendChild(a);a.click();a.remove();
  setTimeout(()=>URL.revokeObjectURL(a.href),3000);
 }
+/* v212 hotfix: a worker may clear only a cloud conflict whose business data
+   is identical on both sides. Technical status-event ids are intentionally
+   ignored; every customer, assignment, amount and workflow field is checked. */
+function ak212WorkerCloudConflictSafe(x){
+ if(!x||!x.local||!x.cloud)return false;
+ const keys=['id','clientNo','seq','status','recipient','phone','address','city','amount','worker','deletedAt',
+  'deliveryReceivedAt','returnRequestedAt','returnCompletedAt','returnOwnerConfirmedAt','postponeDate'];
+ const pick=o=>keys.map(k=>[k,o[k]===undefined?null:o[k]]);
+ return JSON.stringify(pick(x.local))===JSON.stringify(pick(x.cloud));
+}
 async function ak189Choose(i,chosen){
- if(!session||session.role!=='owner'){alert('حل التعارضات متاح للمالك فقط. صدّر التقرير وأرسله إليه بشكل خاص.');return;}
  const all=ak189Conflicts();const x=all[i];if(!x)return;
- if(!confirm('راجع بيانات الطلب قبل التأكيد. هل تريد اعتماد '+(chosen==='cloud'?'بيانات السحابة':'بيانات هذا الجهاز')+'؟'))return;
+ const isOwner=!!(session&&session.role==='owner');
+ const workerSafe=!!(session&&session.role==='worker'&&chosen==='cloud'&&ak212WorkerCloudConflictSafe(x));
+ if(!isOwner&&!workerSafe){
+  showToast('⛔ يوجد اختلاف حقيقي في بيانات الطلب؛ يجب أن يراجعه المالك',6000);
+  return;
+ }
+ if(isOwner&&!confirm('راجع بيانات الطلب قبل التأكيد. هل تريد اعتماد '+(chosen==='cloud'?'بيانات السحابة':'بيانات هذا الجهاز')+'؟'))return;
  const picked=chosen==='cloud'?x.cloud:x.local;
  if(!picked){alert('هذه النسخة غير متوفرة. نزّل التقرير لمراجعتها.');return;}
  let finalOrder=JSON.parse(JSON.stringify(picked));
@@ -2777,6 +2792,7 @@ async function ak189Choose(i,chosen){
  if(!ak189Conflicts().length)localStorage.removeItem(AK189_HOLD);
  localStorage.removeItem(CLOUD_LAST_ERROR_KEY);
  ak189RefreshReport();menu();render();
+ if(workerSafe)showToast('✅ تم اعتماد نسخة السحابة المطابقة بأمان',3500);
  if(chosen==='cloud')setTimeout(()=>cloudPull(true,true),250);
 }
 
