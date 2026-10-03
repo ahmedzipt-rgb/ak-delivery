@@ -558,23 +558,12 @@ html[data-lang="fr"] #overlay > .drawer .actions{justify-content:flex-start!impo
 </style></head>
 <body>
 <div id="loginScreen" class="login-screen">
- <div class="login-card"><h2>تسجيل الدخول</h2>
- <select id="loginWorker"><option value="">اختر حسابك</option></select>
-<input id="loginPin" type="password" inputmode="numeric" placeholder="الرمز السري">
-<div id="loginStatus" style="margin-top:8px;font-weight:700;min-height:22px"></div>
-<div style="margin-top:6px;font-size:12px;opacity:.7">الإصدار 210</div>
-<button id="workerLoginBtn" type="button" onclick="workerLogin(event)" class="btn" style="width:100%">دخول الموزع</button>
-<hr>
-<h3>إنشاء حساب موزع</h3>
-<input id="regName" placeholder="اختر اسمك">
-<input id="regPin" type="password" inputmode="numeric" placeholder="اختر رقمك السري">
-<input id="regPinConfirm" type="password" inputmode="numeric" placeholder="تأكيد الرقم السري">
-<button class="btn g" style="width:100%" onclick="workerRegister()">إنشاء حساب الموزع</button>
- <hr>
-<div style="font-weight:800;font-size:20px;margin:12px 0 10px">دخول المالك</div>
-<input id="ownerLoginPin" type="password" inputmode="numeric" autocomplete="off" placeholder="أدخل رمز المالك 0534" style="width:100%;box-sizing:border-box;margin-bottom:10px">
-<button id="ownerLoginBtn" type="button" onclick="ownerLogin(event)" class="btn gr" style="width:100%">دخول المالك</button>
- 
+ <div class="login-card" id="workerLoginCardV213">
+  <h2 id="loginTitleV213" onclick="guestOwnerTapV213()">تسجيل الدخول</h2>
+  <select id="loginWorker"><option value="">اختر الموزع أو العامل</option></select>
+  <input id="loginPin" type="password" inputmode="numeric" autocomplete="current-password" placeholder="الرمز السري">
+  <div id="loginStatus" style="margin-top:8px;font-weight:700;min-height:22px"></div>
+  <button id="workerLoginBtn" type="button" onclick="workerLogin(event)" class="btn" style="width:100%">دخول</button>
  </div>
 </div>
 <header id="appHeader" onclick="ownerTap()">مسيّر التوصيل <button class="logout" onclick="event.stopPropagation();logout()">خروج</button> <span style="display:inline-flex;gap:4px;margin-right:8px">
@@ -677,7 +666,7 @@ html[data-lang="fr"] #overlay > .drawer .actions{justify-content:flex-start!impo
 
 <section id="systemHealth" class="page">
   <div class="card">
-    <h2>🩺 صحة النظام — AK Delivery 212</h2>
+    <h2>🩺 صحة النظام — AK Delivery 213</h2>
     <div id="healthSummaryV180">جارٍ الفحص...</div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">
       <button class="btn g" onclick="renderSystemHealthV180()">🔄 تحديث الفحص</button>
@@ -705,7 +694,7 @@ html[data-lang="fr"] #overlay > .drawer .actions{justify-content:flex-start!impo
 </section>
 
 <section id="ak189Recovery" class="page"><div class="card">
-<h2>🛡️ مراجعة تعارضات طلبات AK Delivery 212</h2>
+<h2>🛡️ مراجعة تعارضات طلبات AK Delivery 213</h2>
 <p>تُعرض هنا الطلبات التي تختلف بياناتها بين هذا الجهاز والسحابة. لا تُحذف أي نسخة تلقائيًا.</p>
 <div id="ak189ConflictStatus"></div>
 <button type="button" class="btn g" onclick="ak189RefreshReport()">تحديث المراجعة</button>
@@ -1189,7 +1178,7 @@ function setLoginStatus(msg,isError){
 function refreshLoginWorkers(){
  const el=document.getElementById('loginWorker');
  if(!el)return;
- el.innerHTML='<option value="">اختر الموزع</option>'+db.workers.filter(w=>!w.deletedAt).map(w=>`<option value="${w.id}">${w.name}</option>`).join('');
+ el.innerHTML='<option value="">اختر الموزع أو العامل</option>'+db.workers.filter(w=>!w.deletedAt).map(w=>`<option value="${w.id}">${w.name}</option>`).join('');
 }
 async function workerLogin(ev){
  try{
@@ -1199,7 +1188,7 @@ async function workerLogin(ev){
    const loginEl=document.getElementById('loginScreen');
    const id=String(workerSel&&workerSel.value||'').trim();
    const pin=String(pinEl&&pinEl.value||'').trim();
-   if(!id){ setLoginStatus('اختر حساب الموزع',true); return; }
+   if(!id){ setLoginStatus('اختر حساب الموزع أو العامل',true); return; }
    if(!pin){ setLoginStatus('أدخل الرقم السري',true); return; }
 
    let w=(db.workers||[]).find(x=>String(x.id)===id && !x.deletedAt);
@@ -1293,7 +1282,7 @@ function applyPermissions(){
  if(isWorker){
    buttons.forEach(b=>{
      const key=String(b.dataset.menuKey||'');
-     if(['deletedOrders','add','bulk','pdfImport','workers','accounts','invoices','backupSafe','cloudSetup','emergencySync'].includes(key))b.style.display='none';
+     if(['deletedOrders','add','bulk','pdfImport','workers','accounts','invoices','systemHealth','ak189Recovery','backupSafe','cloudSetup','emergencySync'].includes(key))b.style.display='none';
    });
  }
  const ownerMini=document.getElementById('ownerCloudMini');
@@ -1786,7 +1775,7 @@ async function akV4InitialBootstrapV211(silent=true){
 
 async function akV4PollChanges(force=false){
   if(!AKV4_ACTIVE||!navigator.onLine||document.visibilityState==='hidden'||!session?.role||akV4PollBusy)return false;
-  const now=Date.now();if(!force&&now-akV4LastPoll<1100)return false;akV4LastPoll=now;akV4PollBusy=true;
+  const now=Date.now();if(!force&&now-akV4LastPoll<700)return false;akV4LastPoll=now;akV4PollBusy=true;
   try{
     const base=akV4ReadBase();
     if(!base.rev && !Object.keys(base.entries||{}).length){
@@ -1990,7 +1979,7 @@ async function ak208FastGenerationCheck(force=false){
   ak208FirstBootCleanup();
   const now=Date.now();
   const active=(now-ak198LastActivity)<120000;
-  const minGap=active?2200:6000;
+  const minGap=active?1500:4500;
   if(!force && now-ak208LastMetaCheck<minGap)return false;
   ak208LastMetaCheck=now;
   ak208MetaBusy=true;
@@ -3636,7 +3625,7 @@ async function syncNow(silent=true){
   if(!navigator.onLine)return false;
   clearTimeout(cloudSyncTimer);cloudSyncTimer=null;
   if(cloudSyncBusy||cloudPullBusy||ak204AdoptBusy){
-    queueCloudSync(500);
+    queueCloudSync(120);
     return false;
   }
   cloudSyncBusy=true;
@@ -3678,8 +3667,8 @@ async function syncNow(silent=true){
   }finally{
     cloudSyncBusy=false;
     if(localStorage.getItem(CLOUD_PENDING_KEY)==='1' && navigator.onLine){
-      const backoff=Math.min(45000,3500*Math.pow(2,Math.max(0,cloudSyncFailures-1)));
-      queueCloudSync(cloudEditGeneration===startedGeneration?backoff:600);
+      const backoff=Math.min(30000,2000*Math.pow(2,Math.max(0,cloudSyncFailures-1)));
+      queueCloudSync(cloudEditGeneration===startedGeneration?backoff:180);
     }
   }
 }
@@ -3708,9 +3697,9 @@ function ak198RecordEvent(kind='change',entityId=''){
 function ak198ClearEvents(){
   try{localStorage.removeItem(AK198_EVENT_KEY)}catch(_){}
 }
-function queueCloudSync(delay=90){
+function queueCloudSync(delay=45){
   clearTimeout(cloudSyncTimer);
-  cloudSyncTimer=setTimeout(()=>{cloudSyncTimer=null;syncNow(true);},Math.max(40,delay));
+  cloudSyncTimer=setTimeout(()=>{cloudSyncTimer=null;syncNow(true);},Math.max(25,delay));
 }
 function scheduleCloudSync(kind='change',entityId=''){
   cloudEditGeneration++;
@@ -3718,7 +3707,7 @@ function scheduleCloudSync(kind='change',entityId=''){
   ak208MarkDirty(kind,entityId);
   localStorage.setItem(CLOUD_PENDING_KEY,'1');
   updateSyncIndicators();
-  if(navigator.onLine)queueCloudSync(90);
+  if(navigator.onLine)queueCloudSync(45);
 }
 
 /* إذا كان التطبيق مفتوحاً في أكثر من تبويب على نفس الجهاز، لا ننتظر الجلب الدوري. */
@@ -3743,18 +3732,18 @@ window.addEventListener('online',()=>{
   if(!session?.role)return;
   showToast('عاد الاتصال بالإنترنت — جارٍ استئناف المزامنة');
   if(localStorage.getItem(CLOUD_PENDING_KEY)==='1'){
-    queueCloudSync(150);
+    queueCloudSync(55);
   }else if(!cloudPullBusy&&!cloudSyncBusy&&!ak204AdoptBusy){
     setTimeout(()=>session.role==='worker'?ak208WorkerAdoptCloud(true):ak208OwnerAdoptCloud(true),60);
   }
-  if(session.role==='worker')setTimeout(retryStatusOutboxV173,500);
+  if(session.role==='worker')setTimeout(retryStatusOutboxV173,160);
 });
 window.addEventListener('offline',()=>{updateSyncIndicators();showToast('لا يوجد إنترنت — سيتم حفظ التغييرات وإرسالها عند عودة الاتصال');});
 // v199: الجلب الدوري شبكة أمان فقط؛ لا يزاحم المزامنة الحدثية.
 setInterval(()=>{
   if(!navigator.onLine||document.visibilityState==='hidden'||cloudSyncBusy||cloudPullBusy||ak204AdoptBusy||!session?.role)return;
   if(localStorage.getItem(CLOUD_PENDING_KEY)==='1'){
-    if(!cloudSyncTimer)queueCloudSync(180);
+    if(!cloudSyncTimer)queueCloudSync(70);
     return;
   }
   if(AKV4_ACTIVE){akV4PollChanges(false);return;}
@@ -3766,20 +3755,20 @@ setInterval(()=>{
     else if(session.role==='worker')ak208WorkerAdoptCloud(true);
     else ak208OwnerAdoptCloud(true);
   }
-},5000);
-// v208: مسار تلقائي بين الأجهزة. Ping خفيف كل ~2.2 ثانية أثناء العمل، وتنزيل كامل فقط عند تغير الجيل.
-setInterval(()=>{ak208FastGenerationCheck(false)},700);
+},1200);
+// v213: مسار سريع بين الأجهزة؛ فحص تغييرات CloudV4 كل نحو 1.2 ثانية أثناء فتح التطبيق.
+setInterval(()=>{ak208FastGenerationCheck(false)},450);
 /* v199: استئناف موحد للصفحة بدلاً من عدة عمليات جلب متنافسة. */
 let ak199LastResume=0;
 function ak199ResumeSync(){
   if(!navigator.onLine||!session?.role||document.visibilityState==='hidden')return;
   const now=Date.now();
-  if(now-ak199LastResume<700)return;
+  if(now-ak199LastResume<350)return;
   ak199LastResume=now;
   ak198LastActivity=now;
   if(cloudSyncBusy||cloudPullBusy||ak204AdoptBusy)return;
-  if(localStorage.getItem(CLOUD_PENDING_KEY)==='1')queueCloudSync(70);
-  else if(now-cloudLastPullStarted>=1200){
+  if(localStorage.getItem(CLOUD_PENDING_KEY)==='1')queueCloudSync(30);
+  else if(now-cloudLastPullStarted>=700){
     if(session.role==='worker')ak208WorkerAdoptCloud(true);
     else ak208OwnerAdoptCloud(true);
   }
@@ -3818,7 +3807,7 @@ async function ak199SyncWatchdog(){
     }
   }catch(_){}
 }
-setInterval(ak199SyncWatchdog,12000);
+setInterval(ak199SyncWatchdog,7000);
 applyStatusOutboxV173();
 
 function save(){
@@ -6849,7 +6838,7 @@ function directNavigate(key){
       if(key==='home')filter='الكل';
     }
     if(!target)return false;
-    if(session.role==='worker'&&['deletedOrders','add','bulk','pdfImport','returnCreate','workers','accounts','invoices','backupSafe','systemHealth','cloudSetup','emergencySync'].includes(target))return false;
+    if(session.role==='worker'&&['deletedOrders','add','bulk','pdfImport','returnCreate','workers','accounts','invoices','backupSafe','systemHealth','ak189Recovery','cloudSetup','emergencySync'].includes(target))return false;
 
     sidebarActiveKey=key==='returnCreate'?'returnBatches':key;
     document.querySelectorAll('main > .page').forEach(p=>p.classList.remove('on'));
@@ -7824,6 +7813,50 @@ try{
 }catch(_){}
 
 
-// AK Delivery build v212 — CloudV4 internal automatic conflict resolution + retry; v205 safety guards retained
+
+
+/* v213: تنظيف واجهة دخول الموزع/العامل وتسريع المزامنة بدون أي ترحيل أو تعديل لبيانات الطلبات. */
+let ak213GuestOwnerTapCount=0,ak213GuestOwnerTapTimer=null;
+function guestOwnerTapV213(){
+  ak213GuestOwnerTapCount++;
+  clearTimeout(ak213GuestOwnerTapTimer);
+  ak213GuestOwnerTapTimer=setTimeout(()=>ak213GuestOwnerTapCount=0,1800);
+  if(ak213GuestOwnerTapCount<5)return;
+  ak213GuestOwnerTapCount=0;
+  const pin=prompt('رمز المالك:');
+  if(pin===null)return;
+  const saved=localStorage.getItem('owner_pin_v13')||'0534';
+  if(String(pin)!==String(saved)){setLoginStatus('رمز المالك غير صحيح',true);return;}
+  session={role:'owner',workerId:null};ownerMode=true;saveSession();
+  const loginEl=document.getElementById('loginScreen');
+  if(loginEl){loginEl.style.display='none';loginEl.style.pointerEvents='none';loginEl.style.visibility='hidden';}
+  try{filter='قيد التوزيع';go('list','home');safeUIRefresh();setLoginStatus('',false);}catch(e){console.error(e);}
+  if(navigator.onLine)setTimeout(()=>{try{ak208OwnerAdoptCloud(true)}catch(_){}},80);
+}
+
+/* منع وصول حساب الموزع/العامل إلى الصفحات الإدارية حتى لو تم استدعاؤها برمجياً. */
+const ak213DirectNavigateBase=directNavigate;
+directNavigate=function(key){
+  const k=String(key||'');
+  if(session?.role==='worker'){
+    const blocked=new Set(['deletedOrders','add','bulk','pdfImport','workers','accounts','invoices','systemHealth','ak189Recovery','backupSafe','cloudSetup','emergencySync']);
+    if(blocked.has(k)){try{filter='قيد التوزيع';}catch(_){};return ak213DirectNavigateBase('home');}
+  }
+  return ak213DirectNavigateBase(key);
+};
+
+/* طبقة عرض فقط: لا تمس db ولا localStorage الخاص بالطلبات. */
+try{
+  document.documentElement.dataset.build='213';
+  const healthBtn=document.querySelector('aside button[data-menu-key="systemHealth"]');
+  const conflictBtn=document.querySelector('aside button[data-menu-key="ak189Recovery"]');
+  if(session?.role==='worker'){
+    if(healthBtn)healthBtn.style.display='none';
+    if(conflictBtn)conflictBtn.style.display='none';
+  }
+}catch(_){}
+
+// AK Delivery build v213 — weekend UI cleanup + faster CloudV4 sync; order data schema unchanged
+
 </script>
 </body></html>
