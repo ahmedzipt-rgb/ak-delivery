@@ -9391,4 +9391,361 @@ main{overflow-x:hidden!important}
 // AK Delivery build v221 — legacy cleanup runs after worker login and confirms cloud adoption before completion; order records/schema unchanged
 </script>
 
+
+<script id="ak222Script">
+/* v222 — إصلاح جذري لمسار المزامنة بين الأجهزة والسحابة.
+   1) كتابة حالة الموزع تصبح معاملة كيان واحد (والاستلام مع التحويل في نفس المعاملة).
+   2) لا نقفز برقم revision بعد كتابة محلية؛ نستقبل كل الأحداث الوسيطة أولاً.
+   3) «تم التسليم» حالة نهائية عند الموزع، مطابقاً لقواعد الخادم، فلا تُنشأ طوابير مستحيلة.
+   4) ترحيل/إبطال طوابير الحالات القديمة ثم إعادة اعتماد سحابي كاملة عندما يصبح الجهاز آمناً.
+   لا يغيّر بنية الطلبات أو السجلات. */
+(function(){
+  const V222_KEY='ak_delivery_status_intents_v222';
+  const V219_KEY='ak_delivery_status_intents_v219';
+  const OUTBOX_KEY='ak_delivery_status_outbox_v173';
+  const HEAL_KEY='ak_delivery_v222_full_heal_done';
+  const AUDIT_KEY='ak_delivery_status_archive_v222';
+  let writeBusy=false,queue=Promise.resolve(),retryTimer=null,healBusy=false;
+  const previousCommit=window.commitOrderStatus||commitOrderStatus;
+
+  const clone=v=>v==null?v:JSON.parse(JSON.stringify(v));
+  function readJson(k,f){try{const v=JSON.parse(localStorage.getItem(k)||'null');return v==null?f:v}catch(_){return f}}
+  function writeJson(k,v){try{if(v==null||(Array.isArray(v)&&!v.length)||(!Array.isArray(v)&&typeof v==='object'&&!Object.keys(v).length))localStorage.removeItem(k);else localStorage.setItem(k,JSON.stringify(v))}catch(_){}}
+  function intentsMap(){const x=readJson(V222_KEY,{});return x&&typeof x==='object'?x:{}}
+  function intents(){return Object.values(intentsMap())}
+  function hasIntents(){return intents().length>0}
+  function setIntent(it){const m=intentsMap();m[String(it.orderId)]=it;writeJson(V222_KEY,m);return it}
+  function clearIntent(id,eventId=''){const m=intentsMap(),k=String(id),it=m[k];if(!it)return false;if(eventId&&String(it.eventId||'')!==String(eventId))return false;delete m[k];writeJson(V222_KEY,m);return true}
+  function archive(rows){if(!rows.length)return;const old=readJson(AUDIT_KEY,[]);writeJson(AUDIT_KEY,(Array.isArray(old)?old:[]).concat(rows).slice(-160))}
+  function remoteStamp(o){return timeValue(o?.statusChangedAtV173)||timeValue(o?.statusEnteredAt)||timeValue(o?.modifiedAt)||0}
+  function intentStamp(it){return timeValue(it?.changedAt)||timeValue(it?.snapshot?.statusChangedAtV173)||timeValue(it?.snapshot?.statusEnteredAt)||0}
+
+  const STATUS_FIELDS=['status','statusEnteredAt','statusChangedAtV173','statusEventIdV173','remarks','rejectReason','postponeDate',
+    'returnRequestedAt','returnCompletedAt','deliveryReceivedAt','deliveryReceivedLabel','deliveryReceivedByWorkerId',
+    'deliveryReceivedByWorkerName','cancelReason','cancelledAt','modifiedAt','modifiedBy','lastChangeKind'];
+
+  function makeIntentFromOrder(o,targetStatus,kind='status',transfer=null){
+    const snap={};for(const k of STATUS_FIELDS)if(o&&o[k]!==undefined)snap[k]=clone(o[k]);
+    if(Array.isArray(o?.history))snap.history=clone(o.history);
+    return {orderId:String(o.id),status:String(targetStatus||o.status||''),eventId:String(o.statusEventIdV173||''),changedAt:o.statusChangedAtV173||isoNow(),
+      workerId:String(session?.workerId||''),kind:String(kind||'status'),snapshot:snap,transfer:transfer?clone(transfer):null};
+  }
+  function reapplyIntent(it){
+    const o=(db.orders||[]).find(x=>String(x?.id)===String(it?.orderId));if(!o||!it)return false;
+    const s=it.snapshot||{};for(const k of STATUS_FIELDS)if(Object.prototype.hasOwnProperty.call(s,k))o[k]=clone(s[k]);
+    if(Array.isArray(s.history))o.history=clone(s.history);
+    o.status=it.status;o.statusEventIdV173=it.eventId||o.statusEventIdV173;
+    if(it.transfer){
+      if(!Array.isArray(db.deliveryTransfers))db.deliveryTransfers=[];
+      const i=db.deliveryTransfers.findIndex(t=>String(t?.id)===String(it.transfer.id));
+      if(i<0)db.deliveryTransfers.push(clone(it.transfer));else db.deliveryTransfers[i]=clone(it.transfer);
+    }
+    return true;
+  }
+  function refresh(id=''){
+    try{localStorage.setItem(K,JSON.stringify(db));menu();render();accountsRender();renderWorkers();refreshActiveCloudPage();if(id&&current&&String(current)===String(id))openOrder(id)}catch(_){ }
+    try{updateSyncIndicators()}catch(_){ }
+  }
+  function dirtyRecord(){try{return JSON.parse(localStorage.getItem(AK208_LOCAL_DIRTY_KEY)||'null')}catch(_){return null}}
+  function clearStatusDirty(id=''){
+    try{const d=dirtyRecord();if(d&&/^status(?:-|$)/.test(String(d.kind||''))&&(!id||!d.entityId||String(d.entityId)===String(id)))localStorage.removeItem(AK208_LOCAL_DIRTY_KEY)}catch(_){ }
+  }
+  function otherDirtyExists(){
+    try{const d=dirtyRecord();return !!(d&&!/^status(?:-|$)/.test(String(d.kind||'')))}catch(_){return true}
+  }
+  function markPending(id){
+    try{ak208MarkDirty('status-v222',id)}catch(_){ }
+    try{localStorage.setItem(CLOUD_PENDING_KEY,'1')}catch(_){ }
+    try{updateSyncIndicators()}catch(_){ }
+  }
+  function settlePending(id){
+    clearStatusDirty(id);
+    if(!hasIntents()&&!otherDirtyExists()){
+      try{localStorage.removeItem(CLOUD_PENDING_KEY);localStorage.removeItem(CLOUD_LAST_ERROR_KEY)}catch(_){ }
+    }
+  }
+
+  function migrateOldStatusWork(){
+    if(session?.role!=='worker')return 0;
+    const target=intentsMap(),audit=[];let n=0;
+    const old219=readJson(V219_KEY,{});
+    if(old219&&typeof old219==='object')for(const [id,it] of Object.entries(old219)){
+      if(target[id])continue;
+      const o=(db.orders||[]).find(x=>String(x?.id)===String(id));
+      if(!o)continue;
+      const converted={orderId:String(id),status:String(it?.status||o.status||''),eventId:String(it?.eventId||o.statusEventIdV173||('ST222-'+Date.now()+'-'+Math.random().toString(36).slice(2,8))),
+        changedAt:it?.snapshot?.statusChangedAtV173||it?.createdAt||o.statusChangedAtV173||isoNow(),workerId:String(session.workerId||''),kind:'migrated-v219',
+        snapshot:clone(it?.snapshot||makeIntentFromOrder(o,o.status).snapshot),transfer:clone(it?.transfer||null)};
+      target[id]=converted;audit.push({time:isoNow(),source:'v219-intent',orderId:id,status:converted.status,eventId:converted.eventId});n++;
+    }
+    const outbox=readJson(OUTBOX_KEY,[]);
+    for(const ev of (Array.isArray(outbox)?outbox:[])){
+      const id=String(ev?.orderId||'');if(!id||target[id])continue;
+      const o=(db.orders||[]).find(x=>String(x?.id)===id);if(!o)continue;
+      const status=String(ev?.status||o.pendingStatusTarget||o.status||'');
+      if(!o.statusEventIdV173)o.statusEventIdV173=String(ev?.statusEventIdV173||('ST222-'+Date.now()+'-'+Math.random().toString(36).slice(2,8)));
+      target[id]=makeIntentFromOrder(o,status,'migrated-outbox',null);audit.push({time:isoNow(),source:'old-outbox',orderId:id,status,eventId:target[id].eventId});n++;
+    }
+    for(const o of (db.orders||[])){
+      if(!o||!o.pendingStatusSync||target[String(o.id)])continue;
+      const id=String(o.id||'');if(!id)continue;
+      const status=String(o.pendingStatusTarget||o.status||'');
+      if(!o.statusEventIdV173)o.statusEventIdV173='ST222-'+Date.now()+'-'+Math.random().toString(36).slice(2,8);
+      target[id]=makeIntentFromOrder(o,status,'migrated-pending',null);audit.push({time:isoNow(),source:'old-pending-flag',orderId:id,status,eventId:target[id].eventId});n++;
+    }
+    // إيقاف كل المسارات القديمة: v219/outbox/pendingStatusSync لن تعود مصدر كتابة.
+    writeJson(V222_KEY,target);localStorage.removeItem(V219_KEY);localStorage.removeItem(OUTBOX_KEY);
+    for(const o of (db.orders||[])){if(o){delete o.pendingStatusSync;delete o.pendingStatusTarget}}
+    try{localStorage.setItem(K,JSON.stringify(db))}catch(_){ }
+    archive(audit);
+    return n;
+  }
+
+  async function rawLoad(){
+    const j=await akV4Get('v4_load',{},60000);
+    if(String(j?.backend)!=='4'||!j?.db)throw new Error('تعذر قراءة CloudV4');
+    return j;
+  }
+  async function tx(changes,kind){
+    const opId='AK222-'+Date.now()+'-'+Math.random().toString(36).slice(2,9),actor=akV4Actor();
+    const body={key:CLOUD_KEY,action:'v4_tx',data:{opId,actorRole:actor.role,actorId:actor.id,actorName:actor.name,kind:String(kind||'v222'),changes}};
+    await ak202Fetch(CLOUD_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain;charset=UTF-8'},body:JSON.stringify(body),cache:'no-store'},45000);
+    for(const ms of [120,180,260,380,550,800,1200,1800,2600,3600]){
+      await new Promise(r=>setTimeout(r,ms));
+      const op=await akV4Get('v4_op',{opId},30000);
+      if(!op?.found||op.status==='pending')continue;
+      if(op.status==='conflict'){const e=new Error('تعارض تحديثات CloudV4');e.code='cloud_conflict';e.details=op.details;throw e}
+      if(op.status!=='success')throw new Error(op.error||'فشلت معاملة CloudV4');
+      return op;
+    }
+    const e=new Error('انتهت مهلة تأكيد معاملة CloudV4');e.code='cloud_timeout';throw e;
+  }
+  function mergeHistory(remote,localHistory){
+    const m=new Map();for(const h of [...(remote||[]),...(localHistory||[])])if(h)m.set(String(h.time||'')+'|'+String(h.text||''),clone(h));return [...m.values()];
+  }
+  function adoptRemoteOrder(remote,id){
+    const i=(db.orders||[]).findIndex(x=>String(x?.id)===String(id));if(i>=0)db.orders[i]=clone(remote);else (db.orders||(db.orders=[])).push(clone(remote));
+    clearIntent(id);settlePending(id);refresh(id);
+  }
+  function updateBaselineEntities(changes){
+    try{
+      const b=akV4ReadBase();
+      for(const ch of (changes||[]))akV4ApplyBaselineChange(b,ch);
+      // مهم: لا نرفع b.rev إلى rev العملية؛ قد توجد revisions من جهاز آخر لم نستقبلها بعد.
+      akV4WriteBase(b);
+    }catch(_){ }
+  }
+
+  async function pushIntent(it,attempt=0){
+    if(!it||session?.role!=='worker'||String(it.workerId||session.workerId)!==String(session.workerId))return false;
+    if(!navigator.onLine){schedule(1200);return false}
+    try{
+      const full=await rawLoad(),cloudDb=full.db,revMap=full.entityRevs||{};
+      let remote=(cloudDb.orders||[]).find(x=>String(x?.id)===String(it.orderId));
+      if(!remote)throw new Error('الطلب غير موجود في السحابة');
+
+      const rs=remoteStamp(remote),is=intentStamp(it);
+      const sameEvent=String(remote.statusEventIdV173||'')===String(it.eventId||'')&&String(remote.status||'')===String(it.status||'');
+      if(sameEvent){adoptRemoteOrder(remote,it.orderId);return true}
+      if(it.kind==='receipt'&&remote.deliveryReceivedAt){adoptRemoteOrder(remote,it.orderId);return true}
+      if(String(remote.status||'')==='تم التسليم'&&String(it.status||'')!=='تم التسليم'){
+        archive([{time:isoNow(),source:'terminal-cloud-wins',orderId:it.orderId,localStatus:it.status,cloudStatus:remote.status,eventId:it.eventId}]);
+        adoptRemoteOrder(remote,it.orderId);return true;
+      }
+      if(typeof ak205WorkerCloudLock==='function'&&ak205WorkerCloudLock(remote,cloudDb,it.status)){
+        adoptRemoteOrder(remote,it.orderId);return true;
+      }
+      if(rs>is && String(remote.statusEventIdV173||'')!==String(it.eventId||'')){
+        archive([{time:isoNow(),source:'newer-cloud-wins',orderId:it.orderId,localStatus:it.status,cloudStatus:remote.status,eventId:it.eventId}]);
+        adoptRemoteOrder(remote,it.orderId);return true;
+      }
+      if(String(remote.status||'')===String(it.status||'') && rs>=is){adoptRemoteOrder(remote,it.orderId);return true}
+
+      remote=clone(remote);const s=it.snapshot||{};
+      for(const k of STATUS_FIELDS){if(Object.prototype.hasOwnProperty.call(s,k))remote[k]=clone(s[k])}
+      remote.status=String(it.status||'');remote.statusEventIdV173=String(it.eventId||'');
+      remote.statusEnteredAt=s.statusEnteredAt||it.changedAt||isoNow();remote.statusChangedAtV173=s.statusChangedAtV173||it.changedAt||isoNow();
+      remote.modifiedAt=s.modifiedAt||it.changedAt||isoNow();remote.modifiedBy=s.modifiedBy||actorName();remote.lastChangeKind=s.lastChangeKind||('تغيير حالة v222: '+it.status);
+      remote.history=mergeHistory(remote.history,s.history);
+      delete remote.pendingStatusSync;delete remote.pendingStatusTarget;
+
+      const orderKey='orders:'+String(it.orderId),changes=[{type:'orders',id:String(it.orderId),expectedRev:Number(revMap[orderKey]||0),deleted:false,entity:remote}];
+      if(it.transfer){
+        const tr=clone(it.transfer),tid=String(tr.id||'');
+        if(tid){
+          const current=(cloudDb.deliveryTransfers||[]).find(x=>String(x?.id)===tid);
+          const entity=current?Object.assign(clone(current),tr):tr;
+          changes.push({type:'deliveryTransfers',id:tid,expectedRev:Number(revMap['deliveryTransfers:'+tid]||0),deleted:false,entity});
+        }
+      }
+      const op=await tx(changes,'worker-status-v222:'+String(session.workerId||''));
+      const orderChange=(op.changes||[]).find(ch=>ch.type==='orders'&&String(ch.id)===String(it.orderId)&&!ch.deleted);
+      if(!orderChange?.entity)throw new Error('لم تعد السحابة كيان الطلب بعد الحفظ');
+      updateBaselineEntities(op.changes||[]);
+      const i=(db.orders||[]).findIndex(x=>String(x?.id)===String(it.orderId));
+      if(i>=0)db.orders[i]=clone(orderChange.entity);else db.orders.push(clone(orderChange.entity));
+      if(it.transfer){const tch=(op.changes||[]).find(ch=>ch.type==='deliveryTransfers'&&String(ch.id)===String(it.transfer.id)&&!ch.deleted);if(tch?.entity){const ti=(db.deliveryTransfers||[]).findIndex(x=>String(x?.id)===String(it.transfer.id));if(ti>=0)db.deliveryTransfers[ti]=clone(tch.entity);else db.deliveryTransfers.push(clone(tch.entity));}}
+      clearIntent(it.orderId,it.eventId);settlePending(it.orderId);refresh(it.orderId);
+      try{ak208MarkReadSuccess();localStorage.setItem(CLOUD_LAST_OK_KEY,isoNow())}catch(_){ }
+      setTimeout(()=>{try{akV4PollChanges(true)}catch(_){}},60);
+      return true;
+    }catch(e){
+      if(e?.code==='cloud_conflict'&&attempt<4){await new Promise(r=>setTimeout(r,140*(attempt+1)));return pushIntent(it,attempt+1)}
+      try{localStorage.setItem(CLOUD_PENDING_KEY,'1');localStorage.setItem(CLOUD_LAST_ERROR_KEY,e?.message||String(e));updateSyncIndicators()}catch(_){ }
+      schedule(Math.min(5000,800*(attempt+1)));return false;
+    }
+  }
+  function enqueue(it){const run=()=>pushIntent(clone(it));const p=queue.then(run,run);queue=p.catch(()=>{});return p}
+  async function drain(){
+    if(writeBusy||session?.role!=='worker'||!navigator.onLine)return false;
+    writeBusy=true;
+    try{migrateOldStatusWork();let ok=true;for(const it of intents()){if(!(await enqueue(it)))ok=false}if(ok&&!hasIntents())setTimeout(healIfSafe,100);return ok}finally{writeBusy=false}
+  }
+  function schedule(ms=700){clearTimeout(retryTimer);retryTimer=setTimeout(()=>{drain()},Math.max(250,ms))}
+  window.ak222Drain=drain;
+
+  function terminalBlock(target){
+    if(session?.role!=='worker')return false;
+    const o=(db.orders||[]).find(x=>String(x?.id)===String(current||''));
+    if(o&&String(o.status||'')==='تم التسليم'&&String(target||'')!=='تم التسليم'){
+      try{showToast('✅ هذا الطلب تم تسليمه وتأكيده؛ لا يمكن للموزع إرجاعه إلى حالة سابقة',4200)}catch(_){ }
+      return true;
+    }
+    return false;
+  }
+  async function localCommit(targetStatus,opts={}){
+    const id=String(current||''),o=(db.orders||[]).find(x=>String(x?.id)===id);if(!o)return false;
+    if(terminalBlock(targetStatus))return false;
+    const now=isoNow();o.previousStatusBeforeChangeV180=o.status;o.previousStatusChangedAtV180=now;
+    o.status=String(targetStatus||'');o.statusEnteredAt=now;o.statusChangedAtV173=now;o.statusEventIdV173='ST222-'+Date.now()+'-'+Math.random().toString(36).slice(2,8);
+    if(opts.extra)Object.assign(o,clone(opts.extra));appendOrderHistory(o,opts.historyText||String(targetStatus||''));
+    const it=makeIntentFromOrder(o,targetStatus,opts.kind||'status',opts.transfer||null);setIntent(it);markPending(id);refresh(id);
+    if(!navigator.onLine){try{showToast('✅ تم حفظ الحالة على الجهاز وستُرسل عند عودة الإنترنت',3600)}catch(_){ }return true}
+    if(writeBusy){schedule(120);try{showToast('⏳ توجد مزامنة حالة جارية؛ سيتم إرسال هذا التغيير بعدها',2600)}catch(_){ }return true}
+    writeBusy=true;
+    try{const ok=await enqueue(it);if(ok){try{showToast('✅ تم تأكيد الحالة في السحابة',2200)}catch(_){ }}return ok}finally{writeBusy=false}
+  }
+
+  async function workerReject(){
+    if(session?.role!=='worker')return false;if(terminalBlock('رفض'))return false;
+    const reason=document.getElementById('rejectReason')?.value||'';if(!reason){alert('اختر سبب الرفض أولاً');return false}
+    return localCommit('رفض',{historyText:'رفض — السبب: '+reason,extra:{rejectReason:reason}})
+  }
+  async function workerCancel(){
+    if(session?.role!=='worker')return false;if(terminalBlock('ملغى'))return false;
+    const p=document.getElementById('cancelReasonPreset'),el=document.getElementById('cancelReason');let reason=p?.value||'';if(reason==='__other__')reason=(el?.value||'').trim();
+    if(!reason){alert('اختر سبب إلغاء الطلب أولاً');return false}if(!confirm('تأكيد إلغاء هذا الطلب؟'))return false;
+    return localCommit('ملغى',{historyText:'تم إلغاء الطلب — السبب: '+reason,extra:{cancelReason:reason,cancelledAt:tm()}})
+  }
+  async function workerPostpone(){
+    if(session?.role!=='worker')return false;if(terminalBlock('مؤجل'))return false;
+    const d=document.getElementById('postponeDate')?.value||'';if(!d){alert('اختر تاريخ التأجيل أولاً');return false}
+    return localCommit('مؤجل',{historyText:'مؤجل إلى: '+d,extra:{postponeDate:d}})
+  }
+
+  async function workerReceipt(transferId){
+    if(session?.role!=='worker')return false;ensureDeliveryTransfers();
+    const t=(db.deliveryTransfers||[]).find(x=>String(x?.id)===String(transferId)&&!x.deletedAt);if(!t)return alert('سجل الإرسال غير موجود');
+    if(String(t.workerId)!==String(session.workerId))return alert('هذا الطلب ليس مخصصاً لحسابك');
+    const o=(db.orders||[]).find(x=>String(x?.id)===String(t.orderId)&&!x.deletedAt);if(!o)return alert('الطلب غير موجود');
+    if(t.status==='received'||o.deliveryReceivedAt)return true;if(!confirm('تأكيد استلام الطلب '+formatSeq(o.seq)+'؟'))return false;
+    const now=isoNow(),label=tm();t.status='received';t.receivedAt=now;t.receivedLabel=label;t.modifiedAt=now;t.modifiedBy=actorName();
+    o.deliveryReceivedAt=now;o.deliveryReceivedLabel=label;o.deliveryReceivedByWorkerId=String(session.workerId);o.deliveryReceivedByWorkerName=actorName();
+    o.previousStatusBeforeChangeV180=o.status;o.previousStatusChangedAtV180=now;o.status='قيد التوزيع';o.statusEnteredAt=now;o.statusChangedAtV173=now;o.statusEventIdV173='RC222-'+Date.now()+'-'+Math.random().toString(36).slice(2,8);
+    appendOrderHistory(o,'أكد الموزع استلام الطلب — انتقل إلى قيد التوزيع');
+    const it=makeIntentFromOrder(o,'قيد التوزيع','receipt',t);setIntent(it);markPending(o.id);refresh(o.id);
+    if(!navigator.onLine)return true;if(writeBusy){schedule(120);return true}
+    writeBusy=true;try{return await enqueue(it)}finally{writeBusy=false}
+  }
+
+  /* إصلاح جوهري للـ revision: الكتابة لا تعني أن الجهاز قرأ كل revisions السابقة لها. */
+  const saveAllBase=akV4SaveAll;
+  akV4SaveAll=async function(payload={}){
+    const before=akV4ReadBase(),beforeRev=Number(before.rev)||0;
+    const r=await saveAllBase.call(this,payload);
+    if(r?.verified&&!r?.bootstrapped&&!r?.noChanges){
+      try{const b=akV4ReadBase();if(Number(b.rev)>beforeRev){b.rev=beforeRev;akV4WriteBase(b)}}catch(_){ }
+      setTimeout(()=>{try{akV4PollChanges(true)}catch(_){}},70);
+    }
+    return r;
+  };
+  window.akV4SaveAll=akV4SaveAll;
+
+  async function healIfSafe(){
+    if(healBusy||!navigator.onLine||!session?.role||hasIntents()||otherDirtyExists())return false;
+    if(localStorage.getItem(HEAL_KEY)==='done')return true;
+    healBusy=true;
+    try{
+      const full=await rawLoad();
+      db=clone(full.db);akV4SetFullBase(full.db,full.entityRevs||{},full.rev||0);localStorage.setItem(K,JSON.stringify(db));
+      localStorage.setItem(HEAL_KEY,'done');clearStatusDirty();
+      try{localStorage.removeItem(CLOUD_PENDING_KEY);localStorage.removeItem(CLOUD_LAST_ERROR_KEY);ak208MarkReadSuccess()}catch(_){ }
+      refresh(current||'');return true;
+    }catch(_){return false}finally{healBusy=false}
+  }
+  window.ak222Heal=healIfSafe;
+
+  // ربط الدوال مع حفظ المسارات غير الخاصة بالموزع.
+  const previousReject=window.rejectOrder,previousCancel=window.cancelOrder,previousPostpone=window.postponeOrder,previousReceipt=window.confirmOrderReceipt;
+  // نحتاج للمسارات الأصلية غير الخاصة بالموزع من أغلفة v219 نفسها؛ تستدعي بدورها مسار المالك الصحيح.
+  window.rejectOrder=async function(){if(session?.role==='worker')return workerReject();return typeof previousReject==='function'?previousReject.apply(this,arguments):false};rejectOrder=window.rejectOrder;
+  window.cancelOrder=async function(){if(session?.role==='worker')return workerCancel();return typeof previousCancel==='function'?previousCancel.apply(this,arguments):false};cancelOrder=window.cancelOrder;
+  window.postponeOrder=async function(){if(session?.role==='worker')return workerPostpone();return typeof previousPostpone==='function'?previousPostpone.apply(this,arguments):false};postponeOrder=window.postponeOrder;
+  window.confirmOrderReceipt=async function(){if(session?.role==='worker')return workerReceipt(arguments[0]);return typeof previousReceipt==='function'?previousReceipt.apply(this,arguments):false};confirmOrderReceipt=window.confirmOrderReceipt;
+
+  const syncBase=syncNow;
+  syncNow=async function(silent=true){
+    if(session?.role==='worker'){
+      migrateOldStatusWork();
+      if(hasIntents())return await drain();
+    }
+    const ok=await syncBase.call(this,silent);
+    if(ok)setTimeout(()=>{try{akV4PollChanges(true);healIfSafe()}catch(_){}},80);
+    return ok;
+  };
+  window.syncNow=syncNow;
+
+  const fastBase=window.ak208FastGenerationCheck||ak208FastGenerationCheck;
+  window.ak208FastGenerationCheck=async function(force=false){
+    if(session?.role==='worker'){
+      migrateOldStatusWork();
+      if(hasIntents()){if(!writeBusy&&navigator.onLine)schedule(80);return false}
+    }
+    const ok=typeof fastBase==='function'?await fastBase.call(this,force):false;
+    if(ok)setTimeout(()=>healIfSafe(),40);return ok;
+  };
+  ak208FastGenerationCheck=window.ak208FastGenerationCheck;
+
+  // منع v221 من رؤية حالات v222 كحالات legacy: لا نستخدم pendingStatusSync/outbox/v219 أصلاً.
+  try{localStorage.setItem('ak_delivery_legacy_status_cleanup_v220','done');localStorage.setItem('ak_delivery_legacy_status_cleanup_v221','done')}catch(_){ }
+
+  // حالة المالك تبقى على المسار السابق؛ حالة الموزع فقط تمر بمحرك v222.
+  window.commitOrderStatus=async function(targetStatus){
+    if(session?.role==='worker')return localCommit(String(targetStatus||''));
+    return typeof previousCommit==='function'?previousCommit.call(this,targetStatus):false;
+  };
+  commitOrderStatus=window.commitOrderStatus;
+
+  // إعادة تشغيل/دخول: هجرة ثم معالجة ثم شفاء كامل عندما لا توجد كتابة محلية حقيقية.
+  try{
+    const loginBase=window.workerLogin;
+    if(typeof loginBase==='function'){
+      window.workerLogin=async function(){const r=await loginBase.apply(this,arguments);setTimeout(()=>{try{migrateOldStatusWork();if(hasIntents())drain();else healIfSafe()}catch(_){}},100);return r};workerLogin=window.workerLogin;
+    }
+  }catch(_){ }
+  window.addEventListener('online',()=>{if(session?.role==='worker'){migrateOldStatusWork();if(hasIntents())schedule(100);else setTimeout(healIfSafe,150)}else setTimeout(healIfSafe,150)},{passive:true});
+  window.addEventListener('pageshow',()=>{if(session?.role==='worker'){migrateOldStatusWork();if(hasIntents())schedule(120);else setTimeout(healIfSafe,180)}else setTimeout(healIfSafe,180)},{passive:true});
+  document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'){if(session?.role==='worker'){migrateOldStatusWork();if(hasIntents())schedule(120);else setTimeout(healIfSafe,180)}else setTimeout(healIfSafe,180)}},{passive:true});
+  setInterval(()=>{if(!navigator.onLine||!session?.role)return;if(session.role==='worker'){migrateOldStatusWork();if(hasIntents()&&!writeBusy)schedule(80);else if(!hasIntents())healIfSafe()}else healIfSafe()},2500);
+
+  try{
+    migrateOldStatusWork();
+    document.documentElement.dataset.build='222';
+    const h=document.querySelector('#systemHealth h2');if(h)h.textContent='🩺 صحة النظام — AK Delivery 222';
+    if(session?.role==='worker'&&hasIntents())schedule(100);else setTimeout(healIfSafe,160);
+  }catch(_){ }
+})();
+// AK Delivery build v222 — single status writer + revision catch-up + terminal-state alignment; order records/schema unchanged
+
+</script>
 </body></html>
