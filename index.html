@@ -9284,4 +9284,111 @@ main{overflow-x:hidden!important}
 })();
 // AK Delivery build v220 — quarantine pre-v219 worker status ghosts and adopt cloud; order records/schema unchanged
 </script>
+
+<script id="ak221Script">
+/* v221 — تشغيل تنظيف الحالات القديمة بعد دخول الموزع، وليس فقط أثناء تحميل الصفحة.
+   يعالج عيب v220 الذي كان قد ينهي الفحص قبل تسجيل دخول الموزع أو يعلّم الفحص كمكتمل قبل نجاح اعتماد السحابة.
+   لا يحذف الطلبات ولا يغيّر هيكل البيانات. */
+(function(){
+  const INTENT_KEY='ak_delivery_status_intents_v219';
+  const OUTBOX_KEY='ak_delivery_status_outbox_v173';
+  const ARCHIVE_KEY='ak_delivery_legacy_status_archive_v221';
+  const DONE_KEY='ak_delivery_legacy_status_cleanup_v221';
+  let busy=false,retryTimer=null;
+  const isModernEvent=id=>/^(?:ST|RC)(?:219|220|221)-/.test(String(id||''));
+  const clone=v=>v==null?v:JSON.parse(JSON.stringify(v));
+  function readJson(k,f){try{const v=JSON.parse(localStorage.getItem(k)||'null');return v==null?f:v}catch(_){return f}}
+  function writeJson(k,v){try{if(v==null||(Array.isArray(v)&&!v.length)||(!Array.isArray(v)&&typeof v==='object'&&!Object.keys(v).length))localStorage.removeItem(k);else localStorage.setItem(k,JSON.stringify(v))}catch(_){}}
+  function archive(rows){if(!rows.length)return;const old=readJson(ARCHIVE_KEY,[]);writeJson(ARCHIVE_KEY,(Array.isArray(old)?old:[]).concat(rows).slice(-120));}
+  function collectLegacy(){
+    const ids=new Set(),rows=[];
+    const intents=readJson(INTENT_KEY,{});
+    if(intents&&typeof intents==='object'){
+      for(const [id,it] of Object.entries(intents)){
+        if(!it||isModernEvent(it.eventId))continue;
+        ids.add(String(id));rows.push({time:isoNow(),source:'legacy-intent',orderId:String(id),eventId:String(it.eventId||''),status:String(it.status||''),data:clone(it)});delete intents[id];
+      }
+      writeJson(INTENT_KEY,intents);
+    }
+    const outbox=readJson(OUTBOX_KEY,[]),keep=[];
+    for(const ev of (Array.isArray(outbox)?outbox:[])){
+      const eid=String(ev?.statusEventIdV173||'');
+      if(isModernEvent(eid)){keep.push(ev);continue;}
+      const id=String(ev?.orderId||'');if(id)ids.add(id);rows.push({time:isoNow(),source:'legacy-outbox',orderId:id,eventId:eid,status:String(ev?.status||''),data:clone(ev)});
+    }
+    writeJson(OUTBOX_KEY,keep);
+    for(const o of (db?.orders||[])){
+      if(!o||!o.pendingStatusSync||isModernEvent(o.statusEventIdV173))continue;
+      const id=String(o.id||'');if(!id)continue;
+      ids.add(id);rows.push({time:isoNow(),source:'legacy-pending',orderId:id,eventId:String(o.statusEventIdV173||''),status:String(o.status||'')});
+      delete o.pendingStatusSync;delete o.pendingStatusTarget;
+    }
+    archive(rows);
+    if(ids.size){
+      try{for(const id of ids)ak207RemoveSyncEvent('status',id)}catch(_){ }
+      try{localStorage.setItem(K,JSON.stringify(db))}catch(_){ }
+    }
+    return [...ids];
+  }
+  async function adopt(ids){
+    const full=await akV4FetchFull();
+    const cloudDb=full?.data?.db;if(!cloudDb||!Array.isArray(cloudDb.orders))throw new Error('cloud unavailable');
+    const cm=new Map(cloudDb.orders.filter(Boolean).map(o=>[String(o.id),o]));let changed=false;
+    for(const id of ids){
+      const remote=cm.get(String(id));if(!remote)continue;
+      const i=(db.orders||[]).findIndex(o=>String(o?.id)===String(id));if(i<0)continue;
+      db.orders[i]=clone(remote);delete db.orders[i].pendingStatusSync;delete db.orders[i].pendingStatusTarget;db.orders[i].lastStatusConfirmedAt=isoNow();changed=true;
+    }
+    if(changed)localStorage.setItem(K,JSON.stringify(db));
+    try{ak209ClearStatusDirtyIfResolved();ak208ClearLegacyQueueIfSafe();ak208MarkReadSuccess()}catch(_){ }
+    try{menu();render();accountsRender();renderWorkers();refreshActiveCloudPage();if(current&&ids.includes(String(current)))openOrder(current)}catch(_){ }
+    try{updateSyncIndicators()}catch(_){ }
+    return true;
+  }
+  function schedule(ms=700){clearTimeout(retryTimer);retryTimer=setTimeout(()=>{run(true)},Math.max(300,ms));}
+  async function run(force=false){
+    if(busy||session?.role!=='worker')return false;
+    if(!force&&localStorage.getItem(DONE_KEY)==='done')return true;
+    busy=true;
+    try{
+      const ids=collectLegacy();
+      if(!ids.length){localStorage.setItem(DONE_KEY,'done');return true;}
+      try{showToast('🧹 تنظيف حالة قديمة واعتماد حالة السحابة…',2600)}catch(_){ }
+      if(!navigator.onLine){schedule(1600);return false;}
+      try{
+        await adopt(ids);
+        localStorage.setItem(DONE_KEY,'done');
+        try{showToast('✅ تم تنظيف الحالة القديمة واعتماد الحالة السحابية',2600)}catch(_){ }
+        return true;
+      }catch(_){
+        localStorage.removeItem(DONE_KEY);schedule(1600);return false;
+      }
+    }finally{busy=false;}
+  }
+  window.ak221CleanupLegacyStatus=run;
+
+  // شغّل التنظيف فور نجاح دخول الموزع، وهو ما كان ينقص v220.
+  try{
+    const baseLogin=window.workerLogin;
+    if(typeof baseLogin==='function'){
+      window.workerLogin=async function(){const r=await baseLogin.apply(this,arguments);setTimeout(()=>{try{run(true)}catch(_){}},40);return r;};
+      workerLogin=window.workerLogin;
+    }
+  }catch(_){ }
+
+  // لو كانت جلسة الموزع محفوظة مسبقاً، شغّل الفحص مباشرة وعند العودة للصفحة.
+  window.addEventListener('pageshow',()=>{if(session?.role==='worker')setTimeout(()=>run(true),80)},{passive:true});
+  document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&session?.role==='worker')setTimeout(()=>run(true),100)},{passive:true});
+  window.addEventListener('online',()=>{if(session?.role==='worker')setTimeout(()=>run(true),100)},{passive:true});
+  setInterval(()=>{if(session?.role==='worker'&&localStorage.getItem(DONE_KEY)!=='done')run(true)},2200);
+
+  try{
+    document.documentElement.dataset.build='221';
+    const h=document.querySelector('#systemHealth h2');if(h)h.textContent='🩺 صحة النظام — AK Delivery 221';
+    if(session?.role==='worker')setTimeout(()=>run(true),60);
+  }catch(_){ }
+})();
+// AK Delivery build v221 — legacy cleanup runs after worker login and confirms cloud adoption before completion; order records/schema unchanged
+</script>
+
 </body></html>
