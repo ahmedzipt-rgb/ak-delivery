@@ -555,15 +555,42 @@ html[data-lang="ar"] #overlay > .drawer #detail > .info{direction:rtl!important;
 html[data-lang="ar"] #overlay > .drawer .actions{justify-content:flex-start!important;direction:rtl!important;}
 html[data-lang="fr"] #overlay > .drawer .actions{justify-content:flex-start!important;direction:ltr!important;}
 #overlay > .drawer #history,#overlay > .drawer #remarks{width:100%!important;max-width:none!important;}
+
+
+/* v214: تحسين استجابة الأزرار على الهاتف بدون أي تغيير في بيانات الطلبات. */
+button.ak214-busy{opacity:.68!important;cursor:wait!important;pointer-events:none!important}
+@media(max-width:650px){
+  html[data-role="worker"] button,.actions button{min-height:42px}
+  html[data-role="worker"] #overlay>.drawer{overflow-y:auto!important;-webkit-overflow-scrolling:touch!important;padding-bottom:28px!important}
+  html[data-role="worker"] #orderListCard,html[data-role="worker"] #orderListCard tbody,html[data-role="worker"] #orderListCard tr,html[data-role="worker"] #orderListCard td{background-color:#fff}
+  html[data-role="worker"] #orderListCard{backface-visibility:hidden!important;-webkit-backface-visibility:hidden!important}
+}
+
 </style></head>
 <body>
 <div id="loginScreen" class="login-screen">
- <div class="login-card" id="workerLoginCardV213">
-  <h2 id="loginTitleV213" onclick="guestOwnerTapV213()">تسجيل الدخول</h2>
+ <div class="login-card" id="loginRoleChooserV214">
+  <h2 style="margin-top:0;text-align:center">تسجيل الدخول</h2>
+  <div style="display:grid;gap:10px">
+   <button type="button" class="btn g" style="width:100%;min-height:46px;font-weight:800" onclick="showOwnerLoginV214()">دخول المالك</button>
+   <button type="button" class="btn" style="width:100%;min-height:46px;font-weight:800" onclick="showWorkerLoginV214()">دخول الموزع أو العامل</button>
+  </div>
+  <div id="loginStatus" style="margin-top:10px;font-weight:700;min-height:22px"></div>
+ </div>
+ <div class="login-card" id="ownerLoginCardV214" style="display:none">
+  <h2 style="margin-top:0;text-align:center">دخول المالك</h2>
+  <input id="ownerLoginPin" type="password" inputmode="numeric" autocomplete="current-password" placeholder="رمز المالك">
+  <div id="ownerLoginStatusV214" style="margin-top:8px;font-weight:700;min-height:22px"></div>
+  <button type="button" onclick="ownerLogin(event)" class="btn g" style="width:100%;min-height:46px">دخول</button>
+  <button type="button" onclick="showLoginChooserV214()" class="btn gr" style="width:100%;margin-top:8px">رجوع</button>
+ </div>
+ <div class="login-card" id="workerLoginCardV213" style="display:none">
+  <h2 style="margin-top:0;text-align:center">دخول الموزع أو العامل</h2>
   <select id="loginWorker"><option value="">اختر الموزع أو العامل</option></select>
   <input id="loginPin" type="password" inputmode="numeric" autocomplete="current-password" placeholder="الرمز السري">
-  <div id="loginStatus" style="margin-top:8px;font-weight:700;min-height:22px"></div>
-  <button id="workerLoginBtn" type="button" onclick="workerLogin(event)" class="btn" style="width:100%">دخول</button>
+  <div id="workerLoginStatusV214" style="margin-top:8px;font-weight:700;min-height:22px"></div>
+  <button id="workerLoginBtn" type="button" onclick="workerLogin(event)" class="btn" style="width:100%;min-height:46px">دخول</button>
+  <button type="button" onclick="showLoginChooserV214()" class="btn gr" style="width:100%;margin-top:8px">رجوع</button>
  </div>
 </div>
 <header id="appHeader" onclick="ownerTap()">مسيّر التوصيل <button class="logout" onclick="event.stopPropagation();logout()">خروج</button> <span style="display:inline-flex;gap:4px;margin-right:8px">
@@ -7857,6 +7884,306 @@ try{
 }catch(_){}
 
 // AK Delivery build v213 — weekend UI cleanup + faster CloudV4 sync; order data schema unchanged
+
+
+
+/* v214: دفعة الاستقرار والسرعة.
+   - منع الضغط المكرر على أزرار الطلبات الحساسة.
+   - تأكيد حالة الموزع مباشرة عبر CloudV4 بدلاً من مسار الحفظ القديم.
+   - استقبال تغييرات CloudV4 بشكل incremental لتقليل إعادة تحميل القاعدة كاملة.
+   - لا توجد أي ترقية لهيكل db ولا حذف/تعديل جماعي للطلبات الحالية. */
+const AK214_ACTION_LOCK_PREFIX='ak_delivery_action_lock_v214:';
+function ak214ActionKey(name,args=[]){
+  const suffix=(args&&args.length?args.map(x=>String(x??'')).join('|'):String(current||''))||'global';
+  return AK214_ACTION_LOCK_PREFIX+String(name||'action')+':'+suffix;
+}
+function ak214AcquireAction(key,ttl=90000){
+  try{
+    const now=Date.now(), until=Number(localStorage.getItem(key)||0);
+    if(until>now)return false;
+    localStorage.setItem(key,String(now+ttl));
+    return true;
+  }catch(_){return true}
+}
+function ak214ReleaseAction(key){try{localStorage.removeItem(key)}catch(_){}}
+function ak214BusyButton(btn,busy){
+  try{
+    if(!btn||btn.tagName!=='BUTTON')return;
+    if(busy){
+      if(!btn.dataset.ak214Text)btn.dataset.ak214Text=btn.textContent||'';
+      btn.classList.add('ak214-busy');btn.disabled=true;btn.setAttribute('aria-busy','true');
+      if(!/^⏳/.test(btn.textContent||''))btn.textContent='⏳ '+(btn.textContent||'جاري التنفيذ');
+    }else{
+      btn.classList.remove('ak214-busy');btn.disabled=false;btn.removeAttribute('aria-busy');
+      if(btn.dataset.ak214Text){btn.textContent=btn.dataset.ak214Text;delete btn.dataset.ak214Text;}
+    }
+  }catch(_){}
+}
+function ak214WrapAction(name,keyBuilder){
+  const base=window[name];
+  if(typeof base!=='function'||base._ak214Wrapped)return;
+  const wrapped=function(...args){
+    const key=ak214ActionKey(name,keyBuilder?keyBuilder(...args):args);
+    if(!ak214AcquireAction(key)){
+      try{showToast('العملية قيد التنفيذ بالفعل — انتظر لحظة')}catch(_){}
+      return false;
+    }
+    const btn=(document.activeElement&&document.activeElement.tagName==='BUTTON')?document.activeElement:null;
+    const beforeGen=typeof cloudEditGeneration==='number'?cloudEditGeneration:0;
+    ak214BusyButton(btn,true);
+    const finish=()=>{
+      ak214ReleaseAction(key);ak214BusyButton(btn,false);
+      try{
+        if(navigator.onLine && localStorage.getItem(CLOUD_PENDING_KEY)==='1' && cloudEditGeneration!==beforeGen){
+          clearTimeout(cloudSyncTimer);queueCloudSync(25);
+        }
+      }catch(_){}
+    };
+    try{
+      const r=base.apply(this,args);
+      if(r&&typeof r.then==='function')return Promise.resolve(r).finally(finish);
+      setTimeout(finish,650);return r;
+    }catch(e){finish();throw e;}
+  };
+  wrapped._ak214Wrapped=true;wrapped._ak214Base=base;window[name]=wrapped;
+}
+
+/* تغيير الحالة هو أكثر زر حساس؛ قفل مستقل للطلب يمنع ضغطتين متتاليتين. */
+const ak214CommitOrderStatusBase=commitOrderStatus;
+commitOrderStatus=async function(targetStatus){
+  const id=String(current||'');
+  const key=AK214_ACTION_LOCK_PREFIX+'status:'+id;
+  if(!ak214AcquireAction(key,120000)){
+    try{showToast('جاري حفظ حالة هذا الطلب — لا حاجة للضغط مرة ثانية')}catch(_){}
+    return false;
+  }
+  const btn=(document.activeElement&&document.activeElement.tagName==='BUTTON')?document.activeElement:null;
+  ak214BusyButton(btn,true);
+  try{return await ak214CommitOrderStatusBase.call(this,targetStatus);}
+  finally{ak214ReleaseAction(key);ak214BusyButton(btn,false);}
+};
+window.commitOrderStatus=commitOrderStatus;
+
+/* v214: تأكيد حالة الموزع عبر CloudV4 على كيان الطلب نفسه.
+   نبدأ من أحدث نسخة سحابية، وننسخ فقط حقول الحالة الخاصة بالموزع فوقها؛
+   لذلك لا يمكن لنسخة قديمة على جهاز الموزع أن تستبدل اسم الزبون أو العنوان أو المبلغ الذي عدله المالك. */
+workerPushOrderStatusTransaction=async function(orderId,targetStatus,attempts=0){
+  if(!session||session.role!=='worker')return false;
+  const wid=String(session.workerId||'');if(!wid)throw new Error('حساب الموزع غير محدد');
+  let local=(db.orders||[]).find(x=>String(x?.id)===String(orderId));
+  if(!local)throw new Error('الطلب غير موجود على الجهاز');
+  if(!orderAssignedToWorker(local,wid))throw new Error('هذا الطلب غير مسند إلى هذا الموزع');
+  if(!navigator.onLine)return false;
+  const idle=await waitForCloudIdle(7000);if(!idle)throw new Error('المزامنة مشغولة؛ ستتم إعادة المحاولة تلقائياً');
+  cloudSyncBusy=true;
+  try{
+    const full=await akV4FetchFull();
+    const cloudDb=full?.data?.db;if(!cloudDb||!Array.isArray(cloudDb.orders))throw new Error('لا توجد قاعدة سحابية صالحة');
+    const out=akV4Clone(cloudDb);
+    let remote=out.orders.find(x=>String(x?.id)===String(orderId));
+    if(!remote)throw new Error('الطلب غير موجود في السحابة؛ تم إبقاء التغيير محفوظاً على الجهاز');
+
+    // إذا كانت السحابة أكدت نفس الحدث بالفعل ننظف الانتظار فقط.
+    if(cloudConfirmsOrderV175(local,remote)){
+      const li=(db.orders||[]).findIndex(x=>String(x?.id)===String(orderId));
+      if(li>=0){db.orders[li]=akV4Clone(remote);db.orders[li].lastStatusConfirmedAt=isoNow();delete db.orders[li].pendingStatusSync;delete db.orders[li].pendingStatusTarget;}
+      removeStatusEventV173(orderId,local.statusEventIdV173);ak207RemoveSyncEvent('status',orderId);
+      localStorage.setItem(K,JSON.stringify(db));ak208MarkReadSuccess();ak207ClearPendingIfSettled('v214 already confirmed');
+      try{ak198BroadcastChange()}catch(_){};updateSyncIndicators();return true;
+    }
+
+    const lock=ak205WorkerCloudLock(remote,cloudDb,targetStatus);
+    if(lock){
+      const li=(db.orders||[]).findIndex(x=>String(x?.id)===String(orderId));
+      if(li>=0)db.orders[li]=akV4Clone(remote);
+      removeStatusEventV173(orderId,local.statusEventIdV173);ak207RemoveSyncEvent('status',orderId);
+      localStorage.setItem(K,JSON.stringify(db));ak208MarkReadSuccess();ak207ClearPendingIfSettled('v214 final cloud lock');
+      try{ak198BroadcastChange()}catch(_){};updateSyncIndicators();return true;
+    }
+
+    const statusFields=['status','statusEnteredAt','statusChangedAtV173','statusEventIdV173',
+      'rejectReason','cancelReason','cancelledAt','postponeDate','returnRequestedAt','returnCompletedAt',
+      'deliveryReceivedAt','deliveryReceivedLabel','deliveryReceivedByWorkerId','deliveryReceivedByWorkerName'];
+    for(const k of statusFields){
+      if(local[k]!==undefined)remote[k]=akV4Clone(local[k]);
+      else if(k in remote)delete remote[k];
+    }
+    const hist=new Map((remote.history||[]).concat(local.history||[]).filter(Boolean).map(h=>[String(h.time||'')+'|'+String(h.text||''),h]));
+    remote.history=[...hist.values()];
+    remote.status=targetStatus;
+    remote.statusEnteredAt=local.statusEnteredAt||isoNow();
+    remote.statusChangedAtV173=local.statusChangedAtV173||isoNow();
+    remote.statusEventIdV173=local.statusEventIdV173||('ST214-'+Date.now()+'-'+Math.random().toString(36).slice(2,8));
+    remote.modifiedAt=local.modifiedAt||isoNow();remote.modifiedBy=local.modifiedBy||actorName();
+    remote.lastChangeKind='تغيير حالة CloudV4 v214: '+targetStatus;
+    delete remote.pendingStatusSync;delete remote.pendingStatusTarget;
+
+    const result=await akV4SaveAll({db:out,updatedAt:isoNow(),updatedBy:'worker-status-v214:'+wid});
+    if(!result||!result.verified)throw new Error('لم تؤكد CloudV4 حالة الطلب');
+    const serverChange=(result.changes||[]).find(ch=>ch&&ch.type==='orders'&&String(ch.id)===String(orderId));
+    const confirmed=serverChange&&!serverChange.deleted&&serverChange.entity?akV4Clone(serverChange.entity):akV4Clone(remote);
+    confirmed.lastStatusConfirmedAt=isoNow();delete confirmed.pendingStatusSync;delete confirmed.pendingStatusTarget;
+    const li=(db.orders||[]).findIndex(x=>String(x?.id)===String(orderId));
+    if(li>=0)db.orders[li]=confirmed;else db.orders.push(confirmed);
+    removeStatusEventV173(orderId,remote.statusEventIdV173);ak207RemoveSyncEvent('status',orderId);
+    localStorage.setItem(K,JSON.stringify(db));
+    ak208MarkReadSuccess();ak208SetAdoptedGeneration(result.generation,'worker-status-v214');ak207ClearPendingIfSettled('v214 status '+targetStatus);
+    try{ak198BroadcastChange()}catch(_){}
+    try{menu();render();accountsRender();if(String(current||'')===String(orderId))openOrder(orderId);}catch(_){}
+    updateSyncIndicators();
+    setTimeout(()=>{try{akV4PollChanges(true)}catch(_){}},60);
+    return true;
+  }catch(e){
+    if(e&&e.code==='cloud_conflict'&&attempts<3){
+      cloudSyncBusy=false;await new Promise(r=>setTimeout(r,120*(attempts+1)));
+      return workerPushOrderStatusTransaction(orderId,targetStatus,attempts+1);
+    }
+    throw e;
+  }finally{cloudSyncBusy=false;}
+};
+window.workerPushOrderStatusTransaction=workerPushOrderStatusTransaction;
+
+/* v214: تطبيق incremental للتغييرات مع تنظيف حدث الحالة عندما تكون السحابة قد أكدته فعلاً،
+   وتحديث الواجهة النشطة فقط بدل إعادة رسم كل صفحات التطبيق في كل حدث صغير. */
+function ak214RefreshChangedUi(types){
+  try{
+    const page=document.querySelector('main > .page.on')?.id||'';
+    menu();
+    if(page==='list')render();
+    if(page==='workers'||types.has('workers')){renderWorkers();refreshLoginWorkers();}
+    if(page==='accounts')accountsRender();
+    refreshActiveCloudPage();
+    const ov=document.getElementById('overlay');
+    if(current&&ov&&ov.style.display==='block'&&types.has('orders'))openOrder(current);
+  }catch(_){}
+}
+akV4ApplyRemoteChanges=function(events){
+  const base=akV4ReadBase();let changed=false,autoResolved=0,lastRev=base.rev,needsPush=false;
+  const pushIds=new Set(),changedTypes=new Set();
+  for(const ev of (events||[])){
+    lastRev=Math.max(lastRev,Number(ev.rev)||0);
+    for(const ch of (ev.changes||[])){
+      changedTypes.add(String(ch.type||''));
+      const key=akV4Key(ch.type,ch.id),dirty=akV4KeyDirtyAgainstBase(key,base);
+      if(dirty&&ch.type==='orders'){
+        const local=akV4LocalItem(ch.type,ch.id),remote=ch.deleted?null:ch.entity;
+        // أهم حالة: الخادم يحمل نفس حدث الحالة الذي ينتظر الجهاز تأكيده.
+        if(local&&remote&&cloudConfirmsOrderV175(local,remote)){
+          akV4ReplaceLocal(ch.type,ch.id,remote,false);akV4ApplyBaselineChange(base,ch);
+          try{removeStatusEventV173(ch.id,local.statusEventIdV173);ak207RemoveSyncEvent('status',ch.id);}catch(_){}
+          const fresh=akV4LocalItem(ch.type,ch.id);if(fresh){delete fresh.pendingStatusSync;delete fresh.pendingStatusTarget;fresh.lastStatusConfirmedAt=isoNow();}
+          autoResolved++;changed=true;continue;
+        }
+        const resolved=ak212ResolveOrderConflict(local,remote);
+        akV4ReplaceLocal(ch.type,ch.id,resolved.order,!resolved.order);akV4ApplyBaselineChange(base,ch);
+        if(resolved.needsPush){needsPush=true;pushIds.add(String(ch.id));}
+        autoResolved++;changed=true;continue;
+      }
+      akV4ReplaceLocal(ch.type,ch.id,ch.entity,!!ch.deleted);akV4ApplyBaselineChange(base,ch);changed=true;
+    }
+  }
+  base.rev=lastRev;akV4WriteBase(base);
+  if(changed){
+    try{dedupeDatabase();ak200RepairWorkerAssignments(db);ak201RepairReceivedStatus(db)}catch(_){}
+    localStorage.setItem(K,JSON.stringify(db));ak214RefreshChangedUi(changedTypes);
+  }
+  try{localStorage.removeItem(AK189_CONFLICT);localStorage.removeItem(AK189_HOLD)}catch(_){}
+  if(needsPush){
+    try{ak208MarkDirty('auto-conflict-v214',Array.from(pushIds).join(','));localStorage.setItem(CLOUD_PENDING_KEY,'1');if(navigator.onLine&&!cloudSyncBusy&&!cloudPullBusy)queueCloudSync(25);}catch(_){}
+  }
+  if(changed||autoResolved){
+    try{ak208MarkReadSuccess();updateCloudReadWriteStatusV180();updateSyncIndicators()}catch(_){}
+  }
+  return {changed,conflicts:0,autoResolved,lastRev};
+};
+
+/* v214: فحص incremental سريع أثناء العمل، وأبطأ تلقائياً عند الخمول. */
+ak208FastGenerationCheck=async function(force=false){
+  if(!navigator.onLine||document.visibilityState==='hidden'||!session?.role)return false;
+  if(ak208MetaBusy||cloudSyncBusy||cloudPullBusy||ak204AdoptBusy)return false;
+  ak208FirstBootCleanup();
+  const now=Date.now(),active=(now-ak198LastActivity)<120000,minGap=active?850:3000;
+  if(!force&&now-ak208LastMetaCheck<minGap)return false;
+  ak208LastMetaCheck=now;ak208MetaBusy=true;
+  try{
+    if(ak208HasLocalDirty()&&!cloudSyncTimer)queueCloudSync(25);
+    const ok=await akV4PollChanges(!!force);
+    if(ok){ak208MarkReadSuccess();clearResolvedCloudErrorV188('v214 incremental poll');}
+    return ok;
+  }catch(_){return false}
+  finally{ak208MetaBusy=false;}
+};
+window.ak208FastGenerationCheck=ak208FastGenerationCheck;
+
+/* منع الضغط المكرر على العمليات الحساسة الأخرى. */
+[
+ 'sendOrderToWorker','confirmOrderReceipt','confirmDeliveryBatchReceived','confirmCustomerTransfer','receiveCustomerChange',
+ 'confirmReturnOrder','confirmReturnBatch','confirmOwnerReturnReceipt','confirmOwnerReturnOrder','requestReturn','confirmReturnDone',
+ 'restoreToDelivery','deleteCurrentOrder','restoreDeletedOrder','workerConfirmPayment','finishSettlement','assignCurrentOrder','unassignCurrentOrder',
+ 'saveEdit','rejectOrder','cancelOrder','postponeOrder'
+].forEach(name=>ak214WrapAction(name));
+
+try{
+  document.documentElement.dataset.build='214';
+  const h=document.querySelector('#systemHealth h2');if(h)h.textContent='🩺 صحة النظام — AK Delivery 214';
+}catch(_){}
+
+
+/* v214 login hotfix: restore a clear owner login while keeping worker login minimal. */
+const ak214SetLoginStatusBase=setLoginStatus;
+setLoginStatus=function(msg,isError){
+  try{ak214SetLoginStatusBase(msg,isError)}catch(_){}
+  for(const id of ['ownerLoginStatusV214','workerLoginStatusV214']){
+    const el=document.getElementById(id);if(!el)continue;el.textContent=msg||'';el.style.color=isError?'#b91c1c':'#166534';
+  }
+};
+function ak214LoginCard(id,show){const el=document.getElementById(id);if(el)el.style.display=show?'block':'none';}
+function ak214ClearLoginStatus(){try{setLoginStatus('',false)}catch(_){} }
+function showLoginChooserV214(){
+  ak214LoginCard('loginRoleChooserV214',true);
+  ak214LoginCard('ownerLoginCardV214',false);
+  ak214LoginCard('workerLoginCardV213',false);
+  ak214ClearLoginStatus();
+}
+function showOwnerLoginV214(){
+  ak214LoginCard('loginRoleChooserV214',false);
+  ak214LoginCard('ownerLoginCardV214',true);
+  ak214LoginCard('workerLoginCardV213',false);
+  ak214ClearLoginStatus();
+  setTimeout(()=>{try{document.getElementById('ownerLoginPin')?.focus()}catch(_){}},50);
+}
+function showWorkerLoginV214(){
+  ak214LoginCard('loginRoleChooserV214',false);
+  ak214LoginCard('ownerLoginCardV214',false);
+  ak214LoginCard('workerLoginCardV213',true);
+  ak214ClearLoginStatus();
+  try{refreshLoginWorkers()}catch(_){}
+}
+// Use the saved owner PIN, preserving existing owner settings/data.
+ownerLogin=async function(ev){
+  try{
+    if(ev&&ev.preventDefault)ev.preventDefault();
+    const pinEl=document.getElementById('ownerLoginPin');
+    const loginEl=document.getElementById('loginScreen');
+    const pin=String(pinEl&&pinEl.value||'').trim();
+    const saved=String(localStorage.getItem('owner_pin_v13')||'0534').trim();
+    if(!pin){setLoginStatus('أدخل رمز المالك',true);return false;}
+    if(pin!==saved){setLoginStatus('رمز المالك غير صحيح',true);return false;}
+    session={role:'owner',workerId:null};ownerMode=true;saveSession();
+    if(pinEl)pinEl.value='';
+    if(loginEl){loginEl.style.display='none';loginEl.style.pointerEvents='none';loginEl.style.visibility='hidden';}
+    try{filter='قيد التوزيع';go('list','home')}catch(_){}
+    safeUIRefresh();setLoginStatus('',false);
+    if(navigator.onLine)setTimeout(async()=>{try{if(localStorage.getItem(CLOUD_PENDING_KEY)==='1')await syncNow(true);else await ak208OwnerAdoptCloud(true);safeUIRefresh()}catch(_){}},120);
+    return false;
+  }catch(err){setLoginStatus('تعذر تسجيل دخول المالك: '+(err&&err.message?err.message:'خطأ غير معروف'),true);return false;}
+};
+// When logged out, always return to the clean role chooser.
+const ak214LogoutBase=logout;
+logout=function(){ak214LogoutBase();setTimeout(()=>{try{showLoginChooserV214()}catch(_){}},0)};
+try{if(!session||!session.role)showLoginChooserV214()}catch(_){}
+
+// AK Delivery build v214-login-fix — atomic action guards + CloudV4 status transaction + incremental fast sync; order data schema unchanged
 
 </script>
 </body></html>
