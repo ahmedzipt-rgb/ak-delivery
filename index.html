@@ -6332,6 +6332,288 @@ function exportExcel(){
  let html=`<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel"><head><meta charset="utf-8"></head><body><table border="1"><tr>${headers.map(h=>`<th>${h}</th>`).join('')}</tr>${body}</table>
 
 
+
+<style id="ak218Style">
+/* v218: تنظيف النصوص الثقيلة + تخفيف التمرير، بدون أي تغيير في بيانات الطلبات. */
+#accounts > .ak216-flow-summary{display:none!important}
+#accounts .card{padding:11px!important;margin-bottom:9px!important}
+#accounts h2{margin:0 0 9px!important;font-size:20px!important}
+.ak218-account-summary,.ak218-worker-stats{
+  display:grid;grid-template-columns:repeat(4,minmax(105px,1fr));gap:6px
+}
+.ak218-account-stat{
+  min-width:0;padding:8px 9px;border:1px solid #e4e9ee;border-radius:8px;background:#f8fafb
+}
+.ak218-account-stat small{
+  display:block;margin:0 0 3px;color:#64727d;font-size:11px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis
+}
+.ak218-account-stat b{
+  display:block;font-size:18px;line-height:1.15;overflow-wrap:anywhere
+}
+.ak218-account-actions{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-top:9px}
+.ak218-account-actions .btn{margin:0!important}
+.ak218-account-count{font-size:12px;color:#52606a;font-weight:700}
+.ak218-worker-card{padding:9px!important;margin-top:7px!important}
+.ak218-worker-card h3{margin:0 0 7px!important;font-size:17px!important;line-height:1.2}
+.ak218-account-search{display:flex;gap:5px;align-items:center}
+.ak218-account-search input{flex:1;min-width:0;height:38px}
+.ak218-account-search .btn{width:auto!important;min-width:40px!important;height:38px;padding:7px 9px!important;margin:0!important}
+.ak218-empty{padding:10px;color:#697681;font-size:13px}
+#accounts .ak216-flow-chip{font-size:11px!important;padding:4px 7px!important}
+
+/* التمرير: حركة أصلية من المتصفح، مع تقليل العناصر اللاصقة المكلفة أثناء السحب الأفقي. */
+main>.page.on,aside,#overlay>.drawer,#orderListCard,.ak218-table-scroll{
+  -webkit-overflow-scrolling:touch!important;
+  scroll-behavior:auto!important;
+  overscroll-behavior:contain!important
+}
+#orderListCard{
+  touch-action:pan-x pan-y!important;
+  overflow:auto!important;
+  scrollbar-width:thin
+}
+#orderListCard thead{
+  position:sticky!important;top:0!important;z-index:4!important;background:#fff!important
+}
+#orderListCard thead th{
+  position:static!important;background:#fff!important
+}
+#orderHeaderFixed{display:none!important}
+.ak218-table-scroll{
+  width:100%;max-width:100%;overflow-x:auto!important;overflow-y:visible!important;
+  touch-action:pan-x pan-y!important
+}
+.ak218-table-scroll>table{min-width:max-content}
+@media (pointer:coarse){
+  .card{box-shadow:0 1px 2px #00000012!important}
+  #orderListCard thead th{box-shadow:none!important}
+}
+@media(max-width:650px){
+  .ak218-account-summary,.ak218-worker-stats{grid-template-columns:repeat(2,minmax(0,1fr))}
+  #accounts .card{padding:9px!important}
+  #accounts h2{font-size:18px!important}
+  .ak218-account-stat{padding:7px!important}
+  .ak218-account-stat b{font-size:16px!important}
+}
+</style>
+<script id="ak218Script">
+/* v218 — تنظيف نصوص الحسابات + تمرير خفيف.
+   هذا الكود خاص بالعرض والأداء فقط؛ لا يكتب أو يرحّل أو يحذف أي طلب. */
+(function(){
+  const extraFr={
+    'الحسابات المالية':'Comptes',
+    'المجموع العام لمبالغ الطلبات المسلّمة':'Montant',
+    'إجمالي أثمان التوصيل':'Livraison',
+    'الباقي الإجمالي الواجب دفعه':'Net',
+    'عدد الطلبات الداخلة في الحساب':'Commandes',
+    'حساب كل موزع على حدة':'Par livreur',
+    'الطلبات المسلّمة':'Commandes',
+    'المجموع العام لمبالغ الطلبات':'Montant',
+    'ثمن التوصيل':'Livraison',
+    'الباقي الواجب دفعه':'Net',
+    'أرشيف الدفع':'Archive des paiements',
+    'تم تسليم المبلغ':'Régler',
+    'لا توجد حزم تسوية سابقة':'Aucun règlement archivé',
+    'لا توجد نتائج.':'Aucun résultat.'
+  };
+  try{
+    if(typeof AK_FR==='object'){
+      Object.assign(AK_FR,extraFr);
+      if(typeof AK_AR==='object')Object.entries(extraFr).forEach(([ar,fr])=>{AK_AR[fr]=ar;});
+    }
+  }catch(_){}
+
+  function langText(ar,fr){return (typeof appLanguage!=='undefined'&&appLanguage==='fr')?fr:ar;}
+  function esc(v){return typeof htmlEscape==='function'?htmlEscape(v):String(v??'');}
+  function money(v){return typeof cash==='function'?cash(v):String(v??0);}
+
+  // صفحة الحسابات مختصرة وواضحة؛ نفس الحسابات القديمة ونفس البيانات، لكن بدون الجمل المكررة.
+  window.accountsRender=function(){
+    try{
+      if(!db.settlements)db.settlements=[];
+      const host=document.getElementById('accounts');if(!host)return;
+
+      const settledIds=new Set(activeSettlements().flatMap(v=>v.orderIds||[]).map(String));
+      const pending=(db.orders||[]).filter(o=>!o.duplicateHidden&&!o.deletedAt&&o.status==='تم التسليم'&&!settledIds.has(String(o.id)));
+      const collected=pending.reduce((s,o)=>s+(+o.amount||0),0);
+      const fees=pending.reduce((s,o)=>s+deliveryFeeForOrder(o),0);
+      const due=collected-fees;
+
+      const previousSearch=(document.getElementById('accountWorkerSearch')?.value||'').trim();
+      const q=previousSearch.toLowerCase();
+      const perWorker=(db.workers||[])
+        .filter(w=>!w.deletedAt&&w.approved!==false)
+        .map(w=>{
+          const orders=pending.filter(o=>orderAssignedToWorker(o,w.id));
+          const total=orders.reduce((s,o)=>s+(+o.amount||0),0);
+          const delivery=deliveryRateForWorker(w)*orders.length;
+          return {w,orders,total,delivery,payable:total-delivery};
+        })
+        .filter(x=>!q||String(x.w.name||'').toLowerCase().includes(q));
+
+      const stat=(label,value)=>`<div class="ak218-account-stat"><small>${esc(label)}</small><b>${esc(value)}</b></div>`;
+      const workerCards=perWorker.length?perWorker.map(x=>`
+        <div class="card ak218-worker-card">
+          <h3>${esc(x.w.name)}</h3>
+          <div class="ak218-worker-stats">
+            ${stat(langText('طلبات','Commandes'),x.orders.length)}
+            ${stat(langText('المبلغ','Montant'),money(x.total))}
+            ${stat(langText('التوصيل','Livraison'),money(x.delivery))}
+            ${stat(langText('الصافي','Net'),money(x.payable))}
+          </div>
+        </div>`).join(''):`<div class="ak218-empty">${langText('لا توجد نتائج','Aucun résultat')}</div>`;
+
+      const settlements=activeSettlements();
+      host.innerHTML=`
+        <div class="card">
+          <h2>${langText('الحسابات','Comptes')}</h2>
+          <div class="ak218-account-summary">
+            ${stat(langText('طلبات','Commandes'),pending.length)}
+            ${stat(langText('المبلغ','Montant'),money(collected))}
+            ${stat(langText('التوصيل','Livraison'),money(fees))}
+            ${stat(langText('الصافي','Net'),money(due))}
+          </div>
+          <div class="ak218-account-actions">
+            <button class="btn g" onclick="finishSettlement()" ${pending.length?'':'disabled'}>${langText('✓ تسوية المبلغ','✓ Régler')}</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2>${langText('حسب الموزع','Par livreur')}</h2>
+          <div class="ak218-account-search">
+            <input id="accountWorkerSearch" placeholder="${langText('اسم الموزع','Nom du livreur')}" value="${esc(previousSearch)}"
+              onkeydown="if(event.key==='Enter'){event.preventDefault();accountsRender()}">
+            <button class="btn" title="${langText('بحث','Rechercher')}" onclick="accountsRender()">🔎</button>
+            <button class="btn gr" title="${langText('مسح','Effacer')}" onclick="document.getElementById('accountWorkerSearch').value='';accountsRender()">✕</button>
+          </div>
+          <div id="workerFinanceList">${workerCards}</div>
+        </div>
+
+        <div class="card">
+          <h2>📦 ${langText('أرشيف الدفع','Archive des paiements')}</h2>
+          ${settlements.length?settlements.slice().reverse().map((v,i)=>settlementBundleHtml(v,i)).join(''):
+            `<div class="ak218-empty">${langText('لا توجد حزم سابقة','Aucun règlement archivé')}</div>`}
+        </div>`;
+      try{ak218TuneActivePage();}catch(_){}
+    }catch(e){console.error('accountsRender v218',e);}
+  };
+
+  // ملخصات v216 مفيدة في صفحات الرجوع، لكنها مكررة داخل صفحة الحسابات؛ نحذفها من الحسابات فقط.
+  window.ak216DecorateFlowPages=function(){
+    try{
+      document.querySelectorAll('#accounts > .ak216-flow-summary').forEach(e=>e.remove());
+      const orders=(db?.orders||[]).filter(o=>o&&!o.deletedAt&&!o.duplicateHidden);
+      const requested=orders.filter(o=>o.status==='طلب رجوع').length;
+      const returned=orders.filter(o=>o.status==='مرتجع');
+      const awaitingOwner=returned.filter(o=>!o.returnOwnerConfirmedAt).length;
+      const ownerDone=returned.filter(o=>!!o.returnOwnerConfirmedAt).length;
+      const ret1=langText('بانتظار الرجوع','Retour en attente');
+      const ret2=langText('بانتظار الاستلام','Réception en attente');
+      const ret3=langText('تم الاستلام','Reçu');
+      if(typeof ak216InsertSummaryBefore==='function'){
+        ak216InsertSummaryBefore('returnBatchesList',`<span class="ak216-flow-chip">↩ ${ret1}: ${requested}</span><span class="ak216-flow-chip">📥 ${ret2}: ${awaitingOwner}</span>`);
+        ak216InsertSummaryBefore('returnedOrdersList',`<span class="ak216-flow-chip">📥 ${ret2}: ${awaitingOwner}</span><span class="ak216-flow-chip">✅ ${ret3}: ${ownerDone}</span>`);
+      }
+    }catch(_){}
+  };
+
+  // لا نعيد رسم الصفحة أثناء السحب؛ نؤجل التحديث البصري إلى لحظة توقف التمرير.
+  let scrollIdleAt=0,refreshTimer=0,changedUiTimer=0;
+  const markScrolling=()=>{scrollIdleAt=Date.now()+140;};
+  document.addEventListener('scroll',markScrolling,{passive:true,capture:true});
+  document.addEventListener('touchmove',markScrolling,{passive:true,capture:true});
+
+  function deferUntilScrollIdle(fn,kind){
+    const delay=Math.max(0,scrollIdleAt-Date.now());
+    if(delay<=0)return fn();
+    if(kind==='changed'){clearTimeout(changedUiTimer);changedUiTimer=setTimeout(fn,delay+20);}
+    else{clearTimeout(refreshTimer);refreshTimer=setTimeout(fn,delay+20);}
+  }
+
+  try{
+    if(typeof ak217RefreshActiveUi==='function'){
+      const base217Refresh=ak217RefreshActiveUi;
+      window.ak217RefreshActiveUi=function(){return deferUntilScrollIdle(()=>base217Refresh(),'refresh');};
+    }
+  }catch(_){}
+  try{
+    if(typeof ak214RefreshChangedUi==='function'){
+      const base214Changed=ak214RefreshChangedUi;
+      window.ak214RefreshChangedUi=function(types){
+        const copy=types instanceof Set?new Set(types):types;
+        return deferUntilScrollIdle(()=>base214Changed(copy),'changed');
+      };
+    }
+  }catch(_){}
+
+  // وضع الجداول العريضة داخل حاوية أفقية واحدة بدلاً من تحريك الصفحة كلها.
+  window.ak218TuneActivePage=function(){
+    try{
+      const page=document.querySelector('main > .page.on');if(!page)return;
+      page.querySelectorAll('table').forEach(t=>{
+        if(t.closest('#orderListCard,.ak218-table-scroll'))return;
+        const parent=t.parentElement;if(!parent)return;
+        const ps=getComputedStyle(parent);
+        if(ps.overflowX==='auto'||ps.overflowX==='scroll')return;
+        if(t.scrollWidth<=Math.max(0,page.clientWidth-8))return;
+        const wrap=document.createElement('div');wrap.className='ak218-table-scroll';
+        parent.insertBefore(wrap,t);wrap.appendChild(t);
+      });
+      const old=document.getElementById('orderHeaderFixed');if(old)old.style.display='none';
+    }catch(_){}
+  };
+
+  // إعادة تموضع قائمة التنزيل بتحديث واحد لكل frame فقط، بدل الحساب مع كل حدث scroll.
+  try{
+    let exportRaf=0;
+    window.ak217PositionExportPanel=function(){
+      const panel=document.getElementById('ak217ExportPanel');
+      if(!panel||!panel.classList.contains('open'))return;
+      if(exportRaf)return;
+      exportRaf=requestAnimationFrame(()=>{
+        exportRaf=0;
+        try{
+          const btn=document.getElementById('ak217ExportBtn');if(!btn||!panel.classList.contains('open'))return;
+          const r=btn.getBoundingClientRect();
+          const w=panel.offsetWidth||200,h=panel.offsetHeight||52;
+          let left=document.documentElement.dir==='rtl'?r.right-w:r.left;
+          left=Math.max(8,Math.min(left,window.innerWidth-w-8));
+          let top=r.bottom+6;if(top+h>window.innerHeight-8)top=Math.max(8,r.top-h-6);
+          panel.style.left=Math.round(left)+'px';panel.style.top=Math.round(top)+'px';panel.style.visibility='visible';
+        }catch(_){}
+      });
+    };
+  }catch(_){}
+
+  // بعد التنقل فقط نضبط حاويات التمرير؛ لا يوجد أي عمل ثقيل أثناء السحب نفسه.
+  try{
+    const baseNav=directNavigate;
+    window.directNavigate=function(key){
+      const r=baseNav(key);
+      requestAnimationFrame(()=>{try{ak218TuneActivePage()}catch(_){}});return r;
+    };
+  }catch(_){}
+
+  // تبديل اللغة يعيد رسم الحسابات بنص كامل واحد اللغة، فلا تظهر الجمل العربية/الفرنسية مختلطة.
+  try{
+    window.toggleAppLanguage=function(){
+      applyAppLanguage(appLanguage==='fr'?'ar':'fr');
+      if(document.getElementById('accounts')?.classList.contains('on'))accountsRender();
+      try{ak216DecorateFlowPages();}catch(_){}
+      requestAnimationFrame(()=>{try{ak218TuneActivePage()}catch(_){}});
+    };
+  }catch(_){}
+
+  try{
+    document.documentElement.dataset.build='218';
+    const h=document.querySelector('#systemHealth h2');if(h)h.textContent='🩺 صحة النظام — AK Delivery 218';
+    const acc=document.getElementById('accounts');if(acc?.classList.contains('on'))accountsRender();
+    ak216DecorateFlowPages();ak218TuneActivePage();
+  }catch(_){}
+})();
+// AK Delivery build v218 — compact finance text + scroll-idle UI refresh + lightweight horizontal scrolling; order records/schema unchanged
+</script>
+
 </body></html>`;
  let blob=new Blob(['\ufeff',html],{type:'application/vnd.ms-excel;charset=utf-8'});
  let a=document.createElement('a');a.href=URL.createObjectURL(blob);
