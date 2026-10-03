@@ -9168,4 +9168,120 @@ main{overflow-x:hidden!important}
 // AK Delivery build v219 — serialized worker receipt/status writes + durable latest-status intent; order records/schema unchanged
 </script>
 
+
+<script id="ak220Script">
+/* v220 — تنظيف آمن لإرث حالات ما قبل v219 على جهاز الموزع.
+   يمنع حالة قديمة معلقة من 218 أو أقدم من إعادة الطلب للخلف بعد الترقية.
+   لا يحذف الطلبات ولا يغيّر بنية البيانات؛ يحتفظ بسجل تدقيق محلي ثم يعتمد الحالة السحابية المؤكدة. */
+(function(){
+  const INTENT_KEY='ak_delivery_status_intents_v219';
+  const OUTBOX_KEY='ak_delivery_status_outbox_v173';
+  const ARCHIVE_KEY='ak_delivery_legacy_status_archive_v220';
+  const RUN_KEY='ak_delivery_legacy_status_cleanup_v220';
+  const isModernEvent=id=>/^(?:ST|RC)(?:219|220)-/.test(String(id||''));
+
+  function clone(v){return v==null?v:JSON.parse(JSON.stringify(v));}
+  function readJson(key,fallback){
+    try{const v=JSON.parse(localStorage.getItem(key)||'null');return v==null?fallback:v}catch(_){return fallback}
+  }
+  function writeJson(key,v){
+    try{
+      if(v==null || (Array.isArray(v)&&!v.length) || (!Array.isArray(v)&&typeof v==='object'&&!Object.keys(v).length))localStorage.removeItem(key);
+      else localStorage.setItem(key,JSON.stringify(v));
+    }catch(_){}
+  }
+  function archiveRows(rows){
+    if(!rows.length)return;
+    const old=readJson(ARCHIVE_KEY,[]);
+    writeJson(ARCHIVE_KEY,(Array.isArray(old)?old:[]).concat(rows).slice(-120));
+  }
+  function legacySnapshot(){
+    const affected=new Set(), archive=[];
+    const intents=readJson(INTENT_KEY,{});
+    if(intents&&typeof intents==='object'){
+      for(const [id,it] of Object.entries(intents)){
+        if(!it||isModernEvent(it.eventId))continue;
+        affected.add(String(id));
+        archive.push({time:isoNow(),source:'intent-v219-from-legacy',orderId:String(id),eventId:String(it.eventId||''),status:String(it.status||''),intent:clone(it)});
+        delete intents[id];
+      }
+      writeJson(INTENT_KEY,intents);
+    }
+
+    const outbox=readJson(OUTBOX_KEY,[]),keep=[];
+    for(const ev of (Array.isArray(outbox)?outbox:[])){
+      const eventId=String(ev?.statusEventIdV173||'');
+      if(isModernEvent(eventId)){keep.push(ev);continue;}
+      const id=String(ev?.orderId||'');if(id)affected.add(id);
+      archive.push({time:isoNow(),source:'legacy-outbox',orderId:id,eventId,status:String(ev?.status||''),event:clone(ev)});
+    }
+    writeJson(OUTBOX_KEY,keep);
+
+    for(const o of (db?.orders||[])){
+      if(!o||!o.pendingStatusSync)continue;
+      const eventId=String(o.statusEventIdV173||'');
+      if(isModernEvent(eventId))continue;
+      const id=String(o.id||'');if(!id)continue;
+      affected.add(id);
+      archive.push({time:isoNow(),source:'legacy-pending-order',orderId:id,eventId,status:String(o.status||''),orderStatusSnapshot:{
+        status:o.status,statusEnteredAt:o.statusEnteredAt,statusChangedAtV173:o.statusChangedAtV173,statusEventIdV173:o.statusEventIdV173,pendingStatusTarget:o.pendingStatusTarget
+      }});
+      delete o.pendingStatusSync;delete o.pendingStatusTarget;
+    }
+
+    archiveRows(archive);
+    if(affected.size){
+      try{localStorage.setItem(K,JSON.stringify(db))}catch(_){}
+      try{for(const id of affected)ak207RemoveSyncEvent('status',id)}catch(_){}
+      try{ak209ClearStatusDirtyIfResolved()}catch(_){}
+    }
+    return [...affected];
+  }
+
+  async function adoptCloud(ids){
+    if(!ids.length||session?.role!=='worker'||!navigator.onLine)return false;
+    try{
+      const full=await akV4FetchFull();
+      const cloudDb=full?.data?.db;if(!cloudDb||!Array.isArray(cloudDb.orders))return false;
+      const cm=new Map(cloudDb.orders.filter(Boolean).map(o=>[String(o.id),o]));
+      let changed=false;
+      for(const id of ids){
+        const remote=cm.get(String(id));if(!remote)continue;
+        const i=(db.orders||[]).findIndex(o=>String(o?.id)===String(id));if(i<0)continue;
+        db.orders[i]=clone(remote);
+        delete db.orders[i].pendingStatusSync;delete db.orders[i].pendingStatusTarget;
+        db.orders[i].lastStatusConfirmedAt=isoNow();changed=true;
+      }
+      if(changed)localStorage.setItem(K,JSON.stringify(db));
+      try{ak209ClearStatusDirtyIfResolved();ak208ClearLegacyQueueIfSafe();ak208MarkReadSuccess()}catch(_){}
+      try{menu();render();accountsRender();renderWorkers();refreshActiveCloudPage();if(current&&ids.includes(String(current)))openOrder(current)}catch(_){}
+      try{updateSyncIndicators()}catch(_){}
+      return changed;
+    }catch(_){return false}
+  }
+
+  async function runCleanup(){
+    if(session?.role!=='worker')return false;
+    if(localStorage.getItem(RUN_KEY)==='done')return false;
+    const ids=legacySnapshot();
+    localStorage.setItem(RUN_KEY,'done');
+    if(ids.length){
+      try{showToast('🧹 تم عزل حالات قديمة من النسخ السابقة وجارٍ اعتماد آخر حالة سحابية',3200)}catch(_){}
+      if(navigator.onLine){
+        const ok=await adoptCloud(ids);
+        if(!ok)setTimeout(()=>{try{ak208FastGenerationCheck(true)}catch(_){}},250);
+      }
+    }
+    return true;
+  }
+  window.ak220CleanupLegacyStatus=runCleanup;
+
+  try{
+    document.documentElement.dataset.build='220';
+    const h=document.querySelector('#systemHealth h2');if(h)h.textContent='🩺 صحة النظام — AK Delivery 220';
+    runCleanup();
+  }catch(_){}
+})();
+// AK Delivery build v220 — quarantine pre-v219 worker status ghosts and adopt cloud; order records/schema unchanged
+</script>
 </body></html>
