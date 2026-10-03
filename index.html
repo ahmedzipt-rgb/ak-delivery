@@ -9510,7 +9510,7 @@ main{overflow-x:hidden!important}
     const opId='AK222-'+Date.now()+'-'+Math.random().toString(36).slice(2,9),actor=akV4Actor();
     const body={key:CLOUD_KEY,action:'v4_tx',data:{opId,actorRole:actor.role,actorId:actor.id,actorName:actor.name,kind:String(kind||'v222'),changes}};
     await ak202Fetch(CLOUD_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain;charset=UTF-8'},body:JSON.stringify(body),cache:'no-store'},45000);
-    for(const ms of [120,180,260,380,550,800,1200,1800,2600,3600]){
+    for(const ms of [70,110,170,260,390,580,850,1250,1900,2800]){
       await new Promise(r=>setTimeout(r,ms));
       const op=await akV4Get('v4_op',{opId},30000);
       if(!op?.found||op.status==='pending')continue;
@@ -9539,60 +9539,105 @@ main{overflow-x:hidden!important}
   async function pushIntent(it,attempt=0){
     if(!it||session?.role!=='worker'||String(it.workerId||session.workerId)!==String(session.workerId))return false;
     if(!navigator.onLine){schedule(1200);return false}
+    const orderId=String(it.orderId||''),orderKey='orders:'+orderId;
     try{
-      const full=await rawLoad(),cloudDb=full.db,revMap=full.entityRevs||{};
-      let remote=(cloudDb.orders||[]).find(x=>String(x?.id)===String(it.orderId));
-      if(!remote)throw new Error('الطلب غير موجود في السحابة');
-
-      const rs=remoteStamp(remote),is=intentStamp(it);
-      const sameEvent=String(remote.statusEventIdV173||'')===String(it.eventId||'')&&String(remote.status||'')===String(it.status||'');
-      if(sameEvent){adoptRemoteOrder(remote,it.orderId);return true}
-      if(it.kind==='receipt'&&remote.deliveryReceivedAt){adoptRemoteOrder(remote,it.orderId);return true}
-      if(String(remote.status||'')==='تم التسليم'&&String(it.status||'')!=='تم التسليم'){
-        archive([{time:isoNow(),source:'terminal-cloud-wins',orderId:it.orderId,localStatus:it.status,cloudStatus:remote.status,eventId:it.eventId}]);
-        adoptRemoteOrder(remote,it.orderId);return true;
-      }
-      if(typeof ak205WorkerCloudLock==='function'&&ak205WorkerCloudLock(remote,cloudDb,it.status)){
-        adoptRemoteOrder(remote,it.orderId);return true;
-      }
-      if(rs>is && String(remote.statusEventIdV173||'')!==String(it.eventId||'')){
-        archive([{time:isoNow(),source:'newer-cloud-wins',orderId:it.orderId,localStatus:it.status,cloudStatus:remote.status,eventId:it.eventId}]);
-        adoptRemoteOrder(remote,it.orderId);return true;
-      }
-      if(String(remote.status||'')===String(it.status||'') && rs>=is){adoptRemoteOrder(remote,it.orderId);return true}
-
-      remote=clone(remote);const s=it.snapshot||{};
-      for(const k of STATUS_FIELDS){if(Object.prototype.hasOwnProperty.call(s,k))remote[k]=clone(s[k])}
-      remote.status=String(it.status||'');remote.statusEventIdV173=String(it.eventId||'');
-      remote.statusEnteredAt=s.statusEnteredAt||it.changedAt||isoNow();remote.statusChangedAtV173=s.statusChangedAtV173||it.changedAt||isoNow();
-      remote.modifiedAt=s.modifiedAt||it.changedAt||isoNow();remote.modifiedBy=s.modifiedBy||actorName();remote.lastChangeKind=s.lastChangeKind||('تغيير حالة v222: '+it.status);
-      remote.history=mergeHistory(remote.history,s.history);
-      delete remote.pendingStatusSync;delete remote.pendingStatusTarget;
-
-      const orderKey='orders:'+String(it.orderId),changes=[{type:'orders',id:String(it.orderId),expectedRev:Number(revMap[orderKey]||0),deleted:false,entity:remote}];
-      if(it.transfer){
-        const tr=clone(it.transfer),tid=String(tr.id||'');
-        if(tid){
-          const current=(cloudDb.deliveryTransfers||[]).find(x=>String(x?.id)===tid);
-          const entity=current?Object.assign(clone(current),tr):tr;
-          changes.push({type:'deliveryTransfers',id:tid,expectedRev:Number(revMap['deliveryTransfers:'+tid]||0),deleted:false,entity});
+      /* v223 fast path: لا نقوم بتحميل قاعدة CloudV4 كاملة قبل كل تغيير حالة.
+         revision الخاص بالطلب موجود أصلاً في baseline المحلي. نرسل الطلب مباشرة؛
+         وإذا ظهر تعارض فقط نقرأ السحابة كمسار استثنائي ثم نعيد المحاولة. */
+      let base=akV4ReadBase(),baseRec=base?.entries?.[orderKey]||null;
+      if(!baseRec){
+        const full=await rawLoad(),remote=(full.db?.orders||[]).find(x=>String(x?.id)===orderId)||null;
+        if(!remote)throw new Error('الطلب غير موجود في السحابة');
+        const b=akV4ReadBase();
+        b.entries=b.entries||{};
+        b.entries[orderKey]={rev:Number(full.entityRevs?.[orderKey]||0),hash:akV4HashEntity(remote),deleted:false};
+        if(it.transfer?.id){
+          const tk='deliveryTransfers:'+String(it.transfer.id),tr=(full.db?.deliveryTransfers||[]).find(x=>String(x?.id)===String(it.transfer.id));
+          if(tr)b.entries[tk]={rev:Number(full.entityRevs?.[tk]||0),hash:akV4HashEntity(tr),deleted:false};
         }
+        akV4WriteBase(b);
+        const merged=clone(remote),s=it.snapshot||{};
+        for(const k of STATUS_FIELDS)if(Object.prototype.hasOwnProperty.call(s,k))merged[k]=clone(s[k]);
+        merged.status=String(it.status||'');merged.statusEventIdV173=String(it.eventId||'');
+        merged.statusEnteredAt=s.statusEnteredAt||it.changedAt||isoNow();merged.statusChangedAtV173=s.statusChangedAtV173||it.changedAt||isoNow();
+        merged.modifiedAt=s.modifiedAt||it.changedAt||isoNow();merged.modifiedBy=s.modifiedBy||actorName();merged.lastChangeKind=s.lastChangeKind||('تغيير حالة v223: '+it.status);
+        merged.history=mergeHistory(remote.history,s.history);delete merged.pendingStatusSync;delete merged.pendingStatusTarget;
+        const li=(db.orders||[]).findIndex(x=>String(x?.id)===orderId);if(li>=0)db.orders[li]=merged;else (db.orders||(db.orders=[])).push(merged);
+        localStorage.setItem(K,JSON.stringify(db));
+        return pushIntent(it,attempt+1);
       }
-      const op=await tx(changes,'worker-status-v222:'+String(session.workerId||''));
-      const orderChange=(op.changes||[]).find(ch=>ch.type==='orders'&&String(ch.id)===String(it.orderId)&&!ch.deleted);
+
+      let local=(db.orders||[]).find(x=>String(x?.id)===orderId);
+      if(!local)throw new Error('الطلب غير موجود على الجهاز');
+      const next=clone(local),s=it.snapshot||{};
+      for(const k of STATUS_FIELDS)if(Object.prototype.hasOwnProperty.call(s,k))next[k]=clone(s[k]);
+      next.status=String(it.status||'');next.statusEventIdV173=String(it.eventId||'');
+      next.statusEnteredAt=s.statusEnteredAt||it.changedAt||isoNow();next.statusChangedAtV173=s.statusChangedAtV173||it.changedAt||isoNow();
+      next.modifiedAt=s.modifiedAt||it.changedAt||isoNow();next.modifiedBy=s.modifiedBy||actorName();next.lastChangeKind=s.lastChangeKind||('تغيير حالة v223: '+it.status);
+      next.history=mergeHistory(local.history,s.history);delete next.pendingStatusSync;delete next.pendingStatusTarget;
+
+      const changes=[{type:'orders',id:orderId,expectedRev:Number(baseRec.rev||0),deleted:false,entity:next}];
+      if(it.transfer?.id){
+        const tid=String(it.transfer.id),tk='deliveryTransfers:'+tid,tbase=base?.entries?.[tk]||null;
+        let tr=clone(it.transfer);
+        const localTr=(db.deliveryTransfers||[]).find(x=>String(x?.id)===tid);
+        if(localTr)tr=Object.assign(clone(localTr),tr);
+        changes.push({type:'deliveryTransfers',id:tid,expectedRev:Number(tbase?.rev||0),deleted:false,entity:tr});
+      }
+
+      const op=await tx(changes,'worker-status-v223:'+String(session.workerId||''));
+      const orderChange=(op.changes||[]).find(ch=>ch.type==='orders'&&String(ch.id)===orderId&&!ch.deleted);
       if(!orderChange?.entity)throw new Error('لم تعد السحابة كيان الطلب بعد الحفظ');
       updateBaselineEntities(op.changes||[]);
-      const i=(db.orders||[]).findIndex(x=>String(x?.id)===String(it.orderId));
+      const i=(db.orders||[]).findIndex(x=>String(x?.id)===orderId);
       if(i>=0)db.orders[i]=clone(orderChange.entity);else db.orders.push(clone(orderChange.entity));
-      if(it.transfer){const tch=(op.changes||[]).find(ch=>ch.type==='deliveryTransfers'&&String(ch.id)===String(it.transfer.id)&&!ch.deleted);if(tch?.entity){const ti=(db.deliveryTransfers||[]).findIndex(x=>String(x?.id)===String(it.transfer.id));if(ti>=0)db.deliveryTransfers[ti]=clone(tch.entity);else db.deliveryTransfers.push(clone(tch.entity));}}
-      clearIntent(it.orderId,it.eventId);settlePending(it.orderId);refresh(it.orderId);
-      try{ak208MarkReadSuccess();localStorage.setItem(CLOUD_LAST_OK_KEY,isoNow())}catch(_){ }
-      setTimeout(()=>{try{akV4PollChanges(true)}catch(_){}},60);
+      if(it.transfer?.id){
+        const tch=(op.changes||[]).find(ch=>ch.type==='deliveryTransfers'&&String(ch.id)===String(it.transfer.id)&&!ch.deleted);
+        if(tch?.entity){const ti=(db.deliveryTransfers||[]).findIndex(x=>String(x?.id)===String(it.transfer.id));if(ti>=0)db.deliveryTransfers[ti]=clone(tch.entity);else db.deliveryTransfers.push(clone(tch.entity));}
+      }
+      clearIntent(orderId,it.eventId);settlePending(orderId);refresh(orderId);
+      try{ak208MarkReadSuccess();localStorage.setItem(CLOUD_LAST_OK_KEY,isoNow());localStorage.removeItem(CLOUD_LAST_ERROR_KEY)}catch(_){ }
+      // استقبل أي revisions حدثت على جهاز آخر بعد آخر قراءة، بدون تحميل كامل للقاعدة.
+      setTimeout(()=>{try{akV4PollChanges(true)}catch(_){}},35);
       return true;
     }catch(e){
-      if(e?.code==='cloud_conflict'&&attempt<4){await new Promise(r=>setTimeout(r,140*(attempt+1)));return pushIntent(it,attempt+1)}
+      const msg=String(e?.message||e||'');
+      /* التعارض هو المسار النادر فقط. هنا نقرأ snapshot واحداً لنحصل على entityRev الحقيقي
+         ونحافظ على أي حقول أحدث من المالك، ثم نعيد نفس intent مرة واحدة. */
+      if((e?.code==='cloud_conflict'||/revision conflict|تعارض تحديثات/i.test(msg))&&attempt<3){
+        try{
+          const full=await rawLoad(),remote=(full.db?.orders||[]).find(x=>String(x?.id)===orderId)||null;
+          if(!remote)throw e;
+          const sameEvent=String(remote.statusEventIdV173||'')===String(it.eventId||'')&&String(remote.status||'')===String(it.status||'');
+          if(sameEvent){adoptRemoteOrder(remote,orderId);return true}
+          if(String(remote.status||'')==='تم التسليم'&&String(it.status||'')!=='تم التسليم'){adoptRemoteOrder(remote,orderId);return true}
+          if(remoteStamp(remote)>intentStamp(it)&&String(remote.statusEventIdV173||'')!==String(it.eventId||'')){adoptRemoteOrder(remote,orderId);return true}
+
+          const b=akV4ReadBase();b.entries=b.entries||{};
+          b.entries[orderKey]={rev:Number(full.entityRevs?.[orderKey]||0),hash:akV4HashEntity(remote),deleted:false};
+          if(it.transfer?.id){
+            const tid=String(it.transfer.id),tk='deliveryTransfers:'+tid,tr=(full.db?.deliveryTransfers||[]).find(x=>String(x?.id)===tid);
+            if(tr)b.entries[tk]={rev:Number(full.entityRevs?.[tk]||0),hash:akV4HashEntity(tr),deleted:false};
+          }
+          akV4WriteBase(b);
+          const merged=clone(remote),s=it.snapshot||{};
+          for(const k of STATUS_FIELDS)if(Object.prototype.hasOwnProperty.call(s,k))merged[k]=clone(s[k]);
+          merged.status=String(it.status||'');merged.statusEventIdV173=String(it.eventId||'');
+          merged.statusEnteredAt=s.statusEnteredAt||it.changedAt||isoNow();merged.statusChangedAtV173=s.statusChangedAtV173||it.changedAt||isoNow();
+          merged.modifiedAt=s.modifiedAt||it.changedAt||isoNow();merged.modifiedBy=s.modifiedBy||actorName();merged.lastChangeKind=s.lastChangeKind||('تغيير حالة v223: '+it.status);
+          merged.history=mergeHistory(remote.history,s.history);delete merged.pendingStatusSync;delete merged.pendingStatusTarget;
+          const li=(db.orders||[]).findIndex(x=>String(x?.id)===orderId);if(li>=0)db.orders[li]=merged;else db.orders.push(merged);
+          localStorage.setItem(K,JSON.stringify(db));
+          await new Promise(r=>setTimeout(r,90*(attempt+1)));
+          return pushIntent(it,attempt+1);
+        }catch(inner){if(inner!==e)e=inner}
+      }
+      // إذا أكد الخادم أن الطلب مُسلَّم نهائياً، نتوقف عن إعادة إرسال حالة أقدم ونعتمد السحابة.
+      if(/cannot move a delivered order backwards|delivered order backwards/i.test(msg)){
+        try{const full=await rawLoad(),remote=(full.db?.orders||[]).find(x=>String(x?.id)===orderId);if(remote){adoptRemoteOrder(remote,orderId);return true}}catch(_){ }
+      }
       try{localStorage.setItem(CLOUD_PENDING_KEY,'1');localStorage.setItem(CLOUD_LAST_ERROR_KEY,e?.message||String(e));updateSyncIndicators()}catch(_){ }
-      schedule(Math.min(5000,800*(attempt+1)));return false;
+      schedule(Math.min(4200,650*(attempt+1)));return false;
     }
   }
   function enqueue(it){const run=()=>pushIntent(clone(it));const p=queue.then(run,run);queue=p.catch(()=>{});return p}
@@ -9740,12 +9785,36 @@ main{overflow-x:hidden!important}
 
   try{
     migrateOldStatusWork();
-    document.documentElement.dataset.build='222';
-    const h=document.querySelector('#systemHealth h2');if(h)h.textContent='🩺 صحة النظام — AK Delivery 222';
+    document.documentElement.dataset.build='223';
+    const h=document.querySelector('#systemHealth h2');if(h)h.textContent='🩺 صحة النظام — AK Delivery 223';
     if(session?.role==='worker'&&hasIntents())schedule(100);else setTimeout(healIfSafe,160);
   }catch(_){ }
 })();
-// AK Delivery build v222 — single status writer + revision catch-up + terminal-state alignment; order records/schema unchanged
+// AK Delivery build v223 — fast per-entity status writes + conflict-only full load + throttled incremental polling; order records/schema unchanged
 
+</script>
+
+<script id="ak223SpeedScript">
+/* v223: تخفيف فحوص الشبكة الخلفية. المؤقت القديم قد يستدعي الدالة كل 450ms،
+   لذلك نُبقي الاستدعاء نفسه لكن لا نفتح طلب شبكة جديداً إلا كل ~1 ثانية أثناء النشاط
+   وكل 3 ثوانٍ عند الخمول. force=true يبقى فورياً بعد الكتابات/عودة الصفحة. */
+(function(){
+  let last=0,inFlight=null;
+  const baseFast=window.ak208FastGenerationCheck||ak208FastGenerationCheck;
+  window.ak208FastGenerationCheck=async function(force=false){
+    if(force){
+      if(inFlight)return inFlight;
+      inFlight=Promise.resolve(baseFast.call(this,true)).finally(()=>{inFlight=null});
+      return inFlight;
+    }
+    const now=Date.now(),active=(typeof ak198LastActivity==='number'&&(now-ak198LastActivity)<120000),gap=active?950:3000;
+    if(now-last<gap||inFlight)return false;
+    last=now;inFlight=Promise.resolve(baseFast.call(this,false)).finally(()=>{inFlight=null});
+    return inFlight;
+  };
+  ak208FastGenerationCheck=window.ak208FastGenerationCheck;
+  try{document.documentElement.dataset.build='223';}catch(_){ }
+})();
+// AK Delivery v223 speed governor — no database/schema changes
 </script>
 </body></html>
