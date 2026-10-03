@@ -566,6 +566,55 @@ button.ak214-busy{opacity:.68!important;cursor:wait!important;pointer-events:non
   html[data-role="worker"] #orderListCard{backface-visibility:hidden!important;-webkit-backface-visibility:hidden!important}
 }
 
+
+
+/* v215: دفعة واجهة الهاتف + البحث والعدادات. طبقة عرض فقط، لا تغيّر قاعدة الطلبات. */
+#ak215SearchMeta{display:none;margin-top:9px;padding:8px 10px;border-radius:8px;background:#eef6fb;border:1px solid #d7e7f0;font-size:12px;line-height:1.7}
+#ak215SearchMeta .badge{margin:2px 3px;display:inline-block}
+html[data-role="worker"] #list .ak215-owner-export{display:none!important}
+#orderListCard{overscroll-behavior:contain}
+#orderListCard td,#orderListCard th{vertical-align:top}
+
+@media(max-width:650px){
+  /* يمنع الطبقة/المساحة البيضاء: الصفحة ثابتة، وقائمة الطلبات وحدها هي التي تتمرر. */
+  html[data-view-mode="mobile"] body,
+  html[data-view-mode="auto"] body{overflow:hidden!important;height:100dvh!important;min-height:100dvh!important}
+  html[data-view-mode="mobile"] #appHeader,
+  html[data-view-mode="auto"] #appHeader{position:sticky!important;top:0!important;z-index:80!important}
+  html[data-view-mode="mobile"] .app,
+  html[data-view-mode="auto"] .app{height:calc(100dvh - 58px)!important;min-height:0!important;max-height:calc(100dvh - 58px)!important;overflow:hidden!important;align-items:stretch!important}
+  html[data-view-mode="mobile"] aside,
+  html[data-view-mode="auto"] aside{height:100%!important;min-height:0!important;max-height:none!important;overflow-y:auto!important;overflow-x:hidden!important;-webkit-overflow-scrolling:touch!important}
+  html[data-view-mode="mobile"] main,
+  html[data-view-mode="auto"] main{height:100%!important;min-height:0!important;max-height:none!important;overflow:hidden!important;padding-bottom:5px!important}
+  html[data-view-mode="mobile"] main>.page.on,
+  html[data-view-mode="auto"] main>.page.on{height:100%!important;min-height:0!important;max-height:none!important;overflow-y:auto!important;-webkit-overflow-scrolling:touch!important}
+  html[data-view-mode="mobile"] #list.page.on,
+  html[data-view-mode="auto"] #list.page.on{display:flex!important;flex-direction:column!important;overflow:hidden!important;height:100%!important;min-height:0!important}
+  html[data-view-mode="mobile"] #list.page.on>.card:first-child,
+  html[data-view-mode="auto"] #list.page.on>.card:first-child{flex:0 0 auto!important;position:relative!important;top:auto!important;z-index:12!important;margin-bottom:6px!important;padding:9px!important}
+  html[data-view-mode="mobile"] #workerFinanceSummary,
+  html[data-view-mode="auto"] #workerFinanceSummary{flex:0 0 auto!important;margin-bottom:6px!important;padding:9px!important}
+  html[data-view-mode="mobile"] #orderHeaderFixed,
+  html[data-view-mode="auto"] #orderHeaderFixed{display:none!important}
+  html[data-view-mode="mobile"] #orderListCard,
+  html[data-view-mode="auto"] #orderListCard{flex:1 1 auto!important;min-height:0!important;height:auto!important;max-height:none!important;overflow:auto!important;-webkit-overflow-scrolling:touch!important;margin:0!important;padding:0!important;position:relative!important;transform:none!important;contain:none!important;background:#fff!important}
+  html[data-view-mode="mobile"] #orderListCard table,
+  html[data-view-mode="auto"] #orderListCard table{min-width:720px!important;width:100%!important;margin:0!important;background:#fff!important}
+  html[data-view-mode="mobile"] #orderListCard thead th,
+  html[data-view-mode="auto"] #orderListCard thead th{position:sticky!important;top:0!important;z-index:4!important;background:#fff!important}
+  html[data-view-mode="mobile"] #list .grid,
+  html[data-view-mode="auto"] #list .grid{gap:5px!important}
+  html[data-view-mode="mobile"] #list .grid>div:first-child,
+  html[data-view-mode="auto"] #list .grid>div:first-child{grid-column:1/-1!important;width:100%!important}
+  html[data-view-mode="mobile"] #search,
+  html[data-view-mode="auto"] #search{min-width:120px!important;font-size:14px!important}
+  html[data-view-mode="mobile"] #title,
+  html[data-view-mode="auto"] #title{font-size:18px!important;margin:2px 0 8px!important}
+  html[data-view-mode="mobile"] #ak215SearchMeta,
+  html[data-view-mode="auto"] #ak215SearchMeta{max-height:74px;overflow:auto}
+}
+
 </style></head>
 <body>
 <div id="loginScreen" class="login-screen">
@@ -8184,6 +8233,156 @@ logout=function(){ak214LogoutBase();setTimeout(()=>{try{showLoginChooserV214()}c
 try{if(!session||!session.role)showLoginChooserV214()}catch(_){}
 
 // AK Delivery build v214-login-fix — atomic action guards + CloudV4 status transaction + incremental fast sync; order data schema unchanged
+
+</script>
+<script>
+
+/* v215: توحيد مصدر العرض والعدادات والبحث + تثبيت قائمة الطلبات في الهاتف.
+   هذه الدفعة لا تكتب في db ولا تغيّر أي طلب؛ كل التغييرات خاصة بطريقة العرض فقط. */
+const AK215_SEARCH_CACHE=new Map();
+function ak215OrderAccessible(o){
+  if(!o||o.duplicateHidden||o.deletedAt)return false;
+  if(session?.role==='worker'&&!workerCanSeeOrder(o,session.workerId))return false;
+  return true;
+}
+function ak215OrderArchived(o){
+  if(!o)return false;
+  const id=String(o.id);
+  const settled=(o.status==='تم التسليم'&&settledOrderIdSet().has(id));
+  const returned=(['مرتجع','طلب رجوع'].includes(o.status)&&returnedOrderIdSet().has(id));
+  return !!(settled||returned);
+}
+function ak215MainVisiblePool(){
+  return (db.orders||[]).filter(o=>{
+    if(!ak215OrderAccessible(o)||o.status==='في الطريق')return false;
+    if(ak215OrderArchived(o)&&!orderHasArchiveConflict(o))return false;
+    return true;
+  });
+}
+function ak215SearchText(o){
+  const id=String(o?.id||'');
+  const stamp=[o?.modifiedAt,o?.statusEventIdV173,o?.status,o?.clientNo,o?.recipient,o?.phone,o?.address,o?.city,o?.sender,o?.product,(o?.history||[]).length,(o?.remarks||[]).length].join('|');
+  const old=AK215_SEARCH_CACHE.get(id);
+  if(old&&old.stamp===stamp)return old.text;
+  const history=(Array.isArray(o?.history)?o.history:[]).map(h=>`${h?.time||''} ${h?.text||''}`).join(' ');
+  const remarks=(Array.isArray(o?.remarks)?o.remarks:[]).map(r=>`${r?.time||''} ${r?.text||''}`).join(' ');
+  const value=(`${o?.seq||''} ${o?.id||''} ${o?.clientNo||''} ${o?.recipient||''} ${o?.phone||''} ${o?.sender||''} ${o?.address||''} ${o?.city||''} ${o?.product||''} ${o?.status||''} ${history} ${remarks}`).toLowerCase();
+  AK215_SEARCH_CACHE.set(id,{stamp,text:value});
+  return value;
+}
+visibleOrders=function(){
+  const input=document.getElementById('search');
+  const term=String(input?.value||'').trim().toLowerCase();
+  if(term){
+    // البحث يشمل كل الطلبات غير المحذوفة المسموح للحساب برؤيتها، بما فيها «في الطريق» والأرشيف.
+    return (db.orders||[]).filter(o=>ak215OrderAccessible(o)&&ak215SearchText(o).includes(term));
+  }
+  const pool=ak215MainVisiblePool();
+  return pool.filter(o=>filter==='الكل'||String(o.status||'')===String(filter||''));
+};
+window.visibleOrders=visibleOrders;
+
+function ak215EnsureSearchMeta(){
+  let el=document.getElementById('ak215SearchMeta');
+  if(el)return el;
+  const first=document.querySelector('#list.page>.card:first-child')||document.querySelector('#list>.card:first-child');
+  if(!first)return null;
+  el=document.createElement('div');el.id='ak215SearchMeta';first.appendChild(el);return el;
+}
+function ak215UpdateSearchMeta(arr){
+  const el=ak215EnsureSearchMeta();if(!el)return;
+  const term=String(document.getElementById('search')?.value||'').trim();
+  if(!term){el.style.display='none';el.innerHTML='';return;}
+  const counts=new Map();
+  for(const o of arr||[])counts.set(String(o.status||'—'),1+(counts.get(String(o.status||'—'))||0));
+  const parts=[...counts.entries()].sort((a,b)=>b[1]-a[1]).map(([s,n])=>`<span class="badge">${htmlEscape(statusDisplayName(s))}: ${n}</span>`).join(' ');
+  el.style.display='block';
+  el.innerHTML=`<b>نتائج البحث: ${(arr||[]).length}</b>${parts?'<div style="margin-top:4px">'+parts+'</div>':''}`;
+}
+
+const ak215RenderBase=render;
+render=function(){
+  ak215RenderBase();
+  const arr=visibleOrders();
+  const searching=!!String(document.getElementById('search')?.value||'').trim();
+  const titleEl=document.getElementById('title');
+  if(titleEl)titleEl.textContent=searching?`نتائج البحث — ${arr.length}`:`${statusDisplayName(filter)} — ${arr.length}`;
+  ak215UpdateSearchMeta(arr);
+  ak215ApplyRoleUi();
+};
+window.render=render;
+
+menu=function(){
+  ensureCustomerChangesMenu();
+  updateReturnRequestCount();
+  const deletedCount=document.getElementById('deletedOrdersCount');
+  if(deletedCount)deletedCount.textContent=(db.orders||[]).filter(o=>o&&o.deletedAt).length;
+  const activeOrders=ak215MainVisiblePool();
+  const stateEl=document.getElementById('stateMenu');
+  if(stateEl)stateEl.innerHTML=states.filter(s=>s!=='مرتجع').map(s=>{
+    const n=s==='الكل'?activeOrders.length:activeOrders.filter(o=>String(o.status||'')===String(s)).length;
+    return `<button data-menu-key="state:${htmlEscape(s)}" onclick="filter='${s}';go('list','state:${s}')">${statusDisplayName(s)} <span class="menu-count">${n}</span></button>`;
+  }).join('');
+  updateSidebarActive();
+  try{bindMainNavigation()}catch(_){}
+  ak215ApplyRoleUi();
+};
+window.menu=menu;
+
+function ak215ApplyRoleUi(){
+  try{
+    const worker=session?.role==='worker';
+    document.querySelectorAll('#list button').forEach(b=>{
+      const oc=String(b.getAttribute('onclick')||'');
+      if(oc.includes('exportExcel()')||oc.includes('exportPDF()')){
+        b.classList.add('ak215-owner-export');
+        b.style.display=worker?'none':'';
+      }
+    });
+  }catch(_){}
+}
+
+runOrderSearch=function(){
+  render();
+  const n=visibleOrders().length;
+  const card=document.getElementById('orderListCard');if(card){card.scrollTop=0;card.scrollLeft=0;}
+  if(String(document.getElementById('search')?.value||'').trim())showToast('نتائج البحث: '+n);
+};
+clearOrderSearch=function(){
+  const s=document.getElementById('search');if(s)s.value='';
+  render();
+  const card=document.getElementById('orderListCard');if(card){card.scrollTop=0;card.scrollLeft=0;}
+};
+window.runOrderSearch=runOrderSearch;window.clearOrderSearch=clearOrderSearch;
+
+debouncedRenderV180=function(){
+  clearTimeout(ak180SearchTimer);
+  ak180SearchTimer=setTimeout(()=>{try{render()}catch(e){akLogV180('ui-error','بحث الطلبات v215',e.message)}},90);
+};
+window.debouncedRenderV180=debouncedRenderV180;
+
+/* عند الانتقال إلى قسم آخر تبدأ القائمة من أعلى، بدون تغيير أي بيانات. */
+const ak215DirectNavigateBase=directNavigate;
+directNavigate=function(key){
+  const before=String(sidebarActiveKey||'');
+  const r=ak215DirectNavigateBase(key);
+  try{
+    if(String(sidebarActiveKey||'')!==before){
+      const card=document.getElementById('orderListCard');if(card){card.scrollTop=0;card.scrollLeft=0;}
+    }
+  }catch(_){}
+  return r;
+};
+window.directNavigate=directNavigate;
+
+try{
+  document.documentElement.dataset.build='215';
+  const h=document.querySelector('#systemHealth h2');if(h)h.textContent='🩺 صحة النظام — AK Delivery 215';
+  const s=document.getElementById('search');if(s)s.placeholder='بحث في جميع الطلبات غير المحذوفة';
+  ak215EnsureSearchMeta();ak215ApplyRoleUi();menu();render();
+}catch(_){}
+
+// AK Delivery build v215 — mobile list stability + unified search/counts; order data schema and records unchanged
 
 </script>
 </body></html>
