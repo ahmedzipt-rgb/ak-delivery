@@ -615,7 +615,33 @@ html[data-role="worker"] #list .ak215-owner-export{display:none!important}
   html[data-view-mode="auto"] #ak215SearchMeta{max-height:74px;overflow:auto}
 }
 
-</style></head>
+</style>
+<style id="ak216Style">
+/* v216 — أدوات تنزيل مدمجة + تحسين وضوح مسار الرجوع والحسابات. */
+.ak216-list-control-card{padding:9px 10px!important;margin-bottom:6px!important}
+.ak216-list-title-row{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.ak216-list-title-row #title{margin:0!important;min-width:0}
+.ak216-search-row{display:flex;gap:5px;align-items:center;margin-top:7px}
+.ak216-search-row #search{flex:1;min-width:0!important;margin:0!important;height:40px}
+.ak216-search-row .btn{width:auto!important;min-width:42px!important;margin:0!important;padding:8px 10px!important}
+.ak216-export-menu{position:relative;flex:0 0 auto}
+.ak216-export-menu>summary{list-style:none;cursor:pointer;display:flex;align-items:center;justify-content:center;width:38px;height:38px;border-radius:10px;background:#eef2f5;border:1px solid #d7dee7;font-size:19px;user-select:none}
+.ak216-export-menu>summary::-webkit-details-marker{display:none}
+.ak216-export-menu[open]>summary{background:#dfe8ef}
+.ak216-export-popover{position:absolute;z-index:50;top:44px;left:0;display:flex;gap:6px;padding:7px;background:#fff;border:1px solid #d7dee7;border-radius:11px;box-shadow:0 8px 24px #0002;min-width:170px}
+.ak216-export-popover .btn{margin:0!important;white-space:nowrap;flex:1}
+.ak216-flow-summary{display:flex;gap:6px;flex-wrap:wrap;margin:7px 0 2px}
+.ak216-flow-chip{display:inline-flex;align-items:center;gap:4px;padding:5px 8px;border:1px solid #dfe4ea;border-radius:999px;background:#f8fafc;font-size:12px;font-weight:700}
+@media(max-width:720px){
+ .ak216-list-control-card{padding:7px 8px!important}
+ .ak216-list-title-row #title{font-size:18px!important}
+ .ak216-search-row{margin-top:5px}
+ .ak216-search-row #search{height:38px;font-size:14px!important}
+ .ak216-export-menu>summary{width:36px;height:36px}
+ .ak216-export-popover{position:fixed;top:64px;left:8px;right:8px;min-width:0;justify-content:center}
+}
+</style>
+</head>
 <body>
 <div id="loginScreen" class="login-screen">
  <div class="login-card" id="loginRoleChooserV214">
@@ -654,16 +680,23 @@ html[data-role="worker"] #list .ak215-owner-export{display:none!important}
 <div id="runtimeDiag" style="display:none;position:fixed;bottom:8px;left:8px;right:8px;z-index:10000;background:#7f1d1d;color:#fff;padding:9px 12px;border-radius:8px;font-size:12px;direction:ltr;text-align:left;max-height:34vh;overflow:auto"></div>
 <div id="syncToast" style="display:none;position:fixed;top:72px;left:50%;transform:translateX(-50%);z-index:9999;background:#222;color:#fff;padding:9px 14px;border-radius:10px;font-size:13px;max-width:90%;text-align:center"></div>
 <div class=app><aside><h3>القائمة</h3><button data-menu-key="home" onclick="go('list','home')">🏠 الرئيسية</button><button data-menu-key="deletedOrders" onclick="go('deletedOrders','deletedOrders')">🗑️ المحذوفات <span id="deletedOrdersCount" class="badge">0</span></button><button data-menu-key="add" onclick="go('add','add')">➕ طلب جديد</button><button data-menu-key="bulk" onclick="go('bulk','bulk')">📋 لصق طلبات دفعة واحدة</button><button data-menu-key="pdfImport" onclick="go('pdfImport','pdfImport')">📄 استيراد PDF</button><div id=stateMenu></div><button id="customerChangesMenu" data-menu-key="customerChanges" onclick="go('customerChanges','customerChanges')">🔄 تغيير الزبون <span id="customerChangeCount" class="badge">0</span></button><button id="returnBatchesMenu" data-menu-key="returnBatches" onclick="go('returnBatches','returnBatches')">↩ طلبات رجوع الطلبات <span id="returnBatchCount" class="badge">0</span></button><button id="returnedOrdersMenu" data-menu-key="returnedOrders" onclick="go('returnedOrders','returnedOrders')">✅ تم إرجاع الطلب <span id="returnedOrdersCount" class="badge">0</span></button><button id="deliveryTransfersMenu" data-menu-key="deliveryTransfers" onclick="go('deliveryTransfers','deliveryTransfers')">🚚 في الطريق <span id="deliveryTransferCount" class="badge transit-badge">0</span></button><button data-menu-key="workers" onclick="go('workers','workers')">👤 الموزعون</button><button data-menu-key="accounts" onclick="go('accounts','accounts')">💰 الحسابات</button><button data-menu-key="invoices" onclick="go('invoices','invoices')">🧾 الفواتير</button><button data-menu-key="systemHealth" onclick="go('systemHealth','systemHealth')">🩺 صحة النظام <span id="healthIssueCount" class="badge">0</span></button><button data-menu-key="ak189Recovery" onclick="go('ak189Recovery','ak189Recovery');ak189RefreshReport()">🛡️ مراجعة التعارضات <span id="ak189Count" class="badge">0</span></button><button data-menu-key="backupSafe" onclick="go('backupSafe','backupSafe')">🛡️ النسخ الاحتياطي</button><button data-menu-key="cloudSetup" onclick="go('cloudSetup','cloudSetup')">☁️ المزامنة السحابية</button><button data-menu-key="emergencySync" onclick="go('emergencySync','emergencySync')">🔄 مزامنة الموزع</button></aside><main>
-<section id=list class="page on"><div class=card><h2 id=title>قيد التوزيع</h2>
-<div class=grid>
-<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
-  <input id=search style="flex:1;min-width:190px" placeholder="بحث في الطلبات الحالية" oninput="debouncedRenderV180()" onkeydown="if(event.key==='Enter'){event.preventDefault();runOrderSearch()}">
-  <button type="button" class="btn" onclick="runOrderSearch()">🔎 بحث</button>
-  <button type="button" class="btn gr" onclick="clearOrderSearch()">مسح</button>
+<section id=list class="page on"><div class="card ak216-list-control-card">
+<div class="ak216-list-title-row">
+  <h2 id=title>قيد التوزيع</h2>
+  <details id="ak216ExportMenu" class="ak216-export-menu">
+    <summary title="تنزيل / تصدير" aria-label="تنزيل أو تصدير">⬇️</summary>
+    <div class="ak216-export-popover">
+      <button type="button" class="btn g" onclick="ak216ExportExcel()">📊 Excel</button>
+      <button type="button" class="btn r" onclick="ak216ExportPDF()">📄 PDF</button>
+    </div>
+  </details>
 </div>
-<button class="btn g" onclick="exportExcel()">📊 تنزيل Excel</button>
-<button class="btn r" onclick="exportPDF()">📄 تنزيل PDF</button>
-</div></div>
+<div class="ak216-search-row">
+  <input id=search placeholder="بحث في الطلبات الحالية" oninput="debouncedRenderV180()" onkeydown="if(event.key==='Enter'){event.preventDefault();runOrderSearch()}">
+  <button type="button" class="btn ak216-search-btn" onclick="runOrderSearch()">🔎</button>
+  <button type="button" class="btn gr ak216-clear-btn" onclick="clearOrderSearch()">✕</button>
+</div>
+</div>
 <div id="workerFinanceSummary" class="card" style="display:none"></div>
 <div id="orderHeaderFixed" class="card order-header-fixed" aria-hidden="true"><div class="order-header-x"><table><colgroup><col><col><col><col><col><col><col><col></colgroup><thead><tr><th>رقم الترتيب</th><th>رمز الطلب</th><th>المستلم</th><th>العنوان</th><th class="stay-days-col">المدة</th><th>الهاتف</th><th>القيمة والحساب</th><th>الحالة</th></tr></thead></table></div></div>
 <div id="orderListCard" class=card><table><colgroup><col><col><col><col><col><col><col><col></colgroup><thead><tr><th>رقم الترتيب</th><th>رمز الطلب</th><th>المستلم</th><th>العنوان</th><th class="stay-days-col">المدة</th><th>الهاتف</th><th>القيمة والحساب</th><th>الحالة</th></tr></thead><tbody id=rows></tbody></table></div></section>
@@ -8384,5 +8417,83 @@ try{
 
 // AK Delivery build v215 — mobile list stability + unified search/counts; order data schema and records unchanged
 
+</script>
+
+<script id="ak216Script">
+/* v216: إعادة Excel/PDF لكل من المالك والموزع في قائمة صغيرة لا تستهلك مساحة الصفحة.
+   وإضافة ملخصات قراءة فقط لمسار الرجوع والحسابات. لا توجد كتابة أو ترحيل لبيانات الطلبات. */
+function ak216CloseExportMenu(){
+  try{const m=document.getElementById('ak216ExportMenu');if(m)m.open=false;}catch(_){}
+}
+function ak216ExportExcel(){try{exportExcel()}finally{ak216CloseExportMenu()}}
+function ak216ExportPDF(){try{exportPDF()}finally{ak216CloseExportMenu()}}
+window.ak216ExportExcel=ak216ExportExcel;window.ak216ExportPDF=ak216ExportPDF;
+
+// v215 كان يخفي أزرار التصدير عن الموزع. في v216 نعيدها داخل قائمة التنزيل المدمجة فقط.
+ak215ApplyRoleUi=function(){
+  try{
+    const m=document.getElementById('ak216ExportMenu');if(m)m.style.display='';
+    document.querySelectorAll('#ak216ExportMenu button').forEach(b=>{b.style.display='';b.disabled=false;});
+  }catch(_){}
+};
+window.ak215ApplyRoleUi=ak215ApplyRoleUi;
+
+// إغلاق قائمة التنزيل بمجرد النقر خارجها.
+document.addEventListener('click',function(ev){
+  try{const m=document.getElementById('ak216ExportMenu');if(m&&m.open&&!m.contains(ev.target))m.open=false;}catch(_){}
+},{passive:true});
+
+function ak216ReturnStats(){
+  const orders=(db?.orders||[]).filter(o=>o&&!o.deletedAt&&!o.duplicateHidden);
+  const requested=orders.filter(o=>o.status==='طلب رجوع').length;
+  const returned=orders.filter(o=>o.status==='مرتجع');
+  const awaitingOwner=returned.filter(o=>!o.returnOwnerConfirmedAt).length;
+  const ownerDone=returned.filter(o=>!!o.returnOwnerConfirmedAt).length;
+  return {requested,awaitingOwner,ownerDone};
+}
+function ak216SettlementStats(){
+  const active=typeof activeSettlements==='function'?activeSettlements():[];
+  const settledIds=new Set(active.flatMap(x=>x?.orderIds||[]).map(String));
+  const delivered=(db?.orders||[]).filter(o=>o&&!o.deletedAt&&!o.duplicateHidden&&o.status==='تم التسليم');
+  const pending=delivered.filter(o=>!settledIds.has(String(o.id))).length;
+  return {pending,archive:active.length};
+}
+function ak216InsertSummaryBefore(listId,html){
+  const list=document.getElementById(listId);if(!list)return;
+  let el=list.previousElementSibling;
+  if(!el||!el.classList?.contains('ak216-flow-summary')){
+    el=document.createElement('div');el.className='ak216-flow-summary';list.parentNode.insertBefore(el,list);
+  }
+  el.innerHTML=html;
+}
+function ak216DecorateFlowPages(){
+  try{
+    const r=ak216ReturnStats();
+    ak216InsertSummaryBefore('returnBatchesList',`<span class="ak216-flow-chip">↩ بانتظار رجوع الموزع: ${r.requested}</span><span class="ak216-flow-chip">📥 بانتظار استلام المالك: ${r.awaitingOwner}</span>`);
+    ak216InsertSummaryBefore('returnedOrdersList',`<span class="ak216-flow-chip">📥 بانتظار المالك: ${r.awaitingOwner}</span><span class="ak216-flow-chip">✅ تم الاستلام: ${r.ownerDone}</span>`);
+    const a=ak216SettlementStats();
+    const acc=document.getElementById('accounts');
+    if(acc){let e=acc.querySelector(':scope > .ak216-flow-summary');if(!e){e=document.createElement('div');e.className='ak216-flow-summary';acc.prepend(e);}e.innerHTML=`<span class="ak216-flow-chip">💰 مسلّمة بانتظار التسوية: ${a.pending}</span><span class="ak216-flow-chip">📦 حزم الدفع المؤكدة: ${a.archive}</span>`;}
+  }catch(_){}
+}
+
+// نزيّن الصفحات بعد عرضها فقط؛ لا نغيّر أي سجل.
+const ak216RenderReturnBatchesBase=renderReturnBatches;
+renderReturnBatches=function(){const r=ak216RenderReturnBatchesBase.apply(this,arguments);ak216DecorateFlowPages();return r};
+window.renderReturnBatches=renderReturnBatches;
+const ak216RenderReturnedOrdersBase=renderReturnedOrders;
+renderReturnedOrders=function(){const r=ak216RenderReturnedOrdersBase.apply(this,arguments);ak216DecorateFlowPages();return r};
+window.renderReturnedOrders=renderReturnedOrders;
+const ak216AccountsRenderBase=accountsRender;
+accountsRender=function(){const r=ak216AccountsRenderBase.apply(this,arguments);ak216DecorateFlowPages();return r};
+window.accountsRender=accountsRender;
+
+try{
+  document.documentElement.dataset.build='216';
+  const h=document.querySelector('#systemHealth h2');if(h)h.textContent='🩺 صحة النظام — AK Delivery 216';
+  ak215ApplyRoleUi();ak216DecorateFlowPages();
+}catch(_){}
+
+// AK Delivery build v216 — compact Excel/PDF for owner+worker + return/settlement flow summaries; records unchanged
 </script>
 </body></html>
