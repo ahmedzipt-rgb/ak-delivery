@@ -1905,6 +1905,40 @@ async function akV4PollChanges(force=false){
   }catch(e){try{localStorage.setItem(CLOUD_LAST_ERROR_KEY,e.message||String(e));updateSyncIndicators()}catch(_){};return false}
   finally{akV4PollBusy=false;}
 }
+
+function akV4RepairConflictDetailsV224(details){
+  try{
+    const list=Array.isArray(details?.conflicts)?details.conflicts:[];
+    if(!list.length)return {applied:0,needsPush:false};
+    const base=akV4ReadBase();let applied=0,needsPush=false;
+    for(const c of list){
+      if(!c||!c.type||c.id==null)continue;
+      const ch={type:String(c.type),id:String(c.id),deleted:!!c.deleted,entityRev:Number(c.currentRev)||0,entity:c.deleted?null:akV4Clone(c.entity)};
+      if(ch.type==='orders'){
+        const local=akV4LocalItem(ch.type,ch.id), remote=ch.deleted?null:ch.entity;
+        const resolved=ak212ResolveOrderConflict(local,remote);
+        akV4ReplaceLocal(ch.type,ch.id,resolved.order,!resolved.order);
+        if(resolved.needsPush)needsPush=true;
+      }else{
+        akV4ReplaceLocal(ch.type,ch.id,ch.entity,!!ch.deleted);
+      }
+      akV4ApplyBaselineChange(base,ch);
+      applied++;
+    }
+    // لا نغيّر base.rev هنا: تفاصيل التعارض تخص كيانات محددة فقط،
+    // ورفع المؤشر العالمي قد يتجاوز أحداثاً أخرى لم يقرأها الجهاز بعد.
+    akV4WriteBase(base);
+    if(applied){
+      try{localStorage.setItem(K,JSON.stringify(db));}catch(_){}
+      try{menu();render();renderWorkers();accountsRender();refreshActiveCloudPage();}catch(_){}
+      if(needsPush){
+        try{ak208MarkDirty('conflict-repair-v224');localStorage.setItem(CLOUD_PENDING_KEY,'1');}catch(_){}
+      }
+    }
+    return {applied,needsPush};
+  }catch(_){return {applied:0,needsPush:false}}
+}
+
 async function akV4SaveAll(payload={}){
   if(!payload||!payload.db)throw new Error('لا توجد بيانات للحفظ');
   let base=akV4ReadBase();
@@ -1927,7 +1961,10 @@ async function akV4SaveAll(payload={}){
     const op=await akV4Get('v4_op',{opId:payload._v4OpId},30000);
     if(!op.found||op.status==='pending')continue;
     if(op.status==='conflict'){
-      const err=new Error('تعارض تحديثات CloudV4');err.code='cloud_conflict';err.currentGeneration='v4-'+(Number(op.rev)||0);err.details=op.details;throw err;
+      // v224: أصلح revision المتعارض مباشرة من تفاصيل الخادم قبل أي إعادة محاولة.
+      // هذا يعالج baseline عالمي حديث مع entityRev قديم، وهي الحالة التي كانت تسبب حلقة conflict متكررة.
+      const repaired=akV4RepairConflictDetailsV224(op.details);
+      const err=new Error('تعارض تحديثات CloudV4');err.code='cloud_conflict';err.currentGeneration='v4-'+(Number(op.rev)||0);err.details=op.details;err.repairedByV224=!!repaired.applied;throw err;
     }
     if(op.status!=='success'){throw new Error(op.error||'فشلت معاملة CloudV4');}
     const b=akV4ReadBase(), sentState=akV4StateFromDb(payload.db), currentState=akV4StateFromDb(db);
@@ -7885,12 +7922,16 @@ akV4ApplyRemoteChanges=function(events){
 async function ak212OwnerPush(silent=true,attempts=0){
   if(!session||session.role==='worker'||!navigator.onLine)return false;
   try{
-    const r=await akV4SaveAll({db:stripTransientSyncFlagsV175(db),updatedAt:isoNow(),updatedBy:'owner-v212'});
+    const r=await akV4SaveAll({db:stripTransientSyncFlagsV175(db),updatedAt:isoNow(),updatedBy:'owner-v224'});
     if(!r||!r.verified)return false;
     try{ak208ClearDirty('owner-v212');if(!ak208StatusPending()){ak198ClearEvents();localStorage.removeItem(CLOUD_PENDING_KEY);}localStorage.removeItem(CLOUD_LAST_ERROR_KEY);}catch(_){}
     updateSyncIndicators();return true;
   }catch(e){
-    if(e&&e.code==='cloud_conflict'&&attempts<3){await akV4PollChanges(true);return ak212OwnerPush(silent,attempts+1);}
+    if(e&&e.code==='cloud_conflict'&&attempts<1){
+      // v224: baseline الخاص بالكيان تم إصلاحه من conflict.details داخل akV4SaveAll.
+      // نجلب أي أحداث أخرى غير مرئية ثم نعيد الحفظ مرة واحدة فقط، بدون عاصفة retries.
+      await akV4PollChanges(true);await new Promise(r=>setTimeout(r,120));return ak212OwnerPush(silent,attempts+1);
+    }
     try{localStorage.setItem(CLOUD_PENDING_KEY,'1');localStorage.setItem(CLOUD_LAST_ERROR_KEY,e.message||String(e));updateSyncIndicators()}catch(_){}
     return false;
   }
@@ -7903,7 +7944,9 @@ async function ak212WorkerPush(silent=true,attempts=0){
     try{ak208ClearDirty('worker-v212');if(!ak208StatusPending()){ak198ClearEvents();localStorage.removeItem(CLOUD_PENDING_KEY);}localStorage.removeItem(CLOUD_LAST_ERROR_KEY);}catch(_){}
     updateSyncIndicators();return true;
   }catch(e){
-    if(e&&e.code==='cloud_conflict'&&attempts<3){await akV4PollChanges(true);return ak212WorkerPush(silent,attempts+1);}
+    if(e&&e.code==='cloud_conflict'&&attempts<1){
+      await akV4PollChanges(true);await new Promise(r=>setTimeout(r,120));return ak212WorkerPush(silent,attempts+1);
+    }
     try{localStorage.setItem(CLOUD_PENDING_KEY,'1');localStorage.setItem(CLOUD_LAST_ERROR_KEY,e.message||String(e));updateSyncIndicators()}catch(_){}
     return false;
   }
@@ -9785,12 +9828,12 @@ main{overflow-x:hidden!important}
 
   try{
     migrateOldStatusWork();
-    document.documentElement.dataset.build='223';
-    const h=document.querySelector('#systemHealth h2');if(h)h.textContent='🩺 صحة النظام — AK Delivery 223';
+    document.documentElement.dataset.build='224';
+    const h=document.querySelector('#systemHealth h2');if(h)h.textContent='🩺 صحة النظام — AK Delivery 224';
     if(session?.role==='worker'&&hasIntents())schedule(100);else setTimeout(healIfSafe,160);
   }catch(_){ }
 })();
-// AK Delivery build v223 — fast per-entity status writes + conflict-only full load + throttled incremental polling; order records/schema unchanged
+// AK Delivery build v224 — conflict-details baseline repair + single retry + v223 fast sync; order records/schema unchanged
 
 </script>
 
@@ -9813,8 +9856,9 @@ main{overflow-x:hidden!important}
     return inFlight;
   };
   ak208FastGenerationCheck=window.ak208FastGenerationCheck;
-  try{document.documentElement.dataset.build='223';}catch(_){ }
+  try{document.documentElement.dataset.build='224';}catch(_){ }
 })();
 // AK Delivery v223 speed governor — no database/schema changes
 </script>
+<!-- AK Delivery v224: conflict-details repair active; database/schema unchanged -->
 </body></html>
