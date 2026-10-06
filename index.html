@@ -9435,6 +9435,57 @@ main{overflow-x:hidden!important}
 </script>
 
 
+
+<script id="ak225LeaderCore">
+/* v225 — قائد مزامنة واحد لكل جهاز/متصفح.
+   يمنع تبويبات AK Delivery المتعددة من تشغيل كتابات/قراءات متنافسة فوق نفس localStorage. */
+(function(){
+  const KEY='ak_delivery_sync_leader_v225', LEASE=6000;
+  const TAB='T225-'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,9);
+  function read(){try{return JSON.parse(localStorage.getItem(KEY)||'null')}catch(_){return null}}
+  function write(v){try{localStorage.setItem(KEY,JSON.stringify(v))}catch(_){}}
+  function identity(){return String(session?.role||'')+':'+String(session?.workerId||'owner')}
+  function claim(force=false){
+    if(!session?.role||document.visibilityState==='hidden')return false;
+    const now=Date.now(), cur=read();
+    if(force||!cur||Number(cur.until||0)<now||cur.id===TAB){
+      write({id:TAB,until:now+LEASE,identity:identity(),at:now});
+      const chk=read();return !!chk&&chk.id===TAB;
+    }
+    return cur.id===TAB;
+  }
+  function canCloud(force=false){return claim(!!force)}
+  function refreshLease(){if(document.visibilityState==='visible'&&session?.role)claim(false)}
+  function reloadSharedDb(){
+    try{
+      const raw=localStorage.getItem(K);if(!raw)return false;
+      const x=JSON.parse(raw);if(!x||typeof x!=='object')return false;
+      db=x;
+      try{menu();render();renderWorkers();accountsRender();refreshLoginWorkers();refreshActiveCloudPage()}catch(_){ }
+      return true;
+    }catch(_){return false}
+  }
+  window.ak225TabId=TAB;
+  window.ak225ClaimSyncLeader=claim;
+  window.ak225CanCloud=canCloud;
+  window.ak225ReloadSharedDb=reloadSharedDb;
+  setInterval(refreshLease,1800);
+  document.addEventListener('visibilitychange',()=>{
+    if(document.visibilityState==='visible'){
+      reloadSharedDb();claim(true);
+      setTimeout(()=>{try{akV4PollChanges(true)}catch(_){}},90);
+    }
+  },{passive:true});
+  window.addEventListener('pageshow',()=>{reloadSharedDb();claim(true)},{passive:true});
+  window.addEventListener('focus',()=>{reloadSharedDb();claim(true)},{passive:true});
+  window.addEventListener('storage',ev=>{
+    if(ev.key===K && ev.newValue && document.visibilityState==='hidden')reloadSharedDb();
+  });
+  try{if(document.visibilityState==='visible')claim(true)}catch(_){ }
+})();
+// AK Delivery v225 single-tab sync leader — no order/schema changes
+</script>
+
 <script id="ak222Script">
 /* v222 — إصلاح جذري لمسار المزامنة بين الأجهزة والسحابة.
    1) كتابة حالة الموزع تصبح معاملة كيان واحد (والاستلام مع التحويل في نفس المعاملة).
@@ -9581,6 +9632,7 @@ main{overflow-x:hidden!important}
 
   async function pushIntent(it,attempt=0){
     if(!it||session?.role!=='worker'||String(it.workerId||session.workerId)!==String(session.workerId))return false;
+    if(typeof ak225CanCloud==='function'&&!ak225CanCloud(true)){schedule(450);return false}
     if(!navigator.onLine){schedule(1200);return false}
     const orderId=String(it.orderId||''),orderKey='orders:'+orderId;
     try{
@@ -9686,6 +9738,7 @@ main{overflow-x:hidden!important}
   function enqueue(it){const run=()=>pushIntent(clone(it));const p=queue.then(run,run);queue=p.catch(()=>{});return p}
   async function drain(){
     if(writeBusy||session?.role!=='worker'||!navigator.onLine)return false;
+    if(typeof ak225CanCloud==='function'&&!ak225CanCloud(false))return false;
     writeBusy=true;
     try{migrateOldStatusWork();let ok=true;for(const it of intents()){if(!(await enqueue(it)))ok=false}if(ok&&!hasIntents())setTimeout(healIfSafe,100);return ok}finally{writeBusy=false}
   }
@@ -9761,6 +9814,7 @@ main{overflow-x:hidden!important}
 
   async function healIfSafe(){
     if(healBusy||!navigator.onLine||!session?.role||hasIntents()||otherDirtyExists())return false;
+    if(typeof ak225CanCloud==='function'&&!ak225CanCloud(false))return false;
     if(localStorage.getItem(HEAL_KEY)==='done')return true;
     healBusy=true;
     try{
@@ -9828,12 +9882,12 @@ main{overflow-x:hidden!important}
 
   try{
     migrateOldStatusWork();
-    document.documentElement.dataset.build='224';
-    const h=document.querySelector('#systemHealth h2');if(h)h.textContent='🩺 صحة النظام — AK Delivery 224';
+    document.documentElement.dataset.build='225';
+    const h=document.querySelector('#systemHealth h2');if(h)h.textContent='🩺 صحة النظام — AK Delivery 225';
     if(session?.role==='worker'&&hasIntents())schedule(100);else setTimeout(healIfSafe,160);
   }catch(_){ }
 })();
-// AK Delivery build v224 — conflict-details baseline repair + single retry + v223 fast sync; order records/schema unchanged
+// AK Delivery build v225 — single-tab cloud leader + receive watchdog + v224 conflict repair; order records/schema unchanged
 
 </script>
 
@@ -9856,9 +9910,110 @@ main{overflow-x:hidden!important}
     return inFlight;
   };
   ak208FastGenerationCheck=window.ak208FastGenerationCheck;
-  try{document.documentElement.dataset.build='224';}catch(_){ }
+  try{document.documentElement.dataset.build='225';}catch(_){ }
 })();
 // AK Delivery v223 speed governor — no database/schema changes
 </script>
 <!-- AK Delivery v224: conflict-details repair active; database/schema unchanged -->
+
+<script id="ak225ReceiveWatchdog">
+/* v225 — إصلاح استقبال السحابة:
+   - يمنع أي تبويب غير القائد من فتح طلبات سحابية جديدة.
+   - يفحص currentRev بخفة؛ وإذا كان الجهاز متأخراً يجلب v4_changes فوراً.
+   - إذا بقي المؤشر عالقاً بعد محاولتين، يعتمد snapshot كاملاً مرة واحدة فقط عندما لا توجد تغييرات محلية معلقة.
+   - ينفذ مصالحة كاملة آمنة مرة واحدة عند أول تشغيل v225 لإصلاح أي cursor قديم فاسد. */
+(function(){
+  const RECON_KEY='ak_delivery_v225_reconcile';
+  let pingBusy=false,lastPing=0,stuckCount=0,lastFull=0;
+  const pollBase=akV4PollChanges;
+  const saveBase=akV4SaveAll;
+
+  akV4PollChanges=async function(force=false){
+    if(typeof ak225CanCloud==='function'&&!ak225CanCloud(false))return false;
+    return pollBase.call(this,force);
+  };
+  window.akV4PollChanges=akV4PollChanges;
+
+  akV4SaveAll=async function(payload={}){
+    if(typeof ak225CanCloud==='function'&&!ak225CanCloud(true))return {ok:false,verified:false,inactiveTab:true};
+    return saveBase.call(this,payload);
+  };
+  window.akV4SaveAll=akV4SaveAll;
+
+  function localDirty(){
+    try{
+      if(typeof ak208HasLocalDirty==='function'&&ak208HasLocalDirty())return true;
+      const m=JSON.parse(localStorage.getItem('ak_delivery_status_intents_v222')||'{}');
+      if(m&&Object.keys(m).length)return true;
+      return localStorage.getItem(CLOUD_PENDING_KEY)==='1';
+    }catch(_){return true}
+  }
+  function ident(){return String(session?.role||'')+':'+String(session?.workerId||'owner')}
+  function safeRefresh(){try{menu();render();renderWorkers();accountsRender();refreshLoginWorkers();refreshActiveCloudPage();updateSyncIndicators()}catch(_){ }}
+
+  async function fullReconcile(reason='repair'){
+    if(!navigator.onLine||!session?.role||document.visibilityState==='hidden'||localDirty())return false;
+    if(typeof ak225CanCloud==='function'&&!ak225CanCloud(false))return false;
+    const now=Date.now();if(now-lastFull<12000)return false;lastFull=now;
+    try{
+      const j=await akV4Get('v4_load',{},60000);
+      if(String(j?.backend)!=='4'||!j?.db)return false;
+      db=akV4Clone(j.db);
+      akV4SetFullBase(j.db,j.entityRevs||{},j.rev||0);
+      localStorage.setItem(K,JSON.stringify(db));
+      try{localStorage.setItem(CLOUD_LAST_OK_KEY,isoNow());localStorage.setItem('ak_delivery_last_cloud_pull',isoNow());localStorage.removeItem(CLOUD_LAST_ERROR_KEY);ak208MarkReadSuccess()}catch(_){ }
+      localStorage.setItem(RECON_KEY,JSON.stringify({build:225,identity:ident(),rev:Number(j.rev)||0,time:isoNow(),reason:String(reason||'')}));
+      stuckCount=0;safeRefresh();return true;
+    }catch(e){
+      try{localStorage.setItem(CLOUD_LAST_ERROR_KEY,e?.message||String(e));updateSyncIndicators()}catch(_){ }
+      return false;
+    }
+  }
+  window.ak225FullReconcile=fullReconcile;
+
+  async function watchdog(force=false){
+    if(pingBusy||!navigator.onLine||!session?.role||document.visibilityState==='hidden')return false;
+    if(typeof ak225CanCloud==='function'&&!ak225CanCloud(false))return false;
+    const now=Date.now();if(!force&&now-lastPing<2200)return false;lastPing=now;pingBusy=true;
+    try{
+      const j=await akV4Get('v4_ping',{},25000), cloudRev=Number(j?.rev)||0;
+      let base=akV4ReadBase(), localRev=Number(base?.rev)||0;
+      if(cloudRev>localRev){
+        await akV4PollChanges(true);
+        base=akV4ReadBase();const after=Number(base?.rev)||0;
+        if(after<cloudRev){stuckCount++; if(stuckCount>=2&&!localDirty())await fullReconcile('cursor-stall-'+localRev+'-'+cloudRev)}
+        else stuckCount=0;
+      }else stuckCount=0;
+      try{localStorage.setItem(CLOUD_LAST_OK_KEY,isoNow());if(!localDirty())localStorage.removeItem(CLOUD_LAST_ERROR_KEY);updateSyncIndicators()}catch(_){ }
+      return true;
+    }catch(e){
+      try{localStorage.setItem(CLOUD_LAST_ERROR_KEY,e?.message||String(e));updateSyncIndicators()}catch(_){ }
+      return false;
+    }finally{pingBusy=false}
+  }
+  window.ak225ReceiveWatchdog=watchdog;
+
+  async function firstRepair(){
+    if(!session?.role||document.visibilityState==='hidden')return;
+    let done=null;try{done=JSON.parse(localStorage.getItem(RECON_KEY)||'null')}catch(_){ }
+    if(!done||Number(done.build)!==225||String(done.identity||'')!==ident()){
+      if(!localDirty())await fullReconcile('first-v225');
+    }
+    await watchdog(true);
+  }
+
+  setInterval(()=>watchdog(false),2400);
+  document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')setTimeout(()=>firstRepair(),140)},{passive:true});
+  window.addEventListener('pageshow',()=>setTimeout(()=>firstRepair(),170),{passive:true});
+  window.addEventListener('focus',()=>setTimeout(()=>watchdog(true),180),{passive:true});
+  setTimeout(()=>firstRepair(),500);
+
+  try{
+    document.documentElement.dataset.build='225';
+    const h=document.querySelector('#systemHealth h2');if(h)h.textContent='🩺 صحة النظام — AK Delivery 225';
+  }catch(_){ }
+})();
+// AK Delivery build v225 — single visible-tab sync + guaranteed receive catch-up; database/schema unchanged
+</script>
+
 </body></html>
