@@ -1715,6 +1715,9 @@ function akV4Clone(v){return v==null?v:JSON.parse(JSON.stringify(v));}
 function akV4CleanEntity(v){
   const x=akV4Clone(v||{});
   delete x.pendingStatusSync;delete x.pendingStatusTarget;
+  // v226: حقول محلية/تشخيصية فقط؛ لا تدخل في hash ولا في payload السحابي.
+  delete x.lastStatusConfirmedAt;
+  delete x.syncState;delete x.syncedAt;
   return x;
 }
 function akV4HashString(s){
@@ -9635,6 +9638,16 @@ main{overflow-x:hidden!important}
     if(typeof ak225CanCloud==='function'&&!ak225CanCloud(true)){schedule(450);return false}
     if(!navigator.onLine){schedule(1200);return false}
     const orderId=String(it.orderId||''),orderKey='orders:'+orderId;
+    // v226: نية مؤكدة سابقاً لا تُرسل من جديد.
+    try{
+      const localNow=(db.orders||[]).find(x=>String(x?.id)===orderId);
+      const baseNow=akV4ReadBase(), rec=baseNow?.entries?.[orderKey]||null;
+      if(localNow&&rec&&!rec.deleted&&String(localNow.status||'')===String(it.status||'')&&
+         (!it.eventId||String(localNow.statusEventIdV173||'')===String(it.eventId||''))&&
+         String(rec.hash||'')===String(akV4HashEntity(localNow))){
+        clearIntent(orderId,it.eventId||'');settlePending(orderId);refresh(orderId);return true;
+      }
+    }catch(_){ }
     try{
       /* v223 fast path: لا نقوم بتحميل قاعدة CloudV4 كاملة قبل كل تغيير حالة.
          revision الخاص بالطلب موجود أصلاً في baseline المحلي. نرسل الطلب مباشرة؛
@@ -9699,7 +9712,7 @@ main{overflow-x:hidden!important}
       const msg=String(e?.message||e||'');
       /* التعارض هو المسار النادر فقط. هنا نقرأ snapshot واحداً لنحصل على entityRev الحقيقي
          ونحافظ على أي حقول أحدث من المالك، ثم نعيد نفس intent مرة واحدة. */
-      if((e?.code==='cloud_conflict'||/revision conflict|تعارض تحديثات/i.test(msg))&&attempt<3){
+      if((e?.code==='cloud_conflict'||/revision conflict|تعارض تحديثات/i.test(msg))&&attempt<1){
         try{
           const full=await rawLoad(),remote=(full.db?.orders||[]).find(x=>String(x?.id)===orderId)||null;
           if(!remote)throw e;
@@ -9882,8 +9895,8 @@ main{overflow-x:hidden!important}
 
   try{
     migrateOldStatusWork();
-    document.documentElement.dataset.build='225';
-    const h=document.querySelector('#systemHealth h2');if(h)h.textContent='🩺 صحة النظام — AK Delivery 225';
+    document.documentElement.dataset.build='226';
+    const h=document.querySelector('#systemHealth h2');if(h)h.textContent='🩺 صحة النظام — AK Delivery 226';
     if(session?.role==='worker'&&hasIntents())schedule(100);else setTimeout(healIfSafe,160);
   }catch(_){ }
 })();
@@ -9910,7 +9923,7 @@ main{overflow-x:hidden!important}
     return inFlight;
   };
   ak208FastGenerationCheck=window.ak208FastGenerationCheck;
-  try{document.documentElement.dataset.build='225';}catch(_){ }
+  try{document.documentElement.dataset.build='226';}catch(_){ }
 })();
 // AK Delivery v223 speed governor — no database/schema changes
 </script>
@@ -10009,11 +10022,78 @@ main{overflow-x:hidden!important}
   setTimeout(()=>firstRepair(),500);
 
   try{
-    document.documentElement.dataset.build='225';
-    const h=document.querySelector('#systemHealth h2');if(h)h.textContent='🩺 صحة النظام — AK Delivery 225';
+    document.documentElement.dataset.build='226';
+    const h=document.querySelector('#systemHealth h2');if(h)h.textContent='🩺 صحة النظام — AK Delivery 226';
   }catch(_){ }
 })();
 // AK Delivery build v225 — single visible-tab sync + guaranteed receive catch-up; database/schema unchanged
 </script>
 
+<script id="ak226SyncCore">
+(function(){
+  const BUILD=226,RECON_KEY='ak_delivery_v226_reconcile',V222_KEY='ak_delivery_status_intents_v222',V219_KEY='ak_delivery_status_intents_v219',OUTBOX_KEY='ak_delivery_status_outbox_v173';
+  let reconcileBusy=false,lastReconcile=0,workerPushBusy=false;
+  function clone(v){return v==null?v:JSON.parse(JSON.stringify(v));}
+  function readJson(k,f){try{const v=JSON.parse(localStorage.getItem(k)||'null');return v==null?f:v}catch(_){return f}}
+  function writeJson(k,v){try{if(v==null||(Array.isArray(v)&&!v.length)||(!Array.isArray(v)&&typeof v==='object'&&!Object.keys(v).length))localStorage.removeItem(k);else localStorage.setItem(k,JSON.stringify(v))}catch(_){}}
+  function orderMap(source){return new Map((source?.orders||[]).filter(Boolean).map(o=>[String(o.id),o]));}
+  function baseEntry(id){try{return akV4ReadBase()?.entries?.['orders:'+String(id)]||null}catch(_){return null}}
+  function hash(v){try{return akV4HashEntity(v)}catch(_){return ''}}
+  function localDirtyRecord(){try{return JSON.parse(localStorage.getItem(AK208_LOCAL_DIRTY_KEY)||'null')}catch(_){return null}}
+  function events(){try{return typeof ak198ReadEvents==='function'?ak198ReadEvents():readJson(AK198_EVENT_KEY,[])}catch(_){return []}}
+  function v222Map(){const m=readJson(V222_KEY,{});return m&&typeof m==='object'?m:{}}
+  function cleanLegacyLocal(){
+    try{localStorage.removeItem(V219_KEY);localStorage.removeItem(OUTBOX_KEY)}catch(_){ }
+    let changed=false;for(const o of (db.orders||[])){if(!o)continue;if('pendingStatusSync' in o){delete o.pendingStatusSync;changed=true}if('pendingStatusTarget' in o){delete o.pendingStatusTarget;changed=true}}
+    if(changed)try{localStorage.setItem(K,JSON.stringify(db))}catch(_){ }return changed;
+  }
+  function scrubConfirmedIntents(cloudDb=null){
+    cleanLegacyLocal();const m=v222Map(),local=orderMap(db),remote=cloudDb?orderMap(cloudDb):null;let removed=0;
+    for(const [id,it] of Object.entries(m)){
+      const o=local.get(String(id));if(!o){delete m[id];removed++;continue}
+      if(String(o.status||'')!==String(it?.status||'')||(it?.eventId&&String(o.statusEventIdV173||'')!==String(it.eventId||''))){delete m[id];removed++;continue}
+      let confirmed=false;if(remote){const r=remote.get(String(id));if(r&&String(r.status||'')===String(it?.status||'')&&(!it?.eventId||String(r.statusEventIdV173||'')===String(it.eventId||'')))confirmed=true}
+      if(!confirmed){const b=baseEntry(id);if(b&&!b.deleted&&String(b.hash||'')===String(hash(o)))confirmed=true}
+      if(confirmed){delete m[id];removed++}
+    }
+    writeJson(V222_KEY,m);
+    if(removed){try{const keep=new Set(Object.keys(m));const ev=events().filter(x=>!(String(x?.kind||'')==='status'&&!keep.has(String(x?.entityId||''))));if(ev.length)localStorage.setItem(AK198_EVENT_KEY,JSON.stringify(ev));else localStorage.removeItem(AK198_EVENT_KEY);const d=localDirtyRecord();if(d&&/^status(?:-|$)/.test(String(d.kind||''))&&!Object.keys(m).length)localStorage.removeItem(AK208_LOCAL_DIRTY_KEY);if(!Object.keys(m).length&&!localDirtyRecord())localStorage.removeItem(CLOUD_PENDING_KEY);localStorage.setItem(K,JSON.stringify(db));updateSyncIndicators()}catch(_){ }}
+    return {removed,remaining:Object.keys(m).length};
+  }
+  window.ak226ScrubConfirmedIntents=scrubConfirmedIntents;
+  function findLocalEntityById(id){for(const type of ['orders','deliveryTransfers','deliveryBatches','returnBatches','customerChangeRequests','settlements','workers']){const x=(db[type]||[]).find(v=>v&&String(v.id)===String(id));if(x)return {type,entity:x}}return null}
+  function findRemoteEntity(fullDb,type,id){return (fullDb?.[type]||[]).find(v=>v&&String(v.id)===String(id))||null}
+  function collectProtected(fullDb){
+    const protectedOrders=new Set(Object.keys(v222Map()).map(String)),protectedEntities=new Map();let evChanged=false;const kept=[];
+    for(const e of events()){const id=String(e?.entityId||'');if(!id){kept.push(e);continue}const loc=findLocalEntityById(id);if(!loc){evChanged=true;continue}const rem=findRemoteEntity(fullDb,loc.type,id);if(rem&&hash(rem)===hash(loc.entity)){evChanged=true;continue}kept.push(e);protectedEntities.set(id,loc.type);if(loc.type==='orders')protectedOrders.add(id)}
+    if(evChanged){try{if(kept.length)localStorage.setItem(AK198_EVENT_KEY,JSON.stringify(kept));else localStorage.removeItem(AK198_EVENT_KEY)}catch(_){ }}
+    const d=localDirtyRecord();if(d&&d.entityId){for(const id of String(d.entityId).split(',').map(x=>x.trim()).filter(Boolean)){const loc=findLocalEntityById(id);if(!loc)continue;const rem=findRemoteEntity(fullDb,loc.type,id);if(rem&&hash(rem)===hash(loc.entity))continue;protectedEntities.set(id,loc.type);if(loc.type==='orders')protectedOrders.add(id)}}
+    return {protectedOrders,protectedEntities};
+  }
+  function mergeAux(localDb,cloudDb,protectedEntities){
+    const out=clone(cloudDb);for(const type of ['deliveryTransfers','deliveryBatches','returnBatches','customerChangeRequests','settlements']){if(!Array.isArray(out[type]))out[type]=[];const idx=new Map(out[type].map((x,i)=>[String(x?.id),i]));for(const l of (localDb[type]||[])){if(!l||l.id==null)continue;const id=String(l.id),i=idx.get(id),r=i===undefined?null:out[type][i],explicit=protectedEntities.get(id)===type,localNewer=timeValue(l.modifiedAt||l.confirmedAt||l.receivedAt||l.createdAt)>timeValue(r?.modifiedAt||r?.confirmedAt||r?.receivedAt||r?.createdAt);if(explicit||localNewer){if(i===undefined){out[type].push(clone(l));idx.set(id,out[type].length-1)}else out[type][i]=clone(l)}}}return out;
+  }
+  async function reconcile(reason='v226-start'){
+    if(reconcileBusy||!navigator.onLine||!session?.role||document.visibilityState==='hidden')return false;if(typeof ak225CanCloud==='function'&&!ak225CanCloud(false))return false;const now=Date.now();if(now-lastReconcile<8000)return false;lastReconcile=now;reconcileBusy=true;
+    try{
+      const full=await akV4Get('v4_load',{},60000);if(String(full?.backend)!=='4'||!full?.db)throw new Error('تعذر قراءة CloudV4 لإصلاح المزامنة');scrubConfirmedIntents(full.db);
+      const localBefore=clone(db),p=collectProtected(full.db);let merged=mergeAux(localBefore,full.db,p.protectedEntities),localOrders=orderMap(localBefore),mi=new Map((merged.orders||[]).map((o,i)=>[String(o.id),i]));
+      for(const id of p.protectedOrders){const lo=localOrders.get(String(id));if(!lo)continue;const i=mi.get(String(id));if(i===undefined){merged.orders.push(clone(lo));mi.set(String(id),merged.orders.length-1)}else merged.orders[i]=clone(lo)}
+      db=merged;akV4SetFullBase(full.db,full.entityRevs||{},full.rev||0);localStorage.setItem(K,JSON.stringify(db));localStorage.setItem(RECON_KEY,JSON.stringify({build:BUILD,identity:String(session.role||'')+':'+String(session.workerId||'owner'),rev:Number(full.rev)||0,time:isoNow(),reason:String(reason||'')}));
+      try{localStorage.setItem(CLOUD_LAST_OK_KEY,isoNow());localStorage.setItem('ak_delivery_last_cloud_pull',isoNow());localStorage.removeItem(CLOUD_LAST_ERROR_KEY)}catch(_){ }try{menu();render();renderWorkers();accountsRender();refreshLoginWorkers();refreshActiveCloudPage();updateSyncIndicators()}catch(_){ }
+      const remain=Object.keys(v222Map()).length;if(session.role==='worker'&&remain&&typeof ak222Drain==='function')setTimeout(()=>ak222Drain(),80);else if((typeof ak208HasLocalDirty==='function'&&ak208HasLocalDirty())||events().length)setTimeout(()=>queueCloudSync(120),120);return true;
+    }catch(e){try{localStorage.setItem(CLOUD_LAST_ERROR_KEY,e?.message||String(e));updateSyncIndicators()}catch(_){ }return false}finally{reconcileBusy=false}
+  }
+  window.ak226Reconcile=reconcile;
+  const workerPushBase=window.workerCloudPush||workerCloudPush;
+  window.workerCloudPush=async function(silent=true){if(session?.role!=='worker')return typeof workerPushBase==='function'?workerPushBase.apply(this,arguments):false;if(workerPushBusy)return false;workerPushBusy=true;try{scrubConfirmedIntents();if(Object.keys(v222Map()).length&&typeof ak222Drain==='function'){await ak222Drain();if(Object.keys(v222Map()).length)return false}let done=null;try{done=JSON.parse(localStorage.getItem(RECON_KEY)||'null')}catch(_){ }const ident=String(session.role||'')+':'+String(session.workerId||'owner');if(!done||Number(done.build)!==BUILD||String(done.identity||'')!==ident)await reconcile('before-worker-general-push');return typeof workerPushBase==='function'?await workerPushBase.call(this,silent):false}finally{workerPushBusy=false}};
+  workerCloudPush=window.workerCloudPush;
+  const retryBase=window.retryStatusOutboxV173||retryStatusOutboxV173;
+  window.retryStatusOutboxV173=async function(){if(session?.role==='worker'){scrubConfirmedIntents();if(Object.keys(v222Map()).length&&typeof ak222Drain==='function')return ak222Drain();return true}return typeof retryBase==='function'?retryBase.apply(this,arguments):false};retryStatusOutboxV173=window.retryStatusOutboxV173;
+  async function boot(){cleanLegacyLocal();if(!session?.role||!navigator.onLine||document.visibilityState==='hidden')return;await reconcile('first-v226');scrubConfirmedIntents()}
+  setInterval(()=>{try{scrubConfirmedIntents()}catch(_){}},1200);window.addEventListener('online',()=>setTimeout(boot,180),{passive:true});window.addEventListener('pageshow',()=>setTimeout(boot,220),{passive:true});document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')setTimeout(boot,180)},{passive:true});setTimeout(boot,650);
+  try{document.documentElement.dataset.build='226';const h=document.querySelector('#systemHealth h2');if(h)h.textContent='🩺 صحة النظام — AK Delivery 226'}catch(_){ }
+})();
+// AK Delivery build v226 — confirmed-intent scrub + local-only hash cleanup + one-time cloud baseline reconcile; schema unchanged
+</script>
 </body></html>
