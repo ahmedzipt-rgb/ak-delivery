@@ -1,7 +1,7 @@
 <!doctype html><!-- AK Delivery v115: fixed navigation bars; scroll content only; reduced explanatory text --><html lang="ar" dir="rtl"><head>
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
-<meta http-equiv="Expires" content="0"><meta charset="utf-8"><meta id="akViewport" name="viewport" content="width=device-width,initial-scale=1"><!-- AK Delivery v86: persistent received-order history for distributors and owner -->
+<meta http-equiv="Expires" content="0"><meta charset="utf-8"><meta id="akViewport" name="viewport" content="width=device-width,initial-scale=1"><!-- AK Delivery v227: reassignment transfer repair; preserves previous history -->
 <title>مسيّر التوصيل</title>
 <style>*{box-sizing:border-box}body{margin:0;font-family:Arial;background:#f4f6f8;color:#222}header{background:#175d79;color:#fff;padding:15px;font-size:21px;font-weight:bold}.app{display:flex;min-height:100vh}aside{width:210px;background:#11191d;color:#ccd4d8;padding:15px 0}aside h3{padding:0 15px;color:white}aside button{width:100%;text-align:right;padding:11px 15px;border:0;background:none;color:inherit}aside button:hover{background:#263238}main{flex:1;padding:14px;overflow:auto}.card{background:white;padding:14px;border-radius:9px;margin-bottom:12px;box-shadow:0 1px 5px #0001}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:8px}input,select,textarea{width:100%;padding:9px;border:1px solid #d6dce1;border-radius:6px}button{cursor:pointer}.btn{border:0;border-radius:5px;padding:8px 11px;color:white;background:#1882b3}table{width:100%;border-collapse:collapse}th,td{padding:9px;border-bottom:1px solid #eee;text-align:right;font-size:13px}.code{color:#1769aa;text-decoration:underline;font-weight:bold;cursor:pointer}.page{display:none}.page.on{display:block}.overlay{display:none;position:fixed;inset:0;background:#0008;z-index:10}.drawer{position:absolute;right:0;top:0;width:min(510px,100%);height:100%;background:white;padding:16px;overflow:auto}.close{float:left;font-size:25px;border:0;background:none}.info{display:grid;grid-template-columns:115px 1fr;gap:7px;font-size:13px}.actions{display:flex;gap:6px;flex-wrap:wrap;margin:14px 0;padding:12px 0;border-block:1px solid #ddd}.actions button{border:0;border-radius:5px;padding:8px;color:#fff}.g{background:#168b55}.y{background:#e2ad09;color:#222!important}.r{background:#dc3d4b}.gr{background:#697681}.c{background:#05aeca}.log{font-size:12px;line-height:1.8}.badge{background:#e8eef3;padding:4px 7px;border-radius:12px}.transit-badge{background:#ff3b30!important;color:#fff!important;font-weight:800!important;min-width:28px;display:inline-block;text-align:center;box-shadow:0 0 0 2px #ffffff33}aside .badge,aside .menu-count{display:inline-flex;align-items:center;justify-content:center;min-width:28px;height:24px;padding:2px 7px;margin:0;position:absolute;left:14px;top:50%;transform:translateY(-50%);border-radius:999px;background:#ffd54f;color:#111;font-weight:900;font-size:12px;box-shadow:0 0 0 2px #ffffff22}aside button{position:relative;padding-left:54px!important}aside .transit-badge{background:#ff3b30!important;color:#fff!important}aside button.menu-active{background:#175d79!important;color:#fff!important;font-weight:800;box-shadow:inset -4px 0 0 #39b8ff}aside button.menu-active .badge,aside button.menu-active .menu-count{box-shadow:0 0 0 2px #fff6}@media(max-width:650px){aside{width:135px;font-size:11px}main{padding:7px}.drawer{width:95%}th,td{font-size:11px;padding:6px}}
 .phone-ltr{direction:ltr!important;unicode-bidi:bidi-override;display:inline-block;text-align:left}
@@ -5043,9 +5043,15 @@ function createPendingDeliveryTransfer(o,w,historyText){
  ensureDeliveryTransfers();
  if(!o||!w)return null;
  const old=latestDeliveryTransferForOrder(o.id);
- if(old)return old;
+ // إذا كان آخر إرسال للموزع نفسه وما زال صالحاً، لا ننشئ نسخة مكررة.
+ if(old && String(old.workerId)===String(w.id) && (old.status==='sent'||old.status==='received'))return old;
  const now=isoNow(), label=tm();
- const t={id:'DT'+Date.now()+Math.random().toString(36).slice(2,6),orderId:String(o.id),workerId:String(w.id),workerName:w.name,status:'sent',sentAt:now,sentLabel:label,modifiedAt:now,modifiedBy:actorName()};
+ // عند تغيير الموزع نحتفظ بالسجل السابق للتاريخ، لكن لا نتركه كإرسال نشط.
+ if(old && String(old.workerId)!==String(w.id) && old.status==='sent'){
+   old.status='reassigned';old.modifiedAt=now;old.reassignedAt=now;
+   old.reassignedToWorkerId=String(w.id);old.reassignedToWorkerName=String(w.name||'');
+ }
+ const t={id:'DT'+Date.now()+Math.random().toString(36).slice(2,6),orderId:String(o.id),workerId:String(w.id),workerName:w.name,status:'sent',sentAt:now,sentLabel:label,modifiedAt:now,modifiedBy:actorName(),reassignedFromWorkerId:old?String(old.workerId||''):''};
  db.deliveryTransfers.push(t);
  o.deliveryTransferId=t.id;o.deliverySentAt=now;o.deliverySentLabel=label;o.status='في الطريق';o.modifiedAt=now;o.modifiedBy=actorName();
  appendOrderHistory(o,historyText||('أرسل المالك الطلب إلى الموزع '+w.name+' وهو في الطريق'));
@@ -5060,11 +5066,16 @@ function latestDeliveryTransferForOrder(orderId){
 function workerCanSeeOrder(o,workerId){
  if(!o||workerId==null)return false;
  const wid=String(workerId);
- const assigned=orderAssignedToWorker(o,wid);
+ // v227: الإسناد الحالي في الطلب هو المرجع الأول. سجلات الإرسال القديمة
+ // تبقى للتاريخ فقط ولا تمنح الموزع السابق حق رؤية طلب نُقل إلى موزع آخر.
+ const raw=o.worker;
+ const hasCurrentAssignment=raw!=null && (typeof raw==='object'
+   ? (raw.id!=null || String(raw.name||'').trim()!=='')
+   : String(raw).trim()!=='');
+ if(hasCurrentAssignment)return orderAssignedToWorker(o,wid);
  const t=latestDeliveryTransferForOrder(o.id);
  if(t && String(t.workerId)===wid && (t.status==='sent'||t.status==='received'))return true;
  if(String(o.deliveryReceivedByWorkerId||'')===wid)return true;
- if(assigned && (o.deliveryReceivedAt||o.deliveryReceivedLabel||o.status==='تم التسليم'))return true;
  return (db.deliveryTransfers||[]).some(x=>x&&x.status==='received'&&String(x.orderId)===String(o.id)&&String(x.workerId)===wid);
 }
 function deliveryTransferStatusText(t){
@@ -9895,8 +9906,8 @@ main{overflow-x:hidden!important}
 
   try{
     migrateOldStatusWork();
-    document.documentElement.dataset.build='226';
-    const h=document.querySelector('#systemHealth h2');if(h)h.textContent='🩺 صحة النظام — AK Delivery 226';
+    document.documentElement.dataset.build='227';
+    const h=document.querySelector('#systemHealth h2');if(h)h.textContent='🩺 صحة النظام — AK Delivery 227';
     if(session?.role==='worker'&&hasIntents())schedule(100);else setTimeout(healIfSafe,160);
   }catch(_){ }
 })();
@@ -9923,7 +9934,7 @@ main{overflow-x:hidden!important}
     return inFlight;
   };
   ak208FastGenerationCheck=window.ak208FastGenerationCheck;
-  try{document.documentElement.dataset.build='226';}catch(_){ }
+  try{document.documentElement.dataset.build='227';}catch(_){ }
 })();
 // AK Delivery v223 speed governor — no database/schema changes
 </script>
@@ -10022,8 +10033,8 @@ main{overflow-x:hidden!important}
   setTimeout(()=>firstRepair(),500);
 
   try{
-    document.documentElement.dataset.build='226';
-    const h=document.querySelector('#systemHealth h2');if(h)h.textContent='🩺 صحة النظام — AK Delivery 226';
+    document.documentElement.dataset.build='227';
+    const h=document.querySelector('#systemHealth h2');if(h)h.textContent='🩺 صحة النظام — AK Delivery 227';
   }catch(_){ }
 })();
 // AK Delivery build v225 — single visible-tab sync + guaranteed receive catch-up; database/schema unchanged
@@ -10031,7 +10042,7 @@ main{overflow-x:hidden!important}
 
 <script id="ak226SyncCore">
 (function(){
-  const BUILD=226,RECON_KEY='ak_delivery_v226_reconcile',V222_KEY='ak_delivery_status_intents_v222',V219_KEY='ak_delivery_status_intents_v219',OUTBOX_KEY='ak_delivery_status_outbox_v173';
+  const BUILD=227,RECON_KEY='ak_delivery_v226_reconcile',V222_KEY='ak_delivery_status_intents_v222',V219_KEY='ak_delivery_status_intents_v219',OUTBOX_KEY='ak_delivery_status_outbox_v173';
   let reconcileBusy=false,lastReconcile=0,workerPushBusy=false;
   function clone(v){return v==null?v:JSON.parse(JSON.stringify(v));}
   function readJson(k,f){try{const v=JSON.parse(localStorage.getItem(k)||'null');return v==null?f:v}catch(_){return f}}
@@ -10092,8 +10103,8 @@ main{overflow-x:hidden!important}
   window.retryStatusOutboxV173=async function(){if(session?.role==='worker'){scrubConfirmedIntents();if(Object.keys(v222Map()).length&&typeof ak222Drain==='function')return ak222Drain();return true}return typeof retryBase==='function'?retryBase.apply(this,arguments):false};retryStatusOutboxV173=window.retryStatusOutboxV173;
   async function boot(){cleanLegacyLocal();if(!session?.role||!navigator.onLine||document.visibilityState==='hidden')return;await reconcile('first-v226');scrubConfirmedIntents()}
   setInterval(()=>{try{scrubConfirmedIntents()}catch(_){}},1200);window.addEventListener('online',()=>setTimeout(boot,180),{passive:true});window.addEventListener('pageshow',()=>setTimeout(boot,220),{passive:true});document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')setTimeout(boot,180)},{passive:true});setTimeout(boot,650);
-  try{document.documentElement.dataset.build='226';const h=document.querySelector('#systemHealth h2');if(h)h.textContent='🩺 صحة النظام — AK Delivery 226'}catch(_){ }
+  try{document.documentElement.dataset.build='227';const h=document.querySelector('#systemHealth h2');if(h)h.textContent='🩺 صحة النظام — AK Delivery 227'}catch(_){ }
 })();
-// AK Delivery build v226 — confirmed-intent scrub + local-only hash cleanup + one-time cloud baseline reconcile; schema unchanged
+// AK Delivery build v227 — confirmed-intent scrub + local-only hash cleanup + one-time cloud baseline reconcile; schema unchanged
 </script>
 </body></html>
