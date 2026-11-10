@@ -5059,9 +5059,15 @@ function createPendingDeliveryTransfer(o,w,historyText){
 }
 function latestDeliveryTransferForOrder(orderId){
  ensureDeliveryTransfers();
- return (db.deliveryTransfers||[])
-   .filter(t=>!t.deletedAt&&String(t.orderId)===String(orderId))
-   .sort((a,b)=>timeValue(b.modifiedAt||b.sentAt)-timeValue(a.modifiedAt||a.sentAt))[0]||null;
+ // عند إعادة الإسناد قد يحمل السجل القديم والجديد التوقيت نفسه؛ نعتمد
+ // ترتيب الإضافة لكسر التعادل حتى يكون آخر سجل مضاف هو الإسناد الأحدث.
+ const rows=(db.deliveryTransfers||[]).map((t,index)=>({t,index}))
+   .filter(x=>x.t&&!x.t.deletedAt&&String(x.t.orderId)===String(orderId));
+ rows.sort((a,b)=>{
+   const delta=timeValue(b.t.modifiedAt||b.t.sentAt)-timeValue(a.t.modifiedAt||a.t.sentAt);
+   return delta || (b.index-a.index);
+ });
+ return rows.length?rows[0].t:null;
 }
 function workerCanSeeOrder(o,workerId){
  if(!o||workerId==null)return false;
@@ -5230,13 +5236,18 @@ function renderDeliveryTransfers(){
    if(titleEl)titleEl.textContent='📥 استقبال الطلبات';
    if(helpEl){helpEl.textContent='';helpEl.style.display='none';}
    const transfers=(db.deliveryTransfers||[])
-     .filter(t=>!t.deletedAt&&String(t.workerId)===String(session.workerId))
+     .filter(t=>{
+       if(!t||t.deletedAt||t.status!=='sent'||String(t.workerId)!==String(session.workerId))return false;
+       const o=db.orders.find(x=>String(x.id)===String(t.orderId)&&!x.deletedAt&&!x.duplicateHidden);
+       if(!o||!workerCanSeeOrder(o,session.workerId))return false;
+       const latest=latestDeliveryTransferForOrder(t.orderId);
+       return !!latest&&String(latest.id)===String(t.id)&&String(latest.workerId)===String(session.workerId);
+     })
      .sort((a,b)=>timeValue(b.sentAt||b.modifiedAt)-timeValue(a.sentAt||a.modifiedAt));
 
    const pending=[];
    for(const t of transfers){
-     if(t.status==='received') continue;
-     const o=db.orders.find(x=>String(x.id)===String(t.orderId)&&!x.deletedAt);
+     const o=db.orders.find(x=>String(x.id)===String(t.orderId)&&!x.deletedAt&&!x.duplicateHidden);
      if(!o)continue;
      const hay=`${formatSeq(o.seq)} ${o.clientNo||''} ${o.recipient||''} ${o.phone||''} ${o.city||''}`.toLowerCase();
      if(term&&!hay.includes(term))continue;
@@ -9907,7 +9918,7 @@ main{overflow-x:hidden!important}
   try{
     migrateOldStatusWork();
     document.documentElement.dataset.build='227';
-    const h=document.querySelector('#systemHealth h2');if(h)h.textContent='🩺 صحة النظام — AK Delivery 227';
+    const h=document.querySelector('#systemHealth h2');if(h)h.textContent='🩺 صحة النظام — AK Delivery 228';
     if(session?.role==='worker'&&hasIntents())schedule(100);else setTimeout(healIfSafe,160);
   }catch(_){ }
 })();
@@ -10034,7 +10045,7 @@ main{overflow-x:hidden!important}
 
   try{
     document.documentElement.dataset.build='227';
-    const h=document.querySelector('#systemHealth h2');if(h)h.textContent='🩺 صحة النظام — AK Delivery 227';
+    const h=document.querySelector('#systemHealth h2');if(h)h.textContent='🩺 صحة النظام — AK Delivery 228';
   }catch(_){ }
 })();
 // AK Delivery build v225 — single visible-tab sync + guaranteed receive catch-up; database/schema unchanged
@@ -10103,7 +10114,7 @@ main{overflow-x:hidden!important}
   window.retryStatusOutboxV173=async function(){if(session?.role==='worker'){scrubConfirmedIntents();if(Object.keys(v222Map()).length&&typeof ak222Drain==='function')return ak222Drain();return true}return typeof retryBase==='function'?retryBase.apply(this,arguments):false};retryStatusOutboxV173=window.retryStatusOutboxV173;
   async function boot(){cleanLegacyLocal();if(!session?.role||!navigator.onLine||document.visibilityState==='hidden')return;await reconcile('first-v226');scrubConfirmedIntents()}
   setInterval(()=>{try{scrubConfirmedIntents()}catch(_){}},1200);window.addEventListener('online',()=>setTimeout(boot,180),{passive:true});window.addEventListener('pageshow',()=>setTimeout(boot,220),{passive:true});document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')setTimeout(boot,180)},{passive:true});setTimeout(boot,650);
-  try{document.documentElement.dataset.build='227';const h=document.querySelector('#systemHealth h2');if(h)h.textContent='🩺 صحة النظام — AK Delivery 227'}catch(_){ }
+  try{document.documentElement.dataset.build='227';const h=document.querySelector('#systemHealth h2');if(h)h.textContent='🩺 صحة النظام — AK Delivery 228'}catch(_){ }
 })();
 // AK Delivery build v227 — confirmed-intent scrub + local-only hash cleanup + one-time cloud baseline reconcile; schema unchanged
 </script>
