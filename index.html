@@ -10214,13 +10214,22 @@ main{overflow-x:hidden!important}
     let snapshots=[];
     try{
       const raw=typeof getSnapshots==='function'?getSnapshots():[];
-      snapshots=(Array.isArray(raw)?raw:[]).map((x,i)=>({
-        position:i+1,id:str(x?.snapshotId||x?.id),createdAt:safeDate(x?.createdAt||x?.time||x?.date),
-        orderCount:Array.isArray(x?.orders)?x.orders.length:null,
-        returnBatchCount:Array.isArray(x?.returnBatches)?x.returnBatches.length:null,
-        transferCount:Array.isArray(x?.deliveryTransfers)?x.deliveryTransfers.length:null,
-        settlementCount:Array.isArray(x?.settlements)?x.settlements.length:null
-      }));
+      snapshots=(Array.isArray(raw)?raw:[]).map((x,i)=>{
+        const d=x?.data&&typeof x.data==='object'?x.data:x;
+        const snapOrders=Array.isArray(d?.orders)?d.orders.filter(Boolean):[];
+        const snapReturns=Array.isArray(d?.returnBatches)?d.returnBatches.filter(Boolean):[];
+        const snapTransfers=Array.isArray(d?.deliveryTransfers)?d.deliveryTransfers.filter(Boolean):[];
+        const snapSettlements=Array.isArray(d?.settlements)?d.settlements.filter(Boolean):[];
+        return {
+          position:i+1,id:str(x?.snapshotId||x?.id),createdAt:safeDate(x?.createdAt||x?.time||x?.date),
+          orderCount:snapOrders.length,returnBatchCount:snapReturns.length,
+          transferCount:snapTransfers.length,settlementCount:snapSettlements.length,
+          orderIds:snapOrders.map(o=>str(o.id)),
+          returnBatches:snapReturns.map(b=>({id:str(b.id),code:str(b.code),deleted:!!b.deletedAt,duplicateHidden:!!b.duplicateHidden,orderIds:ids(b.orderIds),returnedOrderIds:ids(b.returnedOrderIds),ownerReceivedOrderIds:ids(b.ownerReceivedOrderIds)})),
+          transfers:snapTransfers.map(t=>({id:str(t.id),orderId:str(t.orderId),deleted:!!t.deletedAt,duplicateHidden:!!t.duplicateHidden})),
+          settlements:snapSettlements.map(st=>({id:str(st.id),invoiceNo:str(st.invoiceNo),deleted:!!st.deletedAt,duplicateHidden:!!st.duplicateHidden,orderIds:ids(st.orderIds),snapshotOrderIds:Array.isArray(st.orderSnapshot)?st.orderSnapshot.map(o=>str(o?.id)):[]}))
+        };
+      });
     }catch(_){}
     return {
       app:'AK Delivery — Safe Integrity Export v229',time:new Date().toISOString(),
