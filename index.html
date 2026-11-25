@@ -7528,7 +7528,7 @@ function renderSystemHealthV180(){
     `<div class="grid">
       <div><b>الطلبات النشطة</b><h2>${active.length}</h2></div>
       <div><b>تنبيهات تشغيلية</b><h2>${operationalIssues.length}</h2></div>
-      <div><b>مراجع قديمة للمراجعة</b><h2>${historicalRefs.length}</h2></div>
+      <div><b>مراجع سجلات للمراجعة</b><h2>${historicalRefs.length}</h2></div>
       <div><b>أحداث مزامنة معلقة</b><h2>${outbox.length}</h2></div>
       <div><b>مساحة التخزين المحلية</b><h2 style="font-size:18px">${fmtBytesV180(storage)}</h2><small style="color:#475569">حجم تقديري للبيانات والنسخ المحفوظة؛ لم يتم حذف أي نسخة احتياطية</small></div>
     </div>
@@ -7554,7 +7554,7 @@ function renderSystemHealthV180(){
         operationalIssues.map(x=>`<div style="padding:6px 0;border-bottom:1px solid #eee">⚠ ${htmlEscape(x.text)}</div>`).join('')
       :'<b style="color:#166534">✓ لا توجد تنبيهات تشغيلية حالية.</b>';
     const refsHtml=historicalRefs.length
-      ?`<details style="margin-top:12px"><summary style="cursor:pointer;font-weight:700">مراجع قديمة تحتاج تحققاً يدوياً (${historicalRefs.length}) — لم تُحذف</summary>`+
+      ?`<details style="margin-top:12px"><summary style="cursor:pointer;font-weight:700">مراجع سجلات تحتاج تحققاً يدوياً (${historicalRefs.length}) — لم تُحذف</summary>`+
         historicalRefs.map(x=>`<div style="padding:6px 0;border-bottom:1px solid #eee">مراجعة: ${htmlEscape(x.text)}</div>`).join('')+'</details>'
       :'';
     ih.innerHTML=criticalHtml+refsHtml;
