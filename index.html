@@ -7528,7 +7528,7 @@ function renderSystemHealthV180(){
     `<div class="grid">
       <div><b>الطلبات النشطة</b><h2>${active.length}</h2></div>
       <div><b>تنبيهات تشغيلية</b><h2>${operationalIssues.length}</h2></div>
-      <div><b>مراجع سجلات للمراجعة</b><h2>${historicalRefs.length}</h2></div>
+      <div><b>مراجع تاريخية محفوظة — ليست تنبيهات</b><h2>${historicalRefs.length}</h2></div>
       <div><b>أحداث مزامنة معلقة</b><h2>${outbox.length}</h2></div>
       <div><b>مساحة التخزين المحلية</b><h2 style="font-size:18px">${fmtBytesV180(storage)}</h2><small style="color:#475569">حجم تقديري للبيانات والنسخ المحفوظة؛ لم يتم حذف أي نسخة احتياطية</small></div>
     </div>
@@ -7554,8 +7554,8 @@ function renderSystemHealthV180(){
         operationalIssues.map(x=>`<div style="padding:6px 0;border-bottom:1px solid #eee">⚠ ${htmlEscape(x.text)}</div>`).join('')
       :'<b style="color:#166534">✓ لا توجد تنبيهات تشغيلية حالية.</b>';
     const refsHtml=historicalRefs.length
-      ?`<details style="margin-top:12px"><summary style="cursor:pointer;font-weight:700">مراجع سجلات تحتاج تحققاً يدوياً (${historicalRefs.length}) — لم تُحذف</summary>`+
-        historicalRefs.map(x=>`<div style="padding:6px 0;border-bottom:1px solid #eee">مراجعة: ${htmlEscape(x.text)}</div>`).join('')+'</details>'
+      ?`<details style="margin-top:12px"><summary style="cursor:pointer;font-weight:700">سجل المراجع التاريخية المحفوظة (${historicalRefs.length}) — للرجوع فقط، لا تُعد تنبيهات تشغيلية ولم تُحذف</summary>`+
+        historicalRefs.map(x=>`<div style="padding:6px 0;border-bottom:1px solid #eee">مرجع محفوظ: ${htmlEscape(x.text)}</div>`).join('')+'</details>'
       :'';
     ih.innerHTML=criticalHtml+refsHtml;
   }
@@ -7594,8 +7594,8 @@ function runSelfTestsV180(){
     const classified=classifyIntegrityIssuesV229(scanIntegrityV180());
     add('فحص سلامة البيانات التشغيلية',classified.operational.length===0,
       classified.operational.length?('تنبيهات تشغيلية: '+classified.operational.length):'لا توجد أخطاء تشغيلية حالية');
-    add('حفظ المراجع غير المكتملة للمراجعة',Array.isArray(classified.reviewRefs),
-      'مراجع محفوظة للمراجعة دون حذف: '+classified.reviewRefs.length);
+    add('حفظ المراجع التاريخية دون اعتبارها تنبيهات',Array.isArray(classified.reviewRefs),
+      'مراجع محفوظة في سجل مستقل دون حذف: '+classified.reviewRefs.length);
   }catch(e){add('تشغيل الاختبارات',false,e.message)}
   const failed=tests.filter(t=>!t.ok).length;
   const el=document.getElementById('selfTestsV180');
