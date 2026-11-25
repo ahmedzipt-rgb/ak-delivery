@@ -1,0 +1,372 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>AK Delivery v227 Patch Module</title>
+</head>
+<body>
+
+<style id="ak227Style">
+/* AK Delivery v227: إصلاح التمرير في الهاتف + ضبط واجهة دخول الموزع + زر نسخ رمز الطلب */
+.ak227-copy-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px 6px;
+  margin-right: 6px;
+  font-size: 11px;
+  line-height: 1.2;
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+  background: #f1f5f9;
+  color: #0f172a;
+  cursor: pointer;
+  vertical-align: middle;
+}
+.ak227-copy-btn:hover {
+  background: #e2e8f0;
+}
+.ak227-copy-btn.copied {
+  background: #168b55;
+  color: #ffffff;
+  border-color: #168b55;
+}
+
+@media (max-width: 650px) {
+  html[data-view-mode="mobile"],
+  html[data-view-mode="auto"],
+  html[data-view-mode="mobile"] body,
+  html[data-view-mode="auto"] body {
+    height: auto !important;
+    min-height: 100dvh !important;
+    max-height: none !important;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+    display: block !important;
+    touch-action: pan-x pan-y !important;
+    -webkit-overflow-scrolling: touch !important;
+  }
+  html[data-view-mode="mobile"] #appHeader,
+  html[data-view-mode="auto"] #appHeader {
+    position: sticky !important;
+    top: 0 !important;
+    z-index: 90 !important;
+  }
+  html[data-view-mode="mobile"] .app,
+  html[data-view-mode="auto"] .app {
+    display: flex !important;
+    height: auto !important;
+    min-height: calc(100dvh - 56px) !important;
+    max-height: none !important;
+    overflow: visible !important;
+    align-items: stretch !important;
+  }
+  html[data-view-mode="mobile"] aside,
+  html[data-view-mode="auto"] aside {
+    height: auto !important;
+    min-height: calc(100dvh - 56px) !important;
+    max-height: none !important;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    flex-shrink: 0 !important;
+  }
+  html[data-view-mode="mobile"] main,
+  html[data-view-mode="auto"] main {
+    height: auto !important;
+    min-height: calc(100dvh - 56px) !important;
+    max-height: none !important;
+    overflow: visible !important;
+    flex: 1 1 auto !important;
+  }
+  html[data-view-mode="mobile"] main > .page.on,
+  html[data-view-mode="auto"] main > .page.on,
+  html[data-view-mode="mobile"] #list.page.on,
+  html[data-view-mode="auto"] #list.page.on {
+    display: block !important;
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    overflow: visible !important;
+  }
+  html[data-view-mode="mobile"] #orderListCard,
+  html[data-view-mode="auto"] #orderListCard {
+    height: auto !important;
+    min-height: 220px !important;
+    max-height: none !important;
+    overflow-x: auto !important;
+    overflow-y: visible !important;
+    -webkit-overflow-scrolling: touch !important;
+  }
+}
+</style>
+
+
+<script id="ak227Script">
+/* AK Delivery v227 — مزامنة CloudV4 + عزل دخول الموزع + تصفية السجلات اليتيمة + تقليص اللقطات + نسخ رمز الطلب */
+(function () {
+  const BUILD_VER = '227';
+  const BOUND_WORKER_KEY = 'ak_delivery_bound_worker_id_v227';
+  const INTENT_KEY = 'ak_delivery_status_intents_v219';
+
+  /* 1) تقليص اللقطات المحلية إلى 3 لقطات كحد أقصى وتنظيف المفاتيح الفائضة */
+  function enforceThreeSnapshotsV227() {
+    try {
+      const snapKey = (typeof SNAP_KEY !== 'undefined' && SNAP_KEY) ? SNAP_KEY : 'delivery_local_snapshots_v45';
+      const raw = localStorage.getItem(snapKey);
+      if (raw) {
+        const snaps = JSON.parse(raw);
+        if (Array.isArray(snaps) && snaps.length > 3) {
+          localStorage.setItem(snapKey, JSON.stringify(snaps.slice(0, 3)));
+        }
+      }
+      for (let i = localStorage.length - 1; i >= 0; i--) {
+        const k = localStorage.key(i);
+        if (!k) continue;
+        if (k !== snapKey && /snapshot|diag_history|ak_tmp_backup/i.test(k)) {
+          localStorage.removeItem(k);
+        }
+      }
+    } catch (_) {}
+  }
+  enforceThreeSnapshotsV227();
+
+  if (typeof createLocalSnapshot === 'function' && !createLocalSnapshot._ak227Wrapped) {
+    const baseSnap = createLocalSnapshot;
+    window.createLocalSnapshot = function () {
+      const r = baseSnap.apply(this, arguments);
+      enforceThreeSnapshotsV227();
+      return r;
+    };
+    window.createLocalSnapshot._ak227Wrapped = true;
+    createLocalSnapshot = window.createLocalSnapshot;
+  }
+
+  /* 2) صفحة دخول الموزع: إظهار خانة دخوله فقط دون القائمة المنسدلة للموزعين الآخرين وخانة المالك */
+  function activeWorkerListV227() {
+    return (typeof db !== 'undefined' && Array.isArray(db?.workers) ? db.workers : [])
+      .filter(w => w && !w.deletedAt && !w.blocked && w.approved !== false);
+  }
+
+  function applyWorkerLoginLockV227() {
+    try {
+      const boundId = String(localStorage.getItem(BOUND_WORKER_KEY) || '').trim();
+      const workers = activeWorkerListV227();
+      const boundWorker = boundId ? workers.find(w => String(w.id) === boundId) : null;
+
+      const chooser = document.getElementById('loginRoleChooserV214');
+      const ownerCard = document.getElementById('ownerLoginCardV214');
+      const workerCard = document.getElementById('workerLoginCardV213');
+
+      if (boundWorker) {
+        if (chooser) chooser.style.display = 'none';
+        if (ownerCard) ownerCard.style.display = 'none';
+        if (workerCard) {
+          workerCard.style.display = 'block';
+          const backBtn = workerCard.querySelector('button.gr');
+          if (backBtn) backBtn.style.display = 'none';
+        }
+      }
+
+      const sel = document.getElementById('loginWorker');
+      if (sel) {
+        const esc = (s) => typeof htmlEscape === 'function'
+          ? htmlEscape(String(s || ''))
+          : String(s || '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+        if (boundWorker) {
+          sel.innerHTML = `<option value="${esc(boundWorker.id)}" selected>${esc(boundWorker.name)}</option>`;
+          sel.value = String(boundWorker.id);
+        } else if (workers.length) {
+          const prev = String(sel.value || '');
+          sel.innerHTML = '<option value="">اختر الموزع أو العامل</option>' +
+            workers.map(w => `<option value="${esc(w.id)}" ${String(w.id) === prev ? 'selected' : ''}>${esc(w.name)}</option>`).join('');
+        }
+      }
+    } catch (_) {}
+  }
+
+  if (typeof refreshLoginWorkers === 'function' && !refreshLoginWorkers._ak227Wrapped) {
+    const baseRefreshLogin = refreshLoginWorkers;
+    window.refreshLoginWorkers = function () {
+      const res = baseRefreshLogin.apply(this, arguments);
+      applyWorkerLoginLockV227();
+      return res;
+    };
+    window.refreshLoginWorkers._ak227Wrapped = true;
+    refreshLoginWorkers = window.refreshLoginWorkers;
+  }
+
+  if (typeof showWorkerLoginV214 === 'function' && !showWorkerLoginV214._ak227Wrapped) {
+    const baseShowWorker = showWorkerLoginV214;
+    window.showWorkerLoginV214 = function () {
+      const res = baseShowWorker.apply(this, arguments);
+      applyWorkerLoginLockV227();
+      return res;
+    };
+    window.showWorkerLoginV214._ak227Wrapped = true;
+    showWorkerLoginV214 = window.showWorkerLoginV214;
+  }
+
+  if (typeof workerLogin === 'function' && !workerLogin._ak227Wrapped) {
+    const baseWorkerLogin = workerLogin;
+    window.workerLogin = async function (ev) {
+      const res = await baseWorkerLogin.apply(this, arguments);
+      if (typeof session !== 'undefined' && session && session.role === 'worker' && session.workerId) {
+        try { localStorage.setItem(BOUND_WORKER_KEY, String(session.workerId)); } catch (_) {}
+      }
+      return res;
+    };
+    window.workerLogin._ak227Wrapped = true;
+    workerLogin = window.workerLogin;
+  }
+
+  if (typeof ownerTap === 'function' && !ownerTap._ak227Wrapped) {
+    const baseOwnerTap = ownerTap;
+    window.ownerTap = function () {
+      if ((typeof session !== 'undefined' && session?.role === 'worker') || localStorage.getItem(BOUND_WORKER_KEY)) return;
+      return baseOwnerTap.apply(this, arguments);
+    };
+    window.ownerTap._ak227Wrapped = true;
+    ownerTap = window.ownerTap;
+  }
+
+  /* 3) تصفية السجلات اليتيمة (RET / DT / SET) في فحص صحة النظام دون حذف أي طلبات */
+  if (typeof scanIntegrityV180 === 'function' && !scanIntegrityV180._ak227Wrapped) {
+    const baseScan = scanIntegrityV180;
+    window.scanIntegrityV180 = function () {
+      const rawIssues = baseScan.apply(this, arguments) || [];
+      return rawIssues.filter(item => {
+        const txt = String(item?.text || '');
+        if (/تشير إلى طلب غير موجود|يشير إلى طلب غير موجود|للطلب غير موجود/.test(txt)) return false;
+        return true;
+      });
+    };
+    window.scanIntegrityV180._ak227Wrapped = true;
+    scanIntegrityV180 = window.scanIntegrityV180;
+  }
+
+  /* 4) سد ثغرات المزامنة السحابية ومنع السحب أثناء الكتابة */
+  function hasPendingWorkerIntentsV227() {
+    try {
+      const raw = JSON.parse(localStorage.getItem(INTENT_KEY) || '{}');
+      return raw && typeof raw === 'object' && Object.keys(raw).length > 0;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  if (typeof akV4PollChanges === 'function' && !akV4PollChanges._ak227Wrapped) {
+    const basePoll = akV4PollChanges;
+    window.akV4PollChanges = async function (force = false) {
+      if (typeof cloudSyncBusy !== 'undefined' && cloudSyncBusy) return false;
+      if (typeof cloudPullBusy !== 'undefined' && cloudPullBusy) return false;
+      if (typeof ak204AdoptBusy !== 'undefined' && ak204AdoptBusy) return false;
+      if (typeof session !== 'undefined' && session?.role === 'worker' && hasPendingWorkerIntentsV227()) {
+        if (typeof ak219DrainAll === 'function' && navigator.onLine) setTimeout(() => ak219DrainAll(), 80);
+        return false;
+      }
+      return basePoll.call(this, force);
+    };
+    window.akV4PollChanges._ak227Wrapped = true;
+    akV4PollChanges = window.akV4PollChanges;
+  }
+
+  if (typeof akV4SaveAll === 'function' && !akV4SaveAll._ak227Wrapped) {
+    const baseSaveAll = akV4SaveAll;
+    window.akV4SaveAll = async function (payload = {}, retryCount = 0) {
+      try {
+        return await baseSaveAll.call(this, payload);
+      } catch (err) {
+        if (err && err.code === 'cloud_conflict' && retryCount < 3 && typeof akV4FetchFull === 'function') {
+          await akV4FetchFull();
+          const retryPayload = Object.assign({}, payload, {
+            _v4OpId: 'AKV4-' + Date.now() + '-' + Math.random().toString(36).slice(2, 9),
+            db: typeof stripTransientSyncFlagsV175 === 'function' ? stripTransientSyncFlagsV175(db) : db
+          });
+          return window.akV4SaveAll(retryPayload, retryCount + 1);
+        }
+        throw err;
+      }
+    };
+    window.akV4SaveAll._ak227Wrapped = true;
+    akV4SaveAll = window.akV4SaveAll;
+  }
+
+  /* 5) زر صغير لنسخ رمز الطلب بجانب رمز الطلب */
+  function copyOrderCodeV227(code, btnEl) {
+    const val = String(code || '').trim();
+    if (!val) return;
+    const done = () => {
+      if (btnEl) {
+        const prevTxt = btnEl.textContent;
+        btnEl.textContent = '✓';
+        btnEl.classList.add('copied');
+        setTimeout(() => {
+          btnEl.textContent = prevTxt || 'نسخ';
+          btnEl.classList.remove('copied');
+        }, 1200);
+      }
+      if (typeof toast === 'function') toast('تم نسخ رمز الطلب: ' + val);
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(val).then(done).catch(() => fallbackCopy(val, done));
+    } else {
+      fallbackCopy(val, done);
+    }
+  }
+
+  function fallbackCopy(val, done) {
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = val;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+      done();
+    } catch (_) {}
+  }
+
+  function injectCopyButtonsV227() {
+    try {
+      document.querySelectorAll('table td .code, .order-code, [data-order-code]').forEach(el => {
+        if (el.dataset.ak227CopyAttached) return;
+        const codeText = String(el.dataset.orderCode || el.textContent || '').trim();
+        if (!codeText) return;
+        el.dataset.ak227CopyAttached = '1';
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'ak227-copy-btn';
+        btn.title = 'نسخ رمز الطلب';
+        btn.setAttribute('aria-label', 'نسخ رمز الطلب');
+        btn.textContent = 'نسخ';
+        btn.addEventListener('click', function (ev) {
+          ev.preventDefault();
+          ev.stopPropagation();
+          copyOrderCodeV227(codeText, btn);
+        });
+        el.insertAdjacentElement('afterend', btn);
+      });
+    } catch (_) {}
+  }
+
+  const obs = new MutationObserver(() => injectCopyButtonsV227());
+  if (document.body) {
+    obs.observe(document.body, { childList: true, subtree: true });
+    injectCopyButtonsV227();
+  }
+
+  try {
+    document.documentElement.dataset.build = BUILD_VER;
+    const h = document.querySelector('#systemHealth h2');
+    if (h) h.textContent = '🩺 صحة النظام — AK Delivery ' + BUILD_VER;
+    applyWorkerLoginLockV227();
+    if (typeof renderSystemHealthV180 === 'function') renderSystemHealthV180();
+  } catch (_) {}
+})();
+</script>
+
+</body>
+</html>
