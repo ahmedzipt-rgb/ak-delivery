@@ -5752,31 +5752,52 @@ function renderReturnBatches(){
  migrateLegacyReturnsV144();
  const el=document.getElementById('returnBatchesList');if(!el)return;
  const term=String(document.getElementById('returnBatchSearch')?.value||'').trim().toLowerCase();
- const model=returnDisplayModel().map(item=>({batch:item.batch,orders:item.orders.filter(o=>o.status==='طلب رجوع')}))
-   .filter(item=>item.orders.length&&(!term||String(item.batch.code||item.batch.id||'').toLowerCase().includes(term)||
-     item.orders.some(o=>[o.clientNo,o.seq,o.recipient,o.phone].some(v=>String(v||'').toLowerCase().includes(term)))));
+ const isOwner=(session&&session.role==='owner')||ownerMode===true;
+ const isWorker=session&&session.role==='worker';
+ const model=returnDisplayModel().map(item=>({
+   batch:item.batch,
+   orders:item.orders.filter(o=>o.status==='طلب رجوع'||(isOwner&&o.status==='مرتجع'))
+ })).filter(item=>item.orders.length&&(!term||
+   String(item.batch.code||item.batch.id||'').toLowerCase().includes(term)||
+   item.orders.some(o=>[o.clientNo,o.seq,o.recipient,o.phone].some(v=>String(v||'').toLowerCase().includes(term)))));
  if(!model.length){
-   el.innerHTML=term?'لا توجد طلبات مطابقة للبحث.':'لا توجد طلبات رجوع معلقة لدى الموزع.';
+   el.innerHTML=term?'لا توجد طلبات مطابقة للبحث.':(isWorker?'لا توجد طلبات رجوع معلقة لديك.':'لا توجد طلبات رجوع حالياً.');
    updateReturnRequestCount();
    return;
  }
  el.innerHTML=model.map(item=>{
    const b=item.batch;
-   const opened=!!term||String(openReturnArchiveBatchId)===String(b.id);
-   const orders=term&&!String(b.code||b.id||'').toLowerCase().includes(term)
-     ?item.orders.filter(o=>[o.clientNo,o.seq,o.recipient,o.phone].some(v=>String(v||'').toLowerCase().includes(term)))
-     :item.orders;
-   const lines=orders.map(o=>`<div style="padding:8px 0;border-bottom:1px solid #eee">
-     <b>رمز الطلب:</b> <b dir="ltr">${htmlEscape(o.clientNo||'—')}</b> — ${htmlEscape(o.recipient||'—')} — ${cash(o.amount)} — ${daysBadge(o)}
-     ${session.role==='worker'?`<button class="btn g" style="display:block;margin-top:7px" onclick="confirmReturnOrder('${String(b.id).replace(/'/g,'')}','${String(o.id).replace(/'/g,'')}')">✓ تأكيد رجوع هذا الطلب</button>`:''}
-     ${((session&&session.role==='owner')||ownerMode===true)?`<button class="btn r" style="display:block;margin-top:7px" onclick="removeOrderFromReturnBatch('${String(o.id).replace(/'/g,'')}')">إزالة من طلبات الرجوع</button>`:''}
-   </div>`).join('');
+   const batchMatch=String(b.code||b.id||'').toLowerCase().includes(term);
+   const orders=term&&!batchMatch?item.orders.filter(o=>[o.clientNo,o.seq,o.recipient,o.phone]
+     .some(v=>String(v||'').toLowerCase().includes(term))):item.orders;
+   const lines=orders.map(o=>{
+     const id=String(o.id).replace(/'/g,'');
+     const bid=String(b.id).replace(/'/g,'');
+     const received=!!o.returnOwnerConfirmedAt||b.status==='owner_confirmed'||!!b.ownerConfirmedAt;
+     let statusLabel='',action='';
+     if(o.status==='طلب رجوع'){
+       statusLabel='<span class="badge">بانتظار تنفيذ الموزع</span>';
+       if(isWorker)action=`<button class="btn g" style="display:block;width:100%;margin-top:8px" onclick="confirmReturnOrder('${bid}','${id}')">↩ تنفيذ إرجاع هذا الطلب</button>`;
+       if(isOwner)action=`<button class="btn r" style="display:block;margin-top:8px" onclick="removeOrderFromReturnBatch('${id}')">إزالة من طلبات الرجوع</button>`;
+     }else if(o.status==='مرتجع'){
+       statusLabel='<span class="badge">✓ نفّذ الموزع الإرجاع</span> '+(received?'<span class="badge">✓ أكد المالك الاستلام</span>':'<span class="badge">بانتظار تأكيد المالك</span>');
+       if(isOwner&&!received)action=`<button class="btn g" style="display:block;width:100%;margin-top:8px" onclick="confirmOwnerReturnOrder('${bid}','${id}')">✅ تأكيد استلام هذا الطلب</button>`;
+     }
+     return `<div style="padding:10px 0;border-bottom:1px solid #eee">
+       <b>رمز الطلب:</b> <b dir="ltr">${htmlEscape(o.clientNo||o.seq||'—')}</b><br>
+       <b>الزبون:</b> ${htmlEscape(o.recipient||'—')} — ${cash(o.amount)}<br>
+       ${statusLabel}${action}
+     </div>`;
+   }).join('');
+   const waitingWorker=item.orders.filter(o=>o.status==='طلب رجوع').length;
+   const waitingOwner=item.orders.filter(o=>o.status==='مرتجع'&&!o.returnOwnerConfirmedAt&&b.status!=='owner_confirmed'&&!b.ownerConfirmedAt).length;
    return `<div class="card" style="margin-top:10px">
-     <div><b>طلب الإرجاع:</b> ${htmlEscape(b.code||b.id)} <span class="badge">بانتظار تأكيد الموزع</span></div>
-     <p><b>الموزع:</b> ${htmlEscape(b.workerName||'—')}<br><b>طلبات لم ترجع بعد:</b> ${item.orders.length}<br>
+     <div><b>طلب الإرجاع:</b> ${htmlEscape(b.code||b.id)}</div>
+     <p><b>الموزع:</b> ${htmlEscape(b.workerName||'—')}<br>
+     <b>طلبات بانتظار تنفيذ الموزع:</b> ${waitingWorker}<br>
+     ${isOwner?`<b>طلبات بانتظار تأكيد المالك:</b> ${waitingOwner}<br>`:''}
      <b>تاريخ الإرسال:</b> ${htmlEscape(b.createdLabel||b.createdAt||'—')}</p>
-     ${!term?`<button class="btn" onclick="toggleReturnArchiveBatch('${String(b.id).replace(/'/g,'')}')">${opened?'إغلاق الطلبات':'فتح '+item.orders.length+' طلبات'}</button>`:''}
-     ${opened?`<div style="margin-top:8px">${lines}</div>`:''}
+     <div style="margin-top:8px">${lines}</div>
    </div>`;
  }).join('');
  updateReturnRequestCount();
