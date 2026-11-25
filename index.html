@@ -7497,11 +7497,20 @@ function repairReturnConsistencyV180(){
 
 
 /* ---------- صفحة صحة النظام ---------- */
+function classifyIntegrityIssuesV229(issues){
+  const all=Array.isArray(issues)?issues:[];
+  // هذه الأنواع روابط سجلات تاريخية إلى طلبات غير موجودة؛ نُبقيها للمراجعة ولا نعاملها كعطل تشغيلي أو نحذفها.
+  const reviewKinds=new Set(['return','transfer','settlement']);
+  return {
+    reviewRefs:all.filter(x=>reviewKinds.has(x.kind)),
+    operational:all.filter(x=>!reviewKinds.has(x.kind))
+  };
+}
+
 function renderSystemHealthV180(){
-  const issues=scanIntegrityV180();
-  // المراجع القديمة المنفصلة عن الطلبات الحالية تُعرض للمراجعة ولا تُعامل كعطل تشغيلي.
-  const historicalRefs=issues.filter(x=>['return','transfer','settlement'].includes(x.kind));
-  const operationalIssues=issues.filter(x=>!['return','transfer','settlement'].includes(x.kind));
+  const classified=classifyIntegrityIssuesV229(scanIntegrityV180());
+  const historicalRefs=classified.reviewRefs;
+  const operationalIssues=classified.operational;
   const orders=Array.isArray(db?.orders)?db.orders:[];
   const active=orders.filter(o=>o&&!o.deletedAt&&!o.duplicateHidden);
   let outbox=[];try{outbox=readStatusOutbox()}catch(_){}
@@ -7582,8 +7591,11 @@ function runSelfTestsV180(){
     add('مفتاح السحابة',typeof CLOUD_KEY==='string'&&CLOUD_KEY.length>5);
     add('لا توجد معرفات طلب مكررة',
       new Set((db.orders||[]).filter(Boolean).map(o=>String(o.id))).size===(db.orders||[]).filter(Boolean).length);
-    const issues=scanIntegrityV180();
-    add('فحص سلامة البيانات',issues.length===0,issues.length?('الملاحظات: '+issues.length):'');
+    const classified=classifyIntegrityIssuesV229(scanIntegrityV180());
+    add('فحص سلامة البيانات التشغيلية',classified.operational.length===0,
+      classified.operational.length?('تنبيهات تشغيلية: '+classified.operational.length):'لا توجد أخطاء تشغيلية حالية');
+    add('حفظ المراجع غير المكتملة للمراجعة',Array.isArray(classified.reviewRefs),
+      'مراجع محفوظة للمراجعة دون حذف: '+classified.reviewRefs.length);
   }catch(e){add('تشغيل الاختبارات',false,e.message)}
   const failed=tests.filter(t=>!t.ok).length;
   const el=document.getElementById('selfTestsV180');
@@ -7597,6 +7609,7 @@ function runSelfTestsV180(){
 /* ---------- تشخيص قابل للنسخ والتنزيل ---------- */
 function diagnosticsTextV180(){
   const issues=scanIntegrityV180();
+  const classified=classifyIntegrityIssuesV229(issues);
   let outbox=[];try{outbox=readStatusOutbox()}catch(_){}
   const payload={
     app:'AK Delivery 208 Auto Sync',
@@ -7611,7 +7624,14 @@ function diagnosticsTextV180(){
     lastRead:localStorage.getItem(AK180_LAST_READ)||localStorage.getItem('ak_delivery_last_cloud_pull'),
     lastWrite:localStorage.getItem(AK180_LAST_WRITE)||localStorage.getItem('ak_delivery_last_cloud_push'),
     lastError:localStorage.getItem(CLOUD_LAST_ERROR_KEY)||null,
+    // التوافق: يحتفظ integrityIssues بكل النتائج القديمة دون إسقاط أي مرجع.
     integrityIssues:issues,
+    operationalIntegrityIssues:classified.operational,
+    reviewReferences:classified.reviewRefs,
+    integrityCounts:{
+      operational:classified.operational.length,
+      referencesForReview:classified.reviewRefs.length
+    },
     logs:akLogsV180()
   };
   return JSON.stringify(payload,null,2);
