@@ -7495,6 +7495,9 @@ function repairReturnConsistencyV180(){
 /* ---------- صفحة صحة النظام ---------- */
 function renderSystemHealthV180(){
   const issues=scanIntegrityV180();
+  // المراجع القديمة المنفصلة عن الطلبات الحالية تُعرض للمراجعة ولا تُعامل كعطل تشغيلي.
+  const historicalRefs=issues.filter(x=>['return','transfer','settlement'].includes(x.kind));
+  const operationalIssues=issues.filter(x=>!['return','transfer','settlement'].includes(x.kind));
   const orders=Array.isArray(db?.orders)?db.orders:[];
   const active=orders.filter(o=>o&&!o.deletedAt&&!o.duplicateHidden);
   let outbox=[];try{outbox=readStatusOutbox()}catch(_){}
@@ -7511,9 +7514,10 @@ function renderSystemHealthV180(){
   if(hs)hs.innerHTML=
     `<div class="grid">
       <div><b>الطلبات النشطة</b><h2>${active.length}</h2></div>
-      <div><b>مشاكل سلامة البيانات</b><h2>${issues.length}</h2></div>
+      <div><b>تنبيهات تشغيلية</b><h2>${operationalIssues.length}</h2></div>
+      <div><b>مراجع قديمة للمراجعة</b><h2>${historicalRefs.length}</h2></div>
       <div><b>أحداث مزامنة معلقة</b><h2>${outbox.length}</h2></div>
-      <div><b>مساحة التخزين المحلية</b><h2 style="font-size:18px">${fmtBytesV180(storage)}</h2>${storage>5*1024*1024?'<small style="color:#b45309">⚠ مرتفعة — لم تُحذف أي بيانات؛ راجع توزيع الحجم أدناه</small>':''}</div>
+      <div><b>مساحة التخزين المحلية</b><h2 style="font-size:18px">${fmtBytesV180(storage)}</h2><small style="color:#475569">حجم تقديري للبيانات والنسخ المحفوظة؛ لم يتم حذف أي نسخة احتياطية</small></div>
     </div>
     <div style="margin-top:10px;padding:10px;border:1px solid #ddd;border-radius:8px">
       <b>أكبر عناصر التخزين المحلي (تشخيص فقط — دون حذف)</b>
@@ -7531,10 +7535,17 @@ function renderSystemHealthV180(){
      ${lastErr?`<p style="color:#b42318"><b>آخر خطأ:</b> ${htmlEscape(lastErr)}</p>`:''}`;
 
   const ih=document.getElementById('integrityHealthV180');
-  if(ih)ih.innerHTML=issues.length
-    ?`<div style="color:#9a3412"><b>وجد الفحص ${issues.length} ملاحظة. هذه مراجع تحتاج تحققاً يدوياً؛ لا يوجد حذف أو إصلاح تلقائي لها.</b></div>`+
-      issues.slice(0,40).map(x=>`<div style="padding:6px 0;border-bottom:1px solid #eee">⚠ ${htmlEscape(x.text)}</div>`).join('')
-    :'<b style="color:#166534">✓ لم يجد الفحص تعارضات واضحة في بنية البيانات.</b>';
+  if(ih){
+    const criticalHtml=operationalIssues.length
+      ?`<div style="color:#9a3412"><b>تنبيهات تشغيلية تحتاج معالجة: ${operationalIssues.length}</b></div>`+
+        operationalIssues.map(x=>`<div style="padding:6px 0;border-bottom:1px solid #eee">⚠ ${htmlEscape(x.text)}</div>`).join('')
+      :'<b style="color:#166534">✓ لا توجد تنبيهات تشغيلية حالية.</b>';
+    const refsHtml=historicalRefs.length
+      ?`<details style="margin-top:12px"><summary style="cursor:pointer;font-weight:700">مراجع قديمة تحتاج تحققاً يدوياً (${historicalRefs.length}) — لم تُحذف</summary>`+
+        historicalRefs.map(x=>`<div style="padding:6px 0;border-bottom:1px solid #eee">مراجعة: ${htmlEscape(x.text)}</div>`).join('')+'</details>'
+      :'';
+    ih.innerHTML=criticalHtml+refsHtml;
+  }
 
   const lg=document.getElementById('opsLogV180');
   const logs=akLogsV180();
@@ -7543,7 +7554,7 @@ function renderSystemHealthV180(){
   ).join(''):'لا توجد أخطاء أو عمليات مسجلة بعد.';
 
   const badge=document.getElementById('healthIssueCount');
-  if(badge)badge.textContent=String(issues.length+outbox.length+(lastErr?1:0));
+  if(badge)badge.textContent=String(operationalIssues.length+outbox.length+(lastErr?1:0));
 
   updateCloudReadWriteStatusV180();
 }
