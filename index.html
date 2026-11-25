@@ -720,7 +720,7 @@ html[data-role="worker"] #list .ak215-owner-export{display:none!important}
 <div style="margin-bottom:10px">
 <label style="display:block;font-weight:800;margin-bottom:6px">👤 اختر موزع هذه الحزمة</label>
 <select id="bulkWorkerSelect" onchange="setImportWorkerV206(this.value)" style="width:100%"></select>
-<small style="display:block;margin-top:5px">كل الطلبات في هذه الحزمة ستُسند مباشرة إلى الموزع الذي تختاره.</small>
+
 </div>
 <textarea id=bulkText style="min-height:180px" placeholder="الصق الطلبات هنا..."></textarea>
 <div style="margin-top:8px;display:flex;gap:7px;flex-wrap:wrap">
@@ -731,7 +731,7 @@ html[data-role="worker"] #list .ak215-owner-export{display:none!important}
 <div style="margin-bottom:10px">
 <label style="display:block;font-weight:800;margin-bottom:6px">👤 اختر موزع هذه الحزمة</label>
 <select id="pdfWorkerSelect" onchange="setImportWorkerV206(this.value)" style="width:100%"></select>
-<small style="display:block;margin-top:5px">اختر الموزع أولاً، ثم افتح ملف PDF. الطلبات التي تعتمدها ستُسند إليه مباشرة.</small>
+
 </div>
 <input id=pdfFileInput type=file accept="application/pdf,.pdf" onchange="readOrdersPdf(event)">
 <div class="pdf-import-actions">
@@ -819,7 +819,7 @@ html[data-role="worker"] #list .ak215-owner-export{display:none!important}
 
 <section id="ak189Recovery" class="page"><div class="card">
 <h2>🛡️ مراجعة تعارضات طلبات AK Delivery 213</h2>
-<p>تُعرض هنا الطلبات التي تختلف بياناتها بين هذا الجهاز والسحابة. لا تُحذف أي نسخة تلقائيًا.</p>
+
 <div id="ak189ConflictStatus"></div>
 <button type="button" class="btn g" onclick="ak189RefreshReport()">تحديث المراجعة</button>
 <button type="button" class="btn" onclick="ak189DownloadRecovery()">⬇️ تنزيل تقرير المراجعة</button>
@@ -834,7 +834,7 @@ html[data-role="worker"] #list .ak215-owner-export{display:none!important}
 <button id="ownerCloudPullBtn" class="btn g" onclick="ownerCloudPull()">⬇️ جلب البيانات</button>
 <button class="btn" onclick="cloudPush()">⬆️ رفع البيانات</button>
 </div>
-<div style="margin-top:10px;padding:9px 11px;border-radius:8px;background:#ecfdf5;color:#166534;font-weight:800">⚡ المزامنة التلقائية v208 مفعّلة: أي تغيير يُرفع تلقائياً، وأي جيل سحابي جديد يُجلب تلقائياً إلى شاشة المالك والموزع.</div>
+
 <div id="cloudStatus" style="margin-top:12px"><b>الحالة:</b> جاهز</div>
 <div id="cloudReadWriteStatusV180" style="margin-top:10px;padding:10px;border:1px solid #e5e7eb;border-radius:8px">
   <b>القراءة:</b> — &nbsp; | &nbsp; <b>الحفظ:</b> —
@@ -901,7 +901,7 @@ html[data-role="worker"] #list .ak215-owner-export{display:none!important}
 <section id="scanner" class="page">
  <div class="card">
   <h2>📷 ماسح الطلبات بالكاميرا</h2>
-  <p id="akScanScope" style="font-size:13px;color:#52616b">سيتم التحقق من الرمز مقابل الطلبات المسموح بها في حسابك فقط.</p>
+
   <div style="display:flex;gap:8px;flex-wrap:wrap;margin:10px 0">
    <button type="button" class="btn g" id="akScanStart">▶ تشغيل الكاميرا</button>
    <button type="button" class="btn gr" id="akScanStop" disabled>إيقاف الكاميرا</button>
@@ -6775,7 +6775,7 @@ html[data-view-mode="mobile"] #overlay > .drawer{
 </style></head><body><div class="head"><h1>فاتورة تسوية الموزع</h1><p>رقم الفاتورة: <b>${htmlEscape(invoiceNo)}</b></p><p>الموزع: <b>${htmlEscape(w?.name||st.workerName||'—')}</b> — تاريخ التسوية: ${htmlEscape(st.date||'—')}</p></div>
  <table><tr><th>#</th><th>رقم الترتيب</th><th>رمز الطلب</th><th>المستلم</th><th>قيمة الطلب</th><th>خصم التوصيل</th><th>الصافي</th></tr>${rows}</table>
  <div class="summary"><b>عدد الطلبات:</b> ${orders.length}<br><b>المجموع العام لمبالغ الطلبات:</b> ${cash(collected)}<br><b>إجمالي خصم ثمن التوصيل:</b> ${cash(fees)}<br><b>الباقي الواجب دفعه للمالك:</b> ${cash(net)}</div>
- <p>هذه الفاتورة تخص حزمة التسوية رقم ${htmlEscape(invoiceNo)} فقط، والطلبات الواردة فيها لا تدخل في أي تسوية جديدة.</p>
+
  <div class="sign"><div>توقيع الموزع</div><div>توقيع المالك</div></div><p style="margin-top:35px">تاريخ الطباعة: ${htmlEscape(tm())}</p>
  <script>window.onload=()=>setTimeout(()=>window.print(),300)<\/script></body></html>`);
  win.document.close();
@@ -7622,7 +7622,7 @@ function renderSystemHealthV180(){
       <div><b>تنبيهات تشغيلية</b><h2>${operationalIssues.length}</h2></div>
       <div><b>مراجع تاريخية محفوظة — ليست تنبيهات</b><h2>${historicalRefs.length}</h2></div>
       <div><b>أحداث مزامنة معلقة</b><h2>${outbox.length}</h2></div>
-      <div><b>مساحة التخزين المحلية</b><h2 style="font-size:18px">${fmtBytesV180(storage)}</h2><small style="color:#475569">حجم تقديري للبيانات والنسخ المحفوظة؛ لم يتم حذف أي نسخة احتياطية</small></div>
+      <div><b>مساحة التخزين المحلية</b><h2 style="font-size:18px">${fmtBytesV180(storage)}</h2></div>
     </div>
     <div style="margin-top:10px;padding:10px;border:1px solid #ddd;border-radius:8px">
       <b>أكبر عناصر التخزين المحلي (تشخيص فقط — دون حذف)</b>
