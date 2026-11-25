@@ -10187,82 +10187,82 @@ main{overflow-x:hidden!important}
     const returns=Array.isArray(db?.returnBatches)?db.returnBatches:[];
     const transfers=Array.isArray(db?.deliveryTransfers)?db.deliveryTransfers:[];
     const settlements=Array.isArray(db?.settlements)?db.settlements:[];
-    const orderRows=orders.filter(Boolean).map(o=>({
-      id:str(o.id),status:str(o.status),deleted:!!o.deletedAt,duplicateHidden:!!o.duplicateHidden,
-      workerId:str(o.worker),returnBatchId:str(o.returnBatchId),
-      returnRequestedAt:safeDate(o.returnRequestedAt),returnCompletedAt:safeDate(o.returnCompletedAt),
-      returnOwnerConfirmedAt:safeDate(o.returnOwnerConfirmedAt),modifiedAt:safeDate(o.modifiedAt)
-    }));
-    const returnRows=returns.filter(Boolean).map(b=>({
-      id:str(b.id),code:str(b.code),status:str(b.status),deleted:!!b.deletedAt,
-      duplicateHidden:!!b.duplicateHidden,duplicateOf:str(b.duplicateOf),
-      createdAt:safeDate(b.createdAt),modifiedAt:safeDate(b.modifiedAt),
-      ownerConfirmedAt:safeDate(b.ownerConfirmedAt),
-      orderIds:ids(b.orderIds),returnedOrderIds:ids(b.returnedOrderIds),
-      ownerReceivedOrderIds:ids(b.ownerReceivedOrderIds)
-    }));
-    const transferRows=transfers.filter(Boolean).map(t=>({
-      id:str(t.id),orderId:str(t.orderId),workerId:str(t.workerId),status:str(t.status),
-      deleted:!!t.deletedAt,createdAt:safeDate(t.createdAt),sentAt:safeDate(t.sentAt),
-      receivedAt:safeDate(t.receivedAt),modifiedAt:safeDate(t.modifiedAt)
-    }));
-    const settlementRows=settlements.filter(Boolean).map(st=>({
-      id:str(st.id),invoiceNo:str(st.invoiceNo),date:str(st.date),deleted:!!st.deletedAt,
-      duplicateHidden:!!st.duplicateHidden,orderIds:ids(st.orderIds),
-      snapshotOrderIds:Array.isArray(st.orderSnapshot)?st.orderSnapshot.map(x=>str(x?.id)):[]
-    }));
+    const currentOrderIds=new Set(orders.filter(Boolean).map(o=>str(o.id)));
+    const missingIds=new Set();
+    const returnRows=returns.filter(Boolean).map(b=>{
+      const refs=[...ids(b.orderIds),...ids(b.returnedOrderIds),...ids(b.ownerReceivedOrderIds)];
+      const missingOrderIds=[...new Set(refs.filter(id=>id&&!currentOrderIds.has(id)))];
+      missingOrderIds.forEach(id=>missingIds.add(id));
+      return missingOrderIds.length?{
+        id:str(b.id),code:str(b.code),status:str(b.status),deleted:!!b.deletedAt,
+        duplicateHidden:!!b.duplicateHidden,missingOrderIds
+      }:null;
+    }).filter(Boolean);
+    const transferRows=transfers.filter(Boolean).map(t=>{
+      const id=str(t.orderId);
+      if(!id||currentOrderIds.has(id))return null;
+      missingIds.add(id);
+      return {id:str(t.id),orderId:id,workerId:str(t.workerId),status:str(t.status),
+        deleted:!!t.deletedAt,duplicateHidden:!!t.duplicateHidden};
+    }).filter(Boolean);
+    const settlementRows=settlements.filter(Boolean).map(st=>{
+      const refs=[...ids(st.orderIds),...(Array.isArray(st.orderSnapshot)?st.orderSnapshot.map(o=>str(o?.id)):[])];
+      const missingOrderIds=[...new Set(refs.filter(id=>id&&!currentOrderIds.has(id)))];
+      missingOrderIds.forEach(id=>missingIds.add(id));
+      return missingOrderIds.length?{
+        id:str(st.id),invoiceNo:str(st.invoiceNo),date:str(st.date),deleted:!!st.deletedAt,
+        duplicateHidden:!!st.duplicateHidden,missingOrderIds
+      }:null;
+    }).filter(Boolean);
     let snapshots=[];
     try{
       const raw=typeof getSnapshots==='function'?getSnapshots():[];
       snapshots=(Array.isArray(raw)?raw:[]).map((x,i)=>{
         const d=x?.data&&typeof x.data==='object'?x.data:x;
-        const snapOrders=Array.isArray(d?.orders)?d.orders.filter(Boolean):[];
-        const snapReturns=Array.isArray(d?.returnBatches)?d.returnBatches.filter(Boolean):[];
-        const snapTransfers=Array.isArray(d?.deliveryTransfers)?d.deliveryTransfers.filter(Boolean):[];
-        const snapSettlements=Array.isArray(d?.settlements)?d.settlements.filter(Boolean):[];
-        return {
-          position:i+1,id:str(x?.snapshotId||x?.id),createdAt:safeDate(x?.createdAt||x?.time||x?.date),
-          orderCount:snapOrders.length,returnBatchCount:snapReturns.length,
-          transferCount:snapTransfers.length,settlementCount:snapSettlements.length,
-          orderIds:snapOrders.map(o=>str(o.id)),
-          returnBatches:snapReturns.map(b=>({id:str(b.id),code:str(b.code),deleted:!!b.deletedAt,duplicateHidden:!!b.duplicateHidden,orderIds:ids(b.orderIds),returnedOrderIds:ids(b.returnedOrderIds),ownerReceivedOrderIds:ids(b.ownerReceivedOrderIds)})),
-          transfers:snapTransfers.map(t=>({id:str(t.id),orderId:str(t.orderId),deleted:!!t.deletedAt,duplicateHidden:!!t.duplicateHidden})),
-          settlements:snapSettlements.map(st=>({id:str(st.id),invoiceNo:str(st.invoiceNo),deleted:!!st.deletedAt,duplicateHidden:!!st.duplicateHidden,orderIds:ids(st.orderIds),snapshotOrderIds:Array.isArray(st.orderSnapshot)?st.orderSnapshot.map(o=>str(o?.id)):[]}))
-        };
-      });
+        const snapIds=new Set((Array.isArray(d?.orders)?d.orders:[]).filter(Boolean).map(o=>str(o.id)));
+        const foundOrderIds=[...missingIds].filter(id=>snapIds.has(id));
+        return foundOrderIds.length?{
+          position:i+1,id:str(x?.snapshotId||x?.id),
+          createdAt:safeDate(x?.createdAt||x?.time||x?.date),foundOrderIds
+        }:null;
+      }).filter(Boolean);
     }catch(_){}
     return {
-      app:'AK Delivery — Safe Integrity Export v229',time:new Date().toISOString(),
-      privacy:'IDs, statuses, timestamps and relationships only. No customer names, phone numbers, addresses, amounts, PINs or record payloads.',
-      counts:{orders:orders.length,returnBatches:returns.length,deliveryTransfers:transfers.length,settlements:settlements.length,snapshots:snapshots.length},
-      orders:orderRows,returnBatches:returnRows,deliveryTransfers:transferRows,settlements:settlementRows,snapshotMetadata:snapshots
+      app:'AK Delivery — Missing References Only v230',time:new Date().toISOString(),
+      privacy:'Only missing order IDs and the records that reference them; no customer data or complete order/snapshot lists.',
+      counts:{currentOrders:orders.length,uniqueMissingOrderIds:missingIds.size,
+        returnRecords:returnRows.length,transferRecords:transferRows.length,
+        settlementRecords:settlementRows.length,snapshotsChecked:(()=>{try{return (typeof getSnapshots==='function'?getSnapshots():[]).length}catch(_){return 0}})(),
+        snapshotsContainingMissingOrders:snapshots.length},
+      missingOrderIds:[...missingIds],returnBatches:returnRows,transfers:transferRows,
+      settlements:settlementRows,snapshots
     };
   }
-  window.downloadSafeIntegrityDiagnosticsV229=function(){
+  window.downloadSafeIntegrityDiagnosticsV230=function(){
     try{
       const payload=exportPayload();
       const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json;charset=utf-8'});
       const url=URL.createObjectURL(blob),a=document.createElement('a');
-      a.href=url;a.download='AK_Delivery_Safe_Integrity_v229_'+(typeof safeFileDate==='function'?safeFileDate():new Date().toISOString().slice(0,10))+'.json';
+      a.href=url;a.download='AK_Delivery_Missing_References_v230_'+(typeof safeFileDate==='function'?safeFileDate():new Date().toISOString().slice(0,10))+'.json';
       document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1500);
       if(typeof showToast==='function')showToast('تم تجهيز ملف التشخيص المحدود ✓');
     }catch(e){if(typeof showToast==='function')showToast('تعذر إنشاء ملف التشخيص: '+String(e?.message||e));}
   };
   function addButton(){
     try{
-      const old=document.getElementById('ak229SafeIntegrityExportBtn');if(old)return;
+      const old=document.getElementById('ak230SafeIntegrityExportBtn');if(old)return;
       const base=document.querySelector('#systemHealth button[onclick*="downloadDiagnosticsV180"]');
       const host=base?.parentElement;if(!host)return;
-      const b=document.createElement('button');b.type='button';b.id='ak229SafeIntegrityExportBtn';
+      const b=document.createElement('button');b.type='button';b.id='ak230SafeIntegrityExportBtn';
       b.className='btn gr';b.textContent='🧾 تنزيل تشخيص المراجع (آمن)';
-      b.addEventListener('click',window.downloadSafeIntegrityDiagnosticsV229);
+      b.addEventListener('click',window.downloadSafeIntegrityDiagnosticsV230);
       host.appendChild(b);
     }catch(_){}
   }
   addButton();
   document.addEventListener('DOMContentLoaded',addButton,{once:true});
-  try{document.documentElement.dataset.build='229';const h=document.querySelector('#systemHealth h2');if(h)h.textContent='🩺 صحة النظام — AK Delivery 229';}catch(_){}
+  try{document.documentElement.dataset.build='229';const h=document.querySelector('#systemHealth h2');if(h)h.textContent='🩺 صحة النظام — AK Delivery 230';}catch(_){}
 })();
-// AK Delivery v229 — privacy-limited integrity export; no database writes and no cloud-sync changes
+// AK Delivery v230 — missing references only; no database writes and no cloud-sync changes; no database writes and no cloud-sync changes
 </script>
 </body></html>
