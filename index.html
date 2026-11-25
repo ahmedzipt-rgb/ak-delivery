@@ -5783,10 +5783,13 @@ function renderReturnBatches(){
        statusLabel='<span class="badge">✓ نفّذ الموزع الإرجاع</span> '+(received?'<span class="badge">✓ أكد المالك الاستلام</span>':'<span class="badge">بانتظار تأكيد المالك</span>');
        if(isOwner&&!received)action=`<button class="btn g" style="display:block;width:100%;margin-top:8px" onclick="confirmOwnerReturnOrder('${bid}','${id}')">✅ تأكيد استلام هذا الطلب</button>`;
      }
-     return `<div style="padding:10px 0;border-bottom:1px solid #eee">
-       <b>رمز الطلب:</b> <b dir="ltr">${htmlEscape(o.clientNo||o.seq||'—')}</b><br>
-       <b>الزبون:</b> ${htmlEscape(o.recipient||'—')} — ${cash(o.amount)}<br>
-       ${statusLabel}${action}
+     return `<div style="padding:14px;margin:12px 0;border:2px solid #d7e5f5;border-radius:12px;background:#f5f9ff">
+       <div style="font-size:12px;font-weight:700;color:#52657a;margin-bottom:5px">رمز الطلب</div>
+       <div dir="ltr" style="font-size:22px;font-weight:900;letter-spacing:.4px;color:#123b67;margin-bottom:10px">${htmlEscape(o.clientNo||o.seq||'—')}</div>
+       <div style="font-size:17px;font-weight:800;color:#172b42;margin-bottom:8px">${htmlEscape(o.recipient||'—')}</div>
+       <div style="font-size:19px;font-weight:900;color:#087443;margin-bottom:10px">${cash(o.amount)}</div>
+       <div style="font-size:14px;font-weight:800;margin:8px 0">${statusLabel}</div>
+       ${action}
      </div>`;
    }).join('');
    const waitingWorker=item.orders.filter(o=>o.status==='طلب رجوع').length;
