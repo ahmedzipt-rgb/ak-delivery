@@ -906,8 +906,9 @@ html[data-role="worker"] #list .ak215-owner-export{display:none!important}
    <button type="button" class="btn g" id="akScanStart">▶ تشغيل الكاميرا</button>
    <button type="button" class="btn gr" id="akScanStop" disabled>إيقاف الكاميرا</button>
   </div>
-  <div id="akScanCameraBox" style="display:none;background:#111;border-radius:10px;overflow:hidden;max-width:560px">
+  <div id="akScanCameraBox" style="display:none;position:relative;background:#111;border-radius:10px;overflow:hidden;max-width:560px">
    <video id="akScanVideo" playsinline muted style="display:block;width:100%;max-height:55vh;object-fit:contain"></video>
+   <div id="akScanCameraNotice" role="status" aria-live="polite" style="display:none;position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:max-content;max-width:90%;padding:12px 16px;border-radius:10px;background:rgba(150,20,20,.94);color:#fff;font-weight:bold;text-align:center;box-shadow:0 2px 12px #0008;z-index:5">لم يتم التعرف على هذا الطلب</div>
   </div>
   <div id="akScanMessage" class="card" style="margin-top:10px;background:#f3f7fa">وجّه كاميرا الهاتف نحو رمز الطلب.</div>
   <div id="akScanResult"></div>
@@ -10386,7 +10387,10 @@ main{overflow-x:hidden!important}
   busy=false;
  }
  function message(t,error=false){
-  const e=$('akScanMessage');if(e){e.textContent=t;e.style.background=error?'#fff0f0':'#f3f7fa';e.style.color=error?'#a31616':'#26343c';}
+  const e=$('akScanMessage'),notice=$('akScanCameraNotice');
+  const unknown=String(t)==='لم يتم التعرف على هذا الطلب'&&!!stream;
+  if(e){e.textContent=unknown?'':t;e.style.background=error?'#fff0f0':'#f3f7fa';e.style.color=error?'#a31616':'#26343c';}
+  if(notice){notice.textContent='لم يتم التعرف على هذا الطلب';notice.style.display=unknown?'block':'none';}
  }
  function showOrder(o,raw){
   currentMatch=o;
