@@ -615,6 +615,12 @@ html[data-role="worker"] #list .ak215-owner-export{display:none!important}
   html[data-view-mode="auto"] #ak215SearchMeta{max-height:74px;overflow:auto}
 }
 
+
+/* AK Delivery camera scanner */
+#scanner video{background:#111}
+#akScanResult .ak-scan-order{border:2px solid #2585b8;background:#f5fbff;border-radius:10px;padding:12px;margin-top:10px;line-height:1.9}
+#akScanResult .ak-scan-order strong{color:#145b83}
+#akScanResult button{margin:5px 4px 0 0}
 </style>
 <style id="ak216Style">
 /* v216 — أدوات تنزيل مدمجة + تحسين وضوح مسار الرجوع والحسابات. */
@@ -891,6 +897,21 @@ html[data-role="worker"] #list .ak215-owner-export{display:none!important}
 <div class=grid><select id=settlementInvoice></select><button class="btn g" onclick="printSettlementInvoice()">🧾 فتح / حفظ فاتورة التسوية PDF</button></div>
 <div id=settlementInvoiceSummary style="margin-top:12px"></div>
 </div>
+</section>
+<section id="scanner" class="page">
+ <div class="card">
+  <h2>📷 ماسح الطلبات بالكاميرا</h2>
+  <p id="akScanScope" style="font-size:13px;color:#52616b">سيتم التحقق من الرمز مقابل الطلبات المسموح بها في حسابك فقط.</p>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin:10px 0">
+   <button type="button" class="btn g" id="akScanStart">▶ تشغيل الكاميرا</button>
+   <button type="button" class="btn gr" id="akScanStop" disabled>إيقاف الكاميرا</button>
+  </div>
+  <div id="akScanCameraBox" style="display:none;background:#111;border-radius:10px;overflow:hidden;max-width:560px">
+   <video id="akScanVideo" playsinline muted style="display:block;width:100%;max-height:55vh;object-fit:contain"></video>
+  </div>
+  <div id="akScanMessage" class="card" style="margin-top:10px;background:#f3f7fa">وجّه كاميرا الهاتف نحو رمز الطلب.</div>
+  <div id="akScanResult"></div>
+ </div>
 </section></main></div>
 <div id=overlay class=overlay onclick="if(event.target===this)closeDrawer()"><div class=drawer><button class=close onclick=closeDrawer()>×</button><h2 id=dcode></h2><div id=detail></div><div id="ownerActions" style="display:none;margin:10px 0">
 <button class=btn onclick="openEdit()">✏️ تعديل الطلب</button>
@@ -10336,5 +10357,141 @@ main{overflow-x:hidden!important}
   try{document.documentElement.dataset.build='229';const h=document.querySelector('#systemHealth h2');if(h)h.textContent='🩺 صحة النظام — AK Delivery 230';}catch(_){}
 })();
 // AK Delivery v230 — missing references only; no database writes and no cloud-sync changes; no database writes and no cloud-sync changes
+</script>
+
+<script id="akCameraScannerV1">
+(function(){
+ 'use strict';
+ let detector=null,stream=null,raf=0,busy=false,lastValue='',lastAt=0,currentMatch=null;
+ const $=id=>document.getElementById(id);
+ const esc=v=>typeof htmlEscape==='function'?htmlEscape(String(v??'')):String(v??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+ function norm(v){return String(v??'').trim().toUpperCase().replace(/[\\s\\-_]+/g,'');}
+ function isOwner(){return session&&session.role==='owner';}
+ function isWorker(){return session&&session.role==='worker';}
+ function activeOrders(){
+  return (db.orders||[]).filter(o=>o&&!o.deletedAt&&!o.duplicateHidden&&
+   (isOwner()||(isWorker()&&orderAssignedToWorker(o,session.workerId))));
+ }
+ function orderCodes(o){
+  const a=[o.clientNo,formatSeq(o.seq),o.seq];
+  return [...new Set(a.map(norm).filter(Boolean))];
+ }
+ function stop(){
+  if(raf)cancelAnimationFrame(raf);raf=0;
+  if(stream){stream.getTracks().forEach(t=>t.stop());stream=null;}
+  const v=$('akScanVideo');if(v){try{v.pause();v.srcObject=null;}catch(_){}}
+  if($('akScanCameraBox'))$('akScanCameraBox').style.display='none';
+  if($('akScanStart'))$('akScanStart').disabled=false;
+  if($('akScanStop'))$('akScanStop').disabled=true;
+  busy=false;
+ }
+ function message(t,error=false){
+  const e=$('akScanMessage');if(e){e.textContent=t;e.style.background=error?'#fff0f0':'#f3f7fa';e.style.color=error?'#a31616':'#26343c';}
+ }
+ function showOrder(o,raw){
+  currentMatch=o;
+  const t=typeof latestDeliveryTransferForOrder==='function'?latestDeliveryTransferForOrder(o.id):null;
+  const received=!!o.deliveryReceivedAt||(t&&t.status==='received');
+  const assigned=isWorker()&&orderAssignedToWorker(o,session.workerId);
+  let action='';
+  if(isWorker()&&assigned){
+   if(!received&&t&&t.status==='sent'&&String(t.workerId)===String(session.workerId)){
+    action='<button type="button" class="btn g" id="akScanReceive">📥 تأكيد استقبال الطلب</button>';
+   }else if(received&&String(o.deliveryReceivedByWorkerId||t?.workerId||'')===String(session.workerId)&&o.status!=='تم التسليم'){
+    action='<button type="button" class="btn g" id="akScanDeliver">✅ تأكيد تسليم الطلب</button>';
+   }else if(!received){
+    action='<div style="color:#9a5a00;font-weight:bold">هذا الطلب مسند إليك، لكنه لا يملك سجل إرسال صالحاً للاستقبال بعد. راجع المالك.</div>';
+   }else{
+    action='<div style="color:#16804a;font-weight:bold">تم التسليم أو لا يوجد إجراء متاح حالياً.</div>';
+   }
+  }else if(isOwner()){
+   action='<button type="button" class="btn" id="akScanOpenOrder">عرض تفاصيل الطلب</button>';
+  }
+  $('akScanResult').innerHTML='<div class="ak-scan-order"><div><strong>تم التعرف على طلب مطابق</strong></div>'+
+   '<div>رمز القراءة: <b dir="ltr">'+esc(raw)+'</b></div>'+
+   '<div>رمز الطلب: <b dir="ltr">'+esc(o.clientNo||formatSeq(o.seq)||'—')+'</b></div>'+
+   '<div>المستلم: <b>'+esc(o.recipient||'—')+'</b></div>'+
+   '<div>المدينة: '+esc(o.city||'—')+'</div>'+
+   '<div>الحالة: <b>'+esc(typeof statusDisplayName==='function'?statusDisplayName(o.status):o.status||'—')+'</b></div>'+
+   (isOwner()?'<div>الموزع: '+esc(db.workers.find(w=>String(w.id)===String(o.worker||''))?.name||'غير مسند')+'</div>':'')+
+   action+'</div>';
+  const receive=$('akScanReceive');
+  if(receive)receive.onclick=async()=>{
+   const latest=latestDeliveryTransferForOrder(o.id);
+   if(!latest||latest.status!=='sent'||String(latest.workerId)!==String(session.workerId)||!orderAssignedToWorker(o,session.workerId)){message('رفض الإجراء: الطلب لم يعد مسنداً إليك أو لم يعد بانتظار الاستقبال.',true);return;}
+   stop();await confirmOrderReceipt(latest.id);showOrder(o,raw);
+  };
+  const deliver=$('akScanDeliver');
+  if(deliver)deliver.onclick=async()=>{
+   if(!orderAssignedToWorker(o,session.workerId)||!o.deliveryReceivedAt||String(o.deliveryReceivedByWorkerId)!==String(session.workerId)){message('رفض الإجراء: يجب أن يكون الاستقبال مؤكداً لهذا الموزع أولاً.',true);return;}
+   if(!confirm('تأكيد تسليم الطلب '+(o.clientNo||formatSeq(o.seq))+' إلى الزبون؟'))return;
+   stop();current=o.id;await statusSet('تم التسليم');showOrder(o,raw);
+  };
+  const open=$('akScanOpenOrder');if(open)open.onclick=()=>{stop();openOrder(o.id);};
+  message('تم العثور على الطلب والتحقق من انتمائه إلى نطاق الحساب.');
+ }
+ function handleValue(raw){
+  const value=norm(raw);if(!value)return;
+  const now=Date.now();if(value===lastValue&&now-lastAt<2500)return;
+  lastValue=value;lastAt=now;
+  const matches=activeOrders().filter(o=>orderCodes(o).includes(value));
+  if(matches.length===1){stop();showOrder(matches[0],raw);}
+  else if(matches.length>1){stop();currentMatch=null;$('akScanResult').innerHTML='';message('توقف الماسح: الرمز يطابق أكثر من طلب. لم يتم تنفيذ أي إجراء لتفادي الخلط.',true);}
+  else{message(isWorker()?'هذا الرمز لا يطابق أي طلب مسند إلى حسابك. تم رفضه.':'هذا الرمز لا يطابق أي طلب نشط في النظام.',true);}
+ }
+ async function scanFrame(){
+  if(!stream||busy)return;
+  const v=$('akScanVideo');
+  if(v&&v.readyState>=2){
+   try{
+    const found=await detector.detect(v);
+    if(found&&found.length){const item=found.find(x=>x.rawValue);if(item){handleValue(item.rawValue);if(!stream)return;}}
+   }catch(e){/* استمرار المسح عند إطار غير قابل للقراءة */}
+  }
+  if(stream)raf=requestAnimationFrame(scanFrame);
+ }
+ async function start(){
+  if(!isOwner()&&!isWorker()){message('يرجى تسجيل الدخول أولاً.',true);return;}
+  if(!window.isSecureContext){message('يلزم فتح التطبيق عبر HTTPS للسماح بالكاميرا.',true);return;}
+  if(!('BarcodeDetector' in window)){message('هذا المتصفح لا يوفر قارئ الرموز بالكاميرا. افتح التطبيق بأحدث إصدار من Chrome على الهاتف.',true);return;}
+  try{
+   const formats=await BarcodeDetector.getSupportedFormats();
+   if(!formats||!formats.length){message('لا توجد صيغ رموز مدعومة في هذا المتصفح.',true);return;}
+   detector=new BarcodeDetector({formats});
+   stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'}},audio:false});
+   const v=$('akScanVideo');v.srcObject=stream;
+   $('akScanCameraBox').style.display='block';$('akScanStart').disabled=true;$('akScanStop').disabled=false;
+   await v.play();message('الكاميرا تعمل. امسح رمز طلب من الطلبات المسموح بها فقط.');
+   raf=requestAnimationFrame(scanFrame);
+  }catch(e){stop();message('تعذر تشغيل الكاميرا. تحقق من إذن الكاميرا وأنها غير مستخدمة من تطبيق آخر.',true);}
+ }
+ function openScanner(){
+  if(!isOwner()&&!isWorker())return false;
+  stop();currentMatch=null;$('akScanResult').innerHTML='';
+  $('akScanScope').textContent=isWorker()?'النطاق محصور في الطلبات المسندة حالياً إلى حسابك فقط. أي رمز خارج هذه الطلبات سيُرفض.':'المالك يستطيع مسح الطلبات النشطة المسجلة في النظام ومراجعة بياناتها.';
+  document.querySelectorAll('main > .page').forEach(p=>p.classList.remove('on'));
+  $('scanner').classList.add('on');message('وجّه كاميرا الهاتف نحو رمز الطلب.');return true;
+ }
+ const baseNavigate=window.directNavigate;
+ if(typeof baseNavigate==='function'){
+  window.directNavigate=function(key){
+   if(String(key)==='scanner'){return openScanner();}
+   stop();return baseNavigate.apply(this,arguments);
+  };
+ }
+ function install(){
+  const aside=document.querySelector('aside');
+  if(aside&&!$('akCameraScannerMenu')){
+   const b=document.createElement('button');b.id='akCameraScannerMenu';b.type='button';b.dataset.menuKey='scanner';b.textContent='📷 ماسح الطلبات';
+   b.addEventListener('click',()=>go('scanner','scanner'));
+   const first=aside.querySelector('button');if(first&&first.nextSibling)aside.insertBefore(b,first.nextSibling);else aside.appendChild(b);
+  }
+  if($('akScanStart'))$('akScanStart').onclick=start;
+  if($('akScanStop'))$('akScanStop').onclick=stop;
+ }
+ install();document.addEventListener('DOMContentLoaded',install,{once:true});
+ window.addEventListener('pagehide',stop);
+ document.addEventListener('visibilitychange',()=>{if(document.hidden)stop();});
+})();
 </script>
 </body></html>
