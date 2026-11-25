@@ -4726,11 +4726,29 @@ function visibleOrders(){
    return filter==='الكل'||o.status===filter;
  });
 }
+function copyOrderCodeV228(code){
+ const value=String(code||'').trim();
+ if(!value)return;
+ const fallback=()=>{
+   const field=document.createElement('textarea');
+   field.value=value;field.setAttribute('readonly','');
+   field.style.position='fixed';field.style.opacity='0';
+   document.body.appendChild(field);field.select();
+   let ok=false;try{ok=document.execCommand('copy')}catch(_){}
+   field.remove();
+   if(ok)showToast('تم نسخ رمز الطلب ✓');else showToast('تعذر النسخ على هذا الجهاز');
+ };
+ try{
+   if(navigator.clipboard&&navigator.clipboard.writeText){
+     navigator.clipboard.writeText(value).then(()=>showToast('تم نسخ رمز الطلب ✓')).catch(fallback);
+   }else fallback();
+ }catch(_){fallback()}
+}
 function render(){
  const searching=!!String(search?.value||'').trim();
  title.textContent=searching?'نتائج البحث في جميع الطلبات':statusDisplayName(filter);
  let a=visibleOrders();
- rows.innerHTML=a.map(o=>{try{return `<tr${o.deletedAt?' style="opacity:.78;background:#fff3f3"':''}><td><b dir="ltr">${formatSeq(o.seq)}</b></td><td class=code onclick="openOrder('${o.id}')">${o.clientNo||'—'}${o.deletedAt?'<div><span class="badge" style="background:#b91c1c;color:white">محذوف</span></div>':''}</td><td>${htmlEscape(o.recipient||'—')}</td><td>${htmlEscape(o.address||'—')}${o.city?'، '+htmlEscape(o.city):''}</td><td class="stay-days-col" style="text-align:center">${daysBadge(o)}</td><td>
+ rows.innerHTML=a.map(o=>{try{return `<tr${o.deletedAt?' style="opacity:.78;background:#fff3f3"':''}><td><b dir="ltr">${formatSeq(o.seq)}</b></td><td class=code onclick="openOrder('${o.id}')">${htmlEscape(o.clientNo||'—')}${o.clientNo?` <button type="button" class="btn gr" title="نسخ رمز الطلب" aria-label="نسخ رمز الطلب" style="padding:2px 5px;font-size:10px;min-width:0" onclick="event.stopPropagation();copyOrderCodeV228(decodeURIComponent('${encodeURIComponent(String(o.clientNo))}'))">نسخ</button>`:''}${o.deletedAt?'<div><span class="badge" style="background:#b91c1c;color:white">محذوف</span></div>':''}</td><td>${htmlEscape(o.recipient||'—')}</td><td>${htmlEscape(o.address||'—')}${o.city?'، '+htmlEscape(o.city):''}</td><td class="stay-days-col" style="text-align:center">${daysBadge(o)}</td><td>
 <div dir="ltr" style="direction:ltr;unicode-bidi:bidi-override;display:inline-block">${htmlEscape(o.phone||"")}</div>
 <div style="margin-top:4px;display:flex;gap:4px;flex-wrap:wrap">
 <button class="btn g" style="padding:5px 7px;font-size:11px" onclick="contactPhone(decodeURIComponent('${encodeURIComponent(String(o.phone||''))}'))">📞</button>
@@ -7358,6 +7376,18 @@ function storageSizeV180(){
     return n;
   }catch(_){return 0}
 }
+// تشخيص أحجام مفاتيح التخزين فقط؛ لا يقرأ القيم في الواجهة ولا يحذف أي بيانات.
+function storageBreakdownV228(limit=8){
+  try{
+    const items=[];
+    for(let i=0;i<localStorage.length;i++){
+      const key=localStorage.key(i)||'';
+      const value=localStorage.getItem(key)||'';
+      items.push({key,bytes:(String(key).length+value.length)*2});
+    }
+    return items.sort((a,b)=>b.bytes-a.bytes).slice(0,Math.max(1,limit));
+  }catch(_){return []}
+}
 function fmtBytesV180(n){
   if(n<1024)return n+' B';
   if(n<1024*1024)return (n/1024).toFixed(1)+' KB';
@@ -7475,12 +7505,7 @@ function renderSystemHealthV180(){
   const lastOk=localStorage.getItem(CLOUD_LAST_OK_KEY);
   let lastErr=localStorage.getItem(CLOUD_LAST_ERROR_KEY)||'';
   const storage=storageSizeV180();
-  // v188: خطأ قديم لا يُعرض كعطل حالي إذا لا توجد مزامنة معلقة.
-  const syncProblemNowV188=localPending||outbox.length>0||pendingOrders>0;
-  if(lastErr && !syncProblemNowV188){
-    try{localStorage.removeItem(CLOUD_LAST_ERROR_KEY);akLogV180('cloud-error-cleared','أزيل تنبيه قديم لأن المزامنة الحالية سليمة',lastErr);}catch(_){}
-    lastErr='';
-  }
+  const storageItems=storageBreakdownV228(8);
 
   const hs=document.getElementById('healthSummaryV180');
   if(hs)hs.innerHTML=
@@ -7488,7 +7513,11 @@ function renderSystemHealthV180(){
       <div><b>الطلبات النشطة</b><h2>${active.length}</h2></div>
       <div><b>مشاكل سلامة البيانات</b><h2>${issues.length}</h2></div>
       <div><b>أحداث مزامنة معلقة</b><h2>${outbox.length}</h2></div>
-      <div><b>مساحة التخزين المحلية</b><h2 style="font-size:18px">${fmtBytesV180(storage)}</h2>${storage>5*1024*1024?'<small style="color:#b45309">⚠ مرتفعة — يتم الاحتفاظ بأحدث 3 لقطات فقط</small>':''}</div>
+      <div><b>مساحة التخزين المحلية</b><h2 style="font-size:18px">${fmtBytesV180(storage)}</h2>${storage>5*1024*1024?'<small style="color:#b45309">⚠ مرتفعة — لم تُحذف أي بيانات؛ راجع توزيع الحجم أدناه</small>':''}</div>
+    </div>
+    <div style="margin-top:10px;padding:10px;border:1px solid #ddd;border-radius:8px">
+      <b>أكبر عناصر التخزين المحلي (تشخيص فقط — دون حذف)</b>
+      ${storageItems.length?storageItems.map(x=>`<div style="display:flex;justify-content:space-between;gap:8px;padding:4px 0;border-bottom:1px solid #eee"><span dir="ltr" style="overflow-wrap:anywhere">${htmlEscape(x.key)}</span><b>${fmtBytesV180(x.bytes)}</b></div>`).join(''):'<div>تعذر قراءة تفاصيل التخزين</div>'}
     </div>`;
 
   const sh=document.getElementById('syncHealthV180');
@@ -7503,7 +7532,7 @@ function renderSystemHealthV180(){
 
   const ih=document.getElementById('integrityHealthV180');
   if(ih)ih.innerHTML=issues.length
-    ?`<div style="color:#9a3412"><b>وجد الفحص ${issues.length} ملاحظة. لم يتم حذف أو تعديل أي بيانات.</b></div>`+
+    ?`<div style="color:#9a3412"><b>وجد الفحص ${issues.length} ملاحظة. هذه مراجع تحتاج تحققاً يدوياً؛ لا يوجد حذف أو إصلاح تلقائي لها.</b></div>`+
       issues.slice(0,40).map(x=>`<div style="padding:6px 0;border-bottom:1px solid #eee">⚠ ${htmlEscape(x.text)}</div>`).join('')
     :'<b style="color:#166534">✓ لم يجد الفحص تعارضات واضحة في بنية البيانات.</b>';
 
@@ -7752,16 +7781,8 @@ setTimeout(()=>{try{akV4InitialBootstrapV211(true).then(()=>akV4PollChanges(true
 akLogV180('boot','تشغيل AK Delivery 212 V4 Safe Bootstrap');
 try{updateCloudReadWriteStatusV180();}catch(_){}
 setTimeout(()=>{
-  try{
-    trimSnapshotsV180();
-    const r=repairReturnConsistencyV180();
-    if(r&&r.changed){
-      requestUiRefreshV180();
-      try{renderReturnedOrders();renderReturnBatches();}catch(_){}
-      showToast('✅ تم إصلاح اتساق سجلات الرجوع القديمة بأمان',4200);
-    }
-    try{renderSystemHealthV180();}catch(_){}
-  }catch(e){akLogV180('repair-error','تعذر إصلاح الاتساق القديم',e.message)}
+  // تشخيص فقط عند بدء التشغيل؛ لا نقلّص النسخ ولا نعدّل سجلات الرجوع تلقائياً.
+  try{renderSystemHealthV180();}catch(e){akLogV180('health-render-error','تعذر عرض صحة النظام',e.message)}
 },900);
 
 setTimeout(()=>{try{renderImportWorkerSelectorsV206()}catch(_){}},300);
