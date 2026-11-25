@@ -10437,7 +10437,7 @@ main{overflow-x:hidden!important}
   const matches=activeOrders().filter(o=>orderCodes(o).includes(value));
   if(matches.length===1){stop();showOrder(matches[0],raw);}
   else if(matches.length>1){stop();currentMatch=null;$('akScanResult').innerHTML='';message('توقف الماسح: الرمز يطابق أكثر من طلب. لم يتم تنفيذ أي إجراء لتفادي الخلط.',true);}
-  else{message(isWorker()?'هذا الرمز لا يطابق أي طلب مسند إلى حسابك. تم رفضه.':'هذا الرمز لا يطابق أي طلب نشط في النظام.',true);}
+  else{message('لم يتم التعرف على هذا الطلب',true);}
  }
  async function scanFrame(){
   if(!stream||busy)return;
