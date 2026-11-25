@@ -10468,7 +10468,7 @@ main{overflow-x:hidden!important}
  function openScanner(){
   if(!isOwner()&&!isWorker())return false;
   stop();currentMatch=null;$('akScanResult').innerHTML='';
-  $('akScanScope').textContent=isWorker()?'النطاق محصور في الطلبات المسندة حالياً إلى حسابك فقط. أي رمز خارج هذه الطلبات سيُرفض.':'المالك يستطيع مسح الطلبات النشطة المسجلة في النظام ومراجعة بياناتها.';
+  const scope=$('akScanScope');if(scope)scope.textContent=isWorker()?'النطاق محصور في الطلبات المسندة حالياً إلى حسابك فقط. أي رمز خارج هذه الطلبات سيُرفض.':'المالك يستطيع مسح الطلبات النشطة المسجلة في النظام ومراجعة بياناتها.';
   document.querySelectorAll('main > .page').forEach(p=>p.classList.remove('on'));
   $('scanner').classList.add('on');message('وجّه كاميرا الهاتف نحو رمز الطلب.');return true;
  }
