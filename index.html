@@ -671,7 +671,8 @@ html[data-role="worker"] #list .ak215-owner-export{display:none!important}
  </div>
  <div class="login-card" id="workerLoginCardV213" style="display:none">
   <h2 style="margin-top:0;text-align:center">دخول الموزع أو العامل</h2>
-  <select id="loginWorker"><option value="">اختر الموزع أو العامل</option></select>
+  <input id="loginWorkerName" type="text" readonly aria-label="اسم الموزع أو العامل" placeholder="جارٍ تحميل اسم الحساب..." style="text-align:center;font-weight:800;background:#f7fafc;cursor:default">
+  <select id="loginWorker" aria-hidden="true" tabindex="-1" style="display:none"><option value="">اختر الموزع أو العامل</option></select>
   <input id="loginPin" type="password" inputmode="numeric" autocomplete="current-password" placeholder="الرمز السري">
   <div id="workerLoginStatusV214" style="margin-top:8px;font-weight:700;min-height:22px"></div>
   <button id="workerLoginBtn" type="button" onclick="workerLogin(event)" class="btn" style="width:100%;min-height:46px">دخول</button>
@@ -1294,8 +1295,26 @@ function setLoginStatus(msg,isError){
 }
 function refreshLoginWorkers(){
  const el=document.getElementById('loginWorker');
+ const nameEl=document.getElementById('loginWorkerName');
  if(!el)return;
- el.innerHTML='<option value="">اختر الموزع أو العامل</option>'+db.workers.filter(w=>!w.deletedAt).map(w=>`<option value="${w.id}">${w.name}</option>`).join('');
+ const eligible=(db.workers||[]).filter(w=>!w.deletedAt&&w.approved!==false);
+ el.innerHTML='<option value="">اختر الموزع أو العامل</option>';
+ el.value='';
+ if(nameEl)nameEl.value='';
+ const statusEl=document.getElementById('workerLoginStatusV214');
+ if(eligible.length===1){
+   const w=eligible[0];
+   el.innerHTML='<option value="'+String(w.id).replace(/"/g,'&quot;')+'">'+String(w.name||'').replace(/</g,'&lt;')+'</option>';
+   el.value=String(w.id);
+   if(nameEl)nameEl.value=String(w.name||'');
+   if(statusEl)statusEl.textContent='';
+ }else if(eligible.length>1){
+   if(nameEl)nameEl.value='توجد عدة حسابات نشطة؛ راجع المالك';
+   if(statusEl)statusEl.textContent='تعذر تحديد حساب واحد للدخول. يرجى مراجعة المالك.';
+ }else{
+   if(nameEl)nameEl.value='لا يوجد حساب موزع أو عامل مفعّل';
+   if(statusEl)statusEl.textContent='لا يوجد حساب مفعّل لتسجيل الدخول.';
+ }
 }
 async function workerLogin(ev){
  try{
