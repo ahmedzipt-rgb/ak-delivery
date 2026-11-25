@@ -4745,9 +4745,27 @@ function visibleOrders(){
    return filter==='الكل'||o.status===filter;
  });
 }
-function copyOrderCodeV228(code){
+function copyOrderCodeV228(code,button){
  const value=String(code||'').trim();
  if(!value)return;
+ const copied=()=>{
+   if(button){
+     button.textContent='✓';
+     button.title='تم النسخ';
+     button.setAttribute('aria-label','تم نسخ رمز الطلب');
+     button.style.color='#16803c';
+     button.style.fontWeight='900';
+     setTimeout(()=>{
+       if(!button.isConnected)return;
+       button.textContent='▢';
+       button.title='نسخ رمز الطلب';
+       button.setAttribute('aria-label','نسخ رمز الطلب');
+       button.style.color='';
+       button.style.fontWeight='';
+     },1400);
+   }
+ };
+ const failed=()=>showToast('تعذر النسخ على هذا الجهاز');
  const fallback=()=>{
    const field=document.createElement('textarea');
    field.value=value;field.setAttribute('readonly','');
@@ -4755,11 +4773,11 @@ function copyOrderCodeV228(code){
    document.body.appendChild(field);field.select();
    let ok=false;try{ok=document.execCommand('copy')}catch(_){}
    field.remove();
-   if(ok)showToast('تم نسخ رمز الطلب ✓');else showToast('تعذر النسخ على هذا الجهاز');
+   if(ok)copied();else failed();
  };
  try{
    if(navigator.clipboard&&navigator.clipboard.writeText){
-     navigator.clipboard.writeText(value).then(()=>showToast('تم نسخ رمز الطلب ✓')).catch(fallback);
+     navigator.clipboard.writeText(value).then(copied).catch(fallback);
    }else fallback();
  }catch(_){fallback()}
 }
@@ -4767,7 +4785,7 @@ function render(){
  const searching=!!String(search?.value||'').trim();
  title.textContent=searching?'نتائج البحث في جميع الطلبات':statusDisplayName(filter);
  let a=visibleOrders();
- rows.innerHTML=a.map(o=>{try{return `<tr${o.deletedAt?' style="opacity:.78;background:#fff3f3"':''}><td><b dir="ltr">${formatSeq(o.seq)}</b></td><td class=code onclick="openOrder('${o.id}')">${htmlEscape(o.clientNo||'—')}${o.clientNo?` <button type="button" class="btn gr" title="نسخ رمز الطلب" aria-label="نسخ رمز الطلب" style="padding:2px 5px;font-size:10px;min-width:0" onclick="event.stopPropagation();copyOrderCodeV228(decodeURIComponent('${encodeURIComponent(String(o.clientNo))}'))">نسخ</button>`:''}${o.deletedAt?'<div><span class="badge" style="background:#b91c1c;color:white">محذوف</span></div>':''}</td><td>${htmlEscape(o.recipient||'—')}</td><td>${htmlEscape(o.address||'—')}${o.city?'، '+htmlEscape(o.city):''}</td><td class="stay-days-col" style="text-align:center">${daysBadge(o)}</td><td>
+ rows.innerHTML=a.map(o=>{try{return `<tr${o.deletedAt?' style="opacity:.78;background:#fff3f3"':''}><td><b dir="ltr">${formatSeq(o.seq)}</b></td><td class=code onclick="openOrder('${o.id}')">${htmlEscape(o.clientNo||'—')}${o.clientNo?` <button type="button" class="btn gr" title="نسخ رمز الطلب" aria-label="نسخ رمز الطلب" style="padding:2px 6px;font-size:15px;line-height:1;min-width:28px;width:28px;height:26px" onclick="event.stopPropagation();copyOrderCodeV228(decodeURIComponent('${encodeURIComponent(String(o.clientNo))}'),this)">▢</button>`:''}${o.deletedAt?'<div><span class="badge" style="background:#b91c1c;color:white">محذوف</span></div>':''}</td><td>${htmlEscape(o.recipient||'—')}</td><td>${htmlEscape(o.address||'—')}${o.city?'، '+htmlEscape(o.city):''}</td><td class="stay-days-col" style="text-align:center">${daysBadge(o)}</td><td>
 <div dir="ltr" style="direction:ltr;unicode-bidi:bidi-override;display:inline-block">${htmlEscape(o.phone||"")}</div>
 <div style="margin-top:4px;display:flex;gap:4px;flex-wrap:wrap">
 <button class="btn g" style="padding:5px 7px;font-size:11px" onclick="contactPhone(decodeURIComponent('${encodeURIComponent(String(o.phone||''))}'))">📞</button>
