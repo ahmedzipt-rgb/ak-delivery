@@ -6412,6 +6412,91 @@ function exportExcel(){
  let html=`<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel"><head><meta charset="utf-8"></head><body><table border="1"><tr>${headers.map(h=>`<th>${h}</th>`).join('')}</tr>${body}</table>
 
 
+
+
+<script id="ak229SafeIntegrityExport">
+/* v229: تصدير تشخيصي محدود للتحقق من المراجع التاريخية.
+   يصدّر المعرّفات والحالات والروابط فقط؛ لا أسماء زبائن أو هواتف أو عناوين أو مبالغ أو PIN.
+   لا يكتب إلى قاعدة البيانات أو localStorage ولا يستدعي أي مسار مزامنة. */
+(function(){
+  const str=v=>v==null?'':String(v);
+  const ids=a=>Array.isArray(a)?a.map(str):[];
+  const safeDate=v=>v==null?'':str(v);
+  function exportPayload(){
+    const orders=Array.isArray(db?.orders)?db.orders:[];
+    const returns=Array.isArray(db?.returnBatches)?db.returnBatches:[];
+    const transfers=Array.isArray(db?.deliveryTransfers)?db.deliveryTransfers:[];
+    const settlements=Array.isArray(db?.settlements)?db.settlements:[];
+    const orderRows=orders.filter(Boolean).map(o=>({
+      id:str(o.id),status:str(o.status),deleted:!!o.deletedAt,duplicateHidden:!!o.duplicateHidden,
+      workerId:str(o.worker),returnBatchId:str(o.returnBatchId),
+      returnRequestedAt:safeDate(o.returnRequestedAt),returnCompletedAt:safeDate(o.returnCompletedAt),
+      returnOwnerConfirmedAt:safeDate(o.returnOwnerConfirmedAt),modifiedAt:safeDate(o.modifiedAt)
+    }));
+    const returnRows=returns.filter(Boolean).map(b=>({
+      id:str(b.id),code:str(b.code),status:str(b.status),deleted:!!b.deletedAt,
+      duplicateHidden:!!b.duplicateHidden,duplicateOf:str(b.duplicateOf),
+      createdAt:safeDate(b.createdAt),modifiedAt:safeDate(b.modifiedAt),
+      ownerConfirmedAt:safeDate(b.ownerConfirmedAt),
+      orderIds:ids(b.orderIds),returnedOrderIds:ids(b.returnedOrderIds),
+      ownerReceivedOrderIds:ids(b.ownerReceivedOrderIds)
+    }));
+    const transferRows=transfers.filter(Boolean).map(t=>({
+      id:str(t.id),orderId:str(t.orderId),workerId:str(t.workerId),status:str(t.status),
+      deleted:!!t.deletedAt,createdAt:safeDate(t.createdAt),sentAt:safeDate(t.sentAt),
+      receivedAt:safeDate(t.receivedAt),modifiedAt:safeDate(t.modifiedAt)
+    }));
+    const settlementRows=settlements.filter(Boolean).map(st=>({
+      id:str(st.id),invoiceNo:str(st.invoiceNo),date:str(st.date),deleted:!!st.deletedAt,
+      duplicateHidden:!!st.duplicateHidden,orderIds:ids(st.orderIds),
+      snapshotOrderIds:Array.isArray(st.orderSnapshot)?st.orderSnapshot.map(x=>str(x?.id)):[]
+    }));
+    let snapshots=[];
+    try{
+      const raw=typeof getSnapshots==='function'?getSnapshots():[];
+      snapshots=(Array.isArray(raw)?raw:[]).map((x,i)=>({
+        position:i+1,id:str(x?.snapshotId||x?.id),createdAt:safeDate(x?.createdAt||x?.time||x?.date),
+        orderCount:Array.isArray(x?.orders)?x.orders.length:null,
+        returnBatchCount:Array.isArray(x?.returnBatches)?x.returnBatches.length:null,
+        transferCount:Array.isArray(x?.deliveryTransfers)?x.deliveryTransfers.length:null,
+        settlementCount:Array.isArray(x?.settlements)?x.settlements.length:null
+      }));
+    }catch(_){}
+    return {
+      app:'AK Delivery — Safe Integrity Export v229',time:new Date().toISOString(),
+      privacy:'IDs, statuses, timestamps and relationships only. No customer names, phone numbers, addresses, amounts, PINs or record payloads.',
+      counts:{orders:orders.length,returnBatches:returns.length,deliveryTransfers:transfers.length,settlements:settlements.length,snapshots:snapshots.length},
+      orders:orderRows,returnBatches:returnRows,deliveryTransfers:transferRows,settlements:settlementRows,snapshotMetadata:snapshots
+    };
+  }
+  window.downloadSafeIntegrityDiagnosticsV229=function(){
+    try{
+      const payload=exportPayload();
+      const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json;charset=utf-8'});
+      const url=URL.createObjectURL(blob),a=document.createElement('a');
+      a.href=url;a.download='AK_Delivery_Safe_Integrity_v229_'+(typeof safeFileDate==='function'?safeFileDate():new Date().toISOString().slice(0,10))+'.json';
+      document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1500);
+      if(typeof showToast==='function')showToast('تم تجهيز ملف التشخيص المحدود ✓');
+    }catch(e){if(typeof showToast==='function')showToast('تعذر إنشاء ملف التشخيص: '+String(e?.message||e));}
+  };
+  function addButton(){
+    try{
+      const old=document.getElementById('ak229SafeIntegrityExportBtn');if(old)return;
+      const base=document.querySelector('#systemHealth button[onclick*="downloadDiagnosticsV180"]');
+      const host=base?.parentElement;if(!host)return;
+      const b=document.createElement('button');b.type='button';b.id='ak229SafeIntegrityExportBtn';
+      b.className='btn gr';b.textContent='🧾 تنزيل تشخيص المراجع (آمن)';
+      b.addEventListener('click',window.downloadSafeIntegrityDiagnosticsV229);
+      host.appendChild(b);
+    }catch(_){}
+  }
+  addButton();
+  document.addEventListener('DOMContentLoaded',addButton,{once:true});
+  try{document.documentElement.dataset.build='229';const h=document.querySelector('#systemHealth h2');if(h)h.textContent='🩺 صحة النظام — AK Delivery 229';}catch(_){}
+})();
+// AK Delivery v229 — privacy-limited integrity export; no database writes and no cloud-sync changes
+</script>
+
 </body></html>`;
  let blob=new Blob(['\ufeff',html],{type:'application/vnd.ms-excel;charset=utf-8'});
  let a=document.createElement('a');a.href=URL.createObjectURL(blob);
