@@ -10214,9 +10214,10 @@ main{overflow-x:hidden!important}
         duplicateHidden:!!st.duplicateHidden,missingOrderIds
       }:null;
     }).filter(Boolean);
-    let snapshots=[];
+    let snapshots=[],snapshotsChecked=0;
     try{
       const raw=typeof getSnapshots==='function'?getSnapshots():[];
+      snapshotsChecked=Array.isArray(raw)?raw.length:0;
       snapshots=(Array.isArray(raw)?raw:[]).map((x,i)=>{
         const d=x?.data&&typeof x.data==='object'?x.data:x;
         const snapIds=new Set((Array.isArray(d?.orders)?d.orders:[]).filter(Boolean).map(o=>str(o.id)));
@@ -10232,7 +10233,7 @@ main{overflow-x:hidden!important}
       privacy:'Only missing order IDs and the records that reference them; no customer data or complete order/snapshot lists.',
       counts:{currentOrders:orders.length,uniqueMissingOrderIds:missingIds.size,
         returnRecords:returnRows.length,transferRecords:transferRows.length,
-        settlementRecords:settlementRows.length,snapshotsChecked:(()=>{try{return (typeof getSnapshots==='function'?getSnapshots():[]).length}catch(_){return 0}})(),
+        settlementRecords:settlementRows.length,snapshotsChecked,
         snapshotsContainingMissingOrders:snapshots.length},
       missingOrderIds:[...missingIds],returnBatches:returnRows,transfers:transferRows,
       settlements:settlementRows,snapshots
