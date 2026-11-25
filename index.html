@@ -10365,7 +10365,7 @@ main{overflow-x:hidden!important}
  let detector=null,stream=null,raf=0,busy=false,lastValue='',lastAt=0,currentMatch=null;
  const $=id=>document.getElementById(id);
  const esc=v=>typeof htmlEscape==='function'?htmlEscape(String(v??'')):String(v??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
- function norm(v){return String(v??'').trim().toUpperCase().replace(/[\\s\\-_]+/g,'');}
+ function norm(v){return String(v??'').trim().toUpperCase().replace(/[\s\-_]+/g,'');}
  function isOwner(){return session&&session.role==='owner';}
  function isWorker(){return session&&session.role==='worker';}
  function activeOrders(){
