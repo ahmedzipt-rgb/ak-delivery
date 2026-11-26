@@ -10513,7 +10513,7 @@ main{overflow-x:hidden!important}
   const header=document.getElementById('appHeader')||document.querySelector('header');
   let b=$('akCameraScannerMenu');
   if(header){
-   if(!b){b=document.createElement('button');b.id='akCameraScannerMenu';b.type='button';b.dataset.menuKey='scanner';b.textContent='📷 ماسح الطلبات';b.addEventListener('click',()=>go('scanner','scanner'));}
+   if(!b){b=document.createElement('button');b.id='akCameraScannerMenu';b.type='button';b.dataset.menuKey='scanner';b.textContent='📷';b.title='ماسح الطلبات';b.setAttribute('aria-label','ماسح الطلبات');b.addEventListener('click',()=>go('scanner','scanner'));}
    if(b.parentElement!==header)header.appendChild(b);
    Object.assign(b.style,{position:'absolute',left:'50%',top:'50%',transform:'translate(-50%,-50%)',width:'auto',minWidth:'max-content',maxWidth:'42vw',padding:'8px 13px',margin:'0',border:'1px solid rgba(255,255,255,.75)',borderRadius:'22px',background:'#0d4055',color:'#fff',fontWeight:'bold',fontSize:'14px',lineHeight:'1.25',zIndex:'100',boxShadow:'0 2px 7px #0003',whiteSpace:'nowrap',textAlign:'center'});
   }
