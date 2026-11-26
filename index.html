@@ -5825,14 +5825,8 @@ function renderReturnBatches(){
        ${action}
      </div>`;
    }).join('');
-   const waitingWorker=item.orders.filter(o=>o.status==='طلب رجوع').length;
-   const waitingOwner=item.orders.filter(o=>o.status==='مرتجع'&&!o.returnOwnerConfirmedAt&&b.status!=='owner_confirmed'&&!b.ownerConfirmedAt).length;
    return `<div class="card" style="margin-top:10px">
-     <div><b>طلب الإرجاع:</b> ${htmlEscape(b.code||b.id)}</div>
-     <p><b>الموزع:</b> ${htmlEscape(b.workerName||'—')}<br>
-     <b>طلبات بانتظار تنفيذ الموزع:</b> ${waitingWorker}<br>
-     ${isOwner?`<b>طلبات بانتظار تأكيد المالك:</b> ${waitingOwner}<br>`:''}
-     <b>تاريخ الإرسال:</b> ${htmlEscape(b.createdLabel||b.createdAt||'—')}</p>
+     <p><b>تاريخ الإرسال:</b> ${htmlEscape(b.createdLabel||b.createdAt||'—')}</p>
      <div style="margin-top:8px">${lines}</div>
    </div>`;
  }).join('');
