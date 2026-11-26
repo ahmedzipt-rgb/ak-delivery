@@ -4813,11 +4813,22 @@ function copyOrderCodeV228(code,button){
    }else fallback();
  }catch(_){fallback()}
 }
+function deliveryCompletedTimeLabel(o){
+ if(!o||o.status!=='تم التسليم')return '';
+ const history=Array.isArray(o.history)?o.history:[];
+ const event=[...history].reverse().find(h=>h&&/تم التسليم/.test(String(h.text||'')));
+ let value=event?.time||o.statusEnteredAt||'';
+ if(!value)return '';
+ const raw=String(value).trim();
+ const parsed=parseOrderDateValue(raw);
+ if(parsed){const d=new Date(parsed);return d.toLocaleString('ar-MA',{year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false});}
+ return raw;
+}
 function render(){
  const searching=!!String(search?.value||'').trim();
  title.textContent=searching?'نتائج البحث في جميع الطلبات':statusDisplayName(filter);
  let a=visibleOrders();
- rows.innerHTML=a.map(o=>{try{return `<tr${o.deletedAt?' style="opacity:.78;background:#fff3f3"':''}><td><b dir="ltr">${formatSeq(o.seq)}</b></td><td class=code onclick="openOrder('${o.id}')">${htmlEscape(o.clientNo||'—')}${o.clientNo?` <button type="button" class="btn gr" title="نسخ رمز الطلب" aria-label="نسخ رمز الطلب" style="padding:2px 6px;font-size:15px;line-height:1;min-width:28px;width:28px;height:26px" data-copy-order-code="${encodeURIComponent(String(o.clientNo))}" onclick="event.stopPropagation();copyOrderCodeV228(decodeURIComponent('${encodeURIComponent(String(o.clientNo))}'),this)">▢</button>`:''}${o.deletedAt?'<div><span class="badge" style="background:#b91c1c;color:white">محذوف</span></div>':''}</td><td>${htmlEscape(o.recipient||'—')}</td><td>${htmlEscape(o.address||'—')}${o.city?'، '+htmlEscape(o.city):''}</td><td class="stay-days-col" style="text-align:center">${daysBadge(o)}</td><td>
+ rows.innerHTML=a.map(o=>{try{return `<tr${o.deletedAt?' style="opacity:.78;background:#fff3f3"':''}><td><b dir="ltr">${formatSeq(o.seq)}</b></td><td class=code onclick="openOrder('${o.id}')">${htmlEscape(o.clientNo||'—')}${o.clientNo?` <button type="button" class="btn gr" title="نسخ رمز الطلب" aria-label="نسخ رمز الطلب" style="padding:2px 6px;font-size:15px;line-height:1;min-width:28px;width:28px;height:26px" data-copy-order-code="${encodeURIComponent(String(o.clientNo))}" onclick="event.stopPropagation();copyOrderCodeV228(decodeURIComponent('${encodeURIComponent(String(o.clientNo))}'),this)">▢</button>`:''}${o.deletedAt?'<div><span class="badge" style="background:#b91c1c;color:white">محذوف</span></div>':''}${deliveryCompletedTimeLabel(o)?`<div class="ak-delivered-time">🕒 تم التسليم: ${htmlEscape(deliveryCompletedTimeLabel(o))}</div>`:''}</td><td>${htmlEscape(o.recipient||'—')}</td><td>${htmlEscape(o.address||'—')}${o.city?'، '+htmlEscape(o.city):''}</td><td class="stay-days-col" style="text-align:center">${daysBadge(o)}</td><td>
 <div dir="ltr" style="direction:ltr;unicode-bidi:bidi-override;display:inline-block">${htmlEscape(o.phone||"")}</div>
 <div style="margin-top:4px;display:flex;gap:4px;flex-wrap:wrap">
 <button class="btn g" style="padding:5px 7px;font-size:11px" onclick="contactPhone(decodeURIComponent('${encodeURIComponent(String(o.phone||''))}'))">📞</button>
@@ -6509,6 +6520,21 @@ function exportExcel(){
 
 
 
+
+<style id="ak-unlock-page-scrolling-v231">
+@media(max-width:650px){
+ html[data-view-mode="mobile"],html[data-view-mode="auto"],html[data-view-mode="desktop"],body{height:auto!important;min-height:100%!important;max-height:none!important;overflow-x:auto!important;overflow-y:auto!important;}
+ html[data-view-mode="mobile"] body,html[data-view-mode="auto"] body{display:block!important;}
+ html[data-view-mode="mobile"] .app,html[data-view-mode="auto"] .app{display:flex!important;align-items:stretch!important;height:auto!important;min-height:calc(100dvh - 58px)!important;max-height:none!important;overflow:visible!important;}
+ html[data-view-mode="mobile"] aside,html[data-view-mode="auto"] aside{height:auto!important;min-height:calc(100dvh - 58px)!important;max-height:none!important;overflow:visible!important;}
+ html[data-view-mode="mobile"] main,html[data-view-mode="auto"] main{height:auto!important;min-height:calc(100dvh - 58px)!important;max-height:none!important;overflow:visible!important;}
+ html[data-view-mode="mobile"] main>.page.on,html[data-view-mode="auto"] main>.page.on{display:block!important;height:auto!important;min-height:0!important;max-height:none!important;overflow:visible!important;}
+ html[data-view-mode="mobile"] #list.page.on,html[data-view-mode="auto"] #list.page.on{display:block!important;height:auto!important;overflow:visible!important;}
+ html[data-view-mode="mobile"] #orderListCard,html[data-view-mode="auto"] #orderListCard{display:block!important;height:auto!important;min-height:240px!important;max-height:none!important;overflow-x:auto!important;overflow-y:visible!important;touch-action:pan-x pan-y!important;-webkit-overflow-scrolling:touch!important;}
+ html[data-view-mode="mobile"] #orderListCard table,html[data-view-mode="auto"] #orderListCard table{min-width:720px!important;width:100%!important;}
+}
+.ak-delivered-time{margin-top:4px;font-size:11px;line-height:1.45;color:#167044;font-weight:700;white-space:normal;}
+</style>
 </body></html>`;
  let blob=new Blob(['\ufeff',html],{type:'application/vnd.ms-excel;charset=utf-8'});
  let a=document.createElement('a');a.href=URL.createObjectURL(blob);
