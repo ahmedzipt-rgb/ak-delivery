@@ -8969,7 +8969,7 @@ main{overflow-x:hidden!important}
       const awaitingOwner=returned.filter(o=>!o.returnOwnerConfirmedAt).length;
       const ownerDone=returned.filter(o=>!!o.returnOwnerConfirmedAt).length;
       if(typeof ak216InsertSummaryBefore==='function'){
-        ak216InsertSummaryBefore('returnBatchesList',`<span class="ak216-flow-chip">↩ ${txt('بانتظار الرجوع','Retour en attente')}: ${requested}</span><span class="ak216-flow-chip">📥 ${txt('بانتظار الاستلام','Réception en attente')}: ${awaitingOwner}</span>`);
+        document.querySelector('#returnBatchesList')?.previousElementSibling?.classList?.contains('ak216-flow-summary')&&document.querySelector('#returnBatchesList').previousElementSibling.remove();
         ak216InsertSummaryBefore('returnedOrdersList',`<span class="ak216-flow-chip">📥 ${txt('بانتظار الاستلام','Réception en attente')}: ${awaitingOwner}</span><span class="ak216-flow-chip">✅ ${txt('تم الاستلام','Reçu')}: ${ownerDone}</span>`);
       }
     }catch(_){}
