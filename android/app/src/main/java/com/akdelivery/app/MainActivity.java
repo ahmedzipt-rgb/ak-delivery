@@ -2,7 +2,9 @@ package com.akdelivery.app;
 
 import android.Manifest;
 import android.app.Activity;
+import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.net.Uri;
 import android.os.Bundle;
 import android.webkit.PermissionRequest;
 import android.webkit.WebChromeClient;
@@ -30,7 +32,21 @@ public class MainActivity extends Activity {
         settings.setAllowContentAccess(true);
         settings.setMediaPlaybackRequiresUserGesture(false);
 
-        webView.setWebViewClient(new WebViewClient());
+        webView.setWebViewClient(new WebViewClient() {
+            @Override
+            public boolean shouldOverrideUrlLoading(WebView view, String url) {
+                if (url != null && url.toLowerCase().startsWith("tel:")) {
+                    try {
+                        Intent dialIntent = new Intent(Intent.ACTION_DIAL, Uri.parse(url));
+                        startActivity(dialIntent);
+                    } catch (Exception ignored) {
+                        // Keep the WebView on its current page if no dialer is available.
+                    }
+                    return true;
+                }
+                return false;
+            }
+        });
         webView.setWebChromeClient(new WebChromeClient() {
             @Override
             public void onPermissionRequest(PermissionRequest request) {
