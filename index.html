@@ -8710,6 +8710,7 @@ function ak216SettlementStats(){
   return {pending,archive:active.length};
 }
 function ak216InsertSummaryBefore(listId,html){
+  if(listId==='returnBatchesList'){const list=document.getElementById(listId);const prior=list?.previousElementSibling;if(prior?.classList?.contains('ak216-flow-summary'))prior.remove();return;}
   const list=document.getElementById(listId);if(!list)return;
   let el=list.previousElementSibling;
   if(!el||!el.classList?.contains('ak216-flow-summary')){
