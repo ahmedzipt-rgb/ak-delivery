@@ -10563,6 +10563,7 @@ async function ak231SendBag(id){
  if(navigator.onLine){const ok=await syncNow(true);if(ok){showToast('تم إرسال الكيس إلى المالك وحفظه في السحابة ✓',4200);return;}}
  showToast('تم إرسال الكيس محلياً وستتم مزامنته تلقائياً',4200);
 }
+function ak231SetTab(tab){ak231WorkerTab=tab==='sent'?'sent':'requests';renderReturnBatches();}
 function ak231Select(id,checked){if(checked)ak231SelectedReturnOrderIds.add(String(id));else ak231SelectedReturnOrderIds.delete(String(id));renderReturnBatches();}
 function ak231ToggleBag(id){ak231OpenBagId=String(ak231OpenBagId)===String(id)?'':String(id);renderReturnBatches();}
 function ak231PrintBagInvoice(id){
@@ -10595,7 +10596,7 @@ function renderReturnBatches(){
  const matches=b=>!term||String(b.bagCode||b.code||'').toLowerCase().includes(term)||ak231Orders(b).some(o=>[o.clientNo,o.recipient,o.phone].some(v=>String(v||'').toLowerCase().includes(term)));
  if(worker){
   const sentBags=bags.filter(b=>b.bagStatus==='sent'||b.bagSentAt),draftBags=bags.filter(b=>b.bagStatus!=='sent'&&!b.bagSentAt);
-  const tabs='<div style="display:flex;gap:8px;margin:10px 0"><button class="btn '+(ak231WorkerTab==='requests'?'g':'')+'" onclick="ak231WorkerTab=\\'requests\\';renderReturnBatches()">طلبات الرجوع</button><button class="btn '+(ak231WorkerTab==='sent'?'g':'')+'" onclick="ak231WorkerTab=\\'sent\\';renderReturnBatches()">الأكياس المرسلة ('+sentBags.length+')</button></div>';
+  const tabs='<div style="display:flex;gap:8px;margin:10px 0"><button class="btn '+(ak231WorkerTab==='requests'?'g':'')+'" data-tab="requests" onclick="ak231SetTab(this.dataset.tab)">طلبات الرجوع</button><button class="btn '+(ak231WorkerTab==='sent'?'g':'')+'" data-tab="sent" onclick="ak231SetTab(this.dataset.tab)">الأكياس المرسلة ('+sentBags.length+')</button></div>';
   if(ak231WorkerTab==='sent'){
    const visible=sentBags.filter(matches);
    el.innerHTML=tabs+(visible.length?visible.map(b=>ak231BagCard(b,false)).join(''):'<p>لا توجد أكياس مرسلة بعد.</p>');
