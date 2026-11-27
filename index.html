@@ -10832,4 +10832,78 @@ try{document.documentElement.dataset.build='233';const h=document.querySelector(
 })();
 </script>
 
+
+<script>
+/* AK Delivery v234: convert existing legacy return-batch records into separate physical-bag records.
+   Source records remain untouched. No actual packing, sending, or receipt dates are inferred. */
+(function(){
+'use strict';
+const previousRender=window.renderReturnBatches;
+function ownerNow(){return !!((typeof session!=='undefined'&&session&&session.role==='owner')||(typeof ownerMode!=='undefined'&&ownerMode===true));}
+function orderFor(id){return (db.orders||[]).find(o=>o&&String(o.id)===String(id));}
+function workerFor(o,b){
+ const wid=String((b&&b.workerId)||(o&&o.worker)||'');
+ return {id:wid,record:(db.workers||[]).find(w=>w&&!w.deletedAt&&String(w.id)===wid)};
+}
+function migrateLegacyBatchRecords(){
+ if(!ownerNow())return 0;
+ if(typeof ensureReturnBatches==='function')ensureReturnBatches();
+ if(!Array.isArray(db.orders)||!Array.isArray(db.returnBatches))return 0;
+ const already=new Set();
+ for(const bag of db.returnBatches){
+  if(bag&&!bag.deletedAt&&bag.bagType==='worker_return_bag')
+   for(const id of (bag.orderIds||[]))already.add(String(id));
+ }
+ let made=0;
+ const sources=db.returnBatches.filter(b=>b&&!b.deletedAt&&!b.duplicateHidden&&b.bagType!=='worker_return_bag'&&Array.isArray(b.orderIds)&&b.orderIds.length);
+ for(const source of sources){
+  const groups=new Map();
+  for(const raw of source.orderIds){
+   const o=orderFor(raw);
+   if(!o||o.deletedAt||o.duplicateHidden||!['طلب رجوع','مرتجع'].includes(o.status)||already.has(String(o.id)))continue;
+   const w=workerFor(o,source);
+   if(!w.id||!w.record)continue;
+   if(!groups.has(w.id))groups.set(w.id,{worker:w.record,orders:[]});
+   groups.get(w.id).orders.push(o);
+  }
+  for(const [wid,g] of groups){
+   const stable='RBAG234-'+String(source.id).replace(/[^a-zA-Z0-9_-]/g,'_')+'-'+String(wid).replace(/[^a-zA-Z0-9_-]/g,'_');
+   if(db.returnBatches.some(x=>x&&String(x.id)===stable))continue;
+   const orders=g.orders,ids=orders.map(o=>String(o.id));
+   const sourceDate=source.createdAt||source.modifiedAt||'';
+   const requestDay=String(orders.find(o=>o.returnRequestedAt)?.returnRequestedAt||source.createdLabel||'تاريخ الطلب غير متاح');
+   const code='BAG-LEGACY-'+String(source.id).replace(/[^a-zA-Z0-9]/g,'').slice(-12)+'-'+String(wid).replace(/[^a-zA-Z0-9]/g,'').slice(-6);
+   const snapshot=orders.map(o=>({id:String(o.id),clientNo:o.clientNo||'',seq:o.seq||'',sender:o.sender||'',recipient:o.recipient||'',phone:o.phone||'',address:o.address||'',city:o.city||'',product:o.product||'',amount:Number(o.amount)||0,workerName:g.worker.name||''}));
+   const now=isoNow();
+   const bag={id:stable,code,bagCode:code,bagType:'worker_return_bag',bagStatus:'draft',
+    workerId:String(wid),workerName:g.worker.name||'—',orderIds:ids,count:ids.length,status:'pending',
+    legacyMigrated:true,legacySourceBatchId:String(source.id),legacyRequestDate:requestDay,
+    bagCreatedLabel:'كيس تاريخي — تاريخ التجهيز الفعلي غير مسجل',
+    createdAt:now,createdLabel:'تاريخ إنشاء سجل الترحيل فقط',
+    invoiceNo:'INV-'+code,invoiceSnapshot:snapshot,
+    packedOrderIds:[],packedOrderTimes:{},packedOrderLabels:{},ownerReceivedOrderIds:[],
+    modifiedAt:now,modifiedBy:'ترحيل الحزم القديمة v234'};
+   // Keep the original source batch and all its timestamps intact.
+   db.returnBatches.push(bag);
+   for(const o of orders){
+    already.add(String(o.id));o.returnBagId=stable;o.returnBagCode=code;
+    if(!Array.isArray(o.history))o.history=[];
+    o.history.push({time:tm(),text:'نُقل مرجع طلب الرجوع القديم إلى كيس مستقل '+code+'؛ لم يُفترض تاريخ تجهيز أو إرسال أو استلام'});
+    o.modifiedAt=now;o.modifiedBy='ترحيل الحزم القديمة v234';
+   }
+   made++;
+  }
+ }
+ if(made){save();if(navigator.onLine)syncNow(true).catch(()=>{});}
+ return made;
+}
+window.ak234MigrateLegacyReturnBatches=migrateLegacyBatchRecords;
+window.renderReturnBatches=function(){
+ try{migrateLegacyBatchRecords();}catch(e){console.error('v234 legacy return-batch migration',e);}
+ return previousRender.apply(this,arguments);
+};
+try{document.documentElement.dataset.build='234';const h=document.querySelector('#systemHealth h2');if(h)h.textContent='🩺 صحة النظام — AK Delivery 234';}catch(_){}
+})();
+</script>
+
 </body></html>
