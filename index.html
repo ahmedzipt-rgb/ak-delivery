@@ -6586,14 +6586,14 @@ function ak231BagCard(b,isOwner){
  const os=ak231Orders(b),sent=b.bagStatus==='sent'||!!b.bagSentAt,received=!!b.ownerConfirmedAt||b.status==='owner_confirmed',opened=String(ak231OpenBagId)===String(b.id);
  const lines=os.map(o=>{
   const done=returnOrderDone(b,o),got=!!o.returnOwnerConfirmedAt||received;let action='';
-  if(!isOwner&&sent&&o.status==='طلب رجوع'&&!done)action='<button class="btn g" style="margin-top:7px;width:100%" onclick="confirmReturnOrder(\''+ak231Id(b.id)+'\\',\''+ak231Id(o.id)+'\\')">↩ تأكيد إرجاع هذا الطلب</button>';
-  if(isOwner&&o.status==='مرتجع'&&!got)action='<button class="btn g" style="margin-top:7px;width:100%" onclick="confirmOwnerReturnOrder(\''+ak231Id(b.id)+'\\',\''+ak231Id(o.id)+'\\')">✅ تأكيد استلام هذا الطلب</button>';
+  if(!isOwner&&sent&&o.status==='طلب رجوع'&&!done)action='<button class="btn g" data-bid="'+ak231Id(b.id)+'" data-oid="'+ak231Id(o.id)+'" onclick="confirmReturnOrder(this.dataset.bid,this.dataset.oid)">↩ تأكيد إرجاع هذا الطلب</button>';
+  if(isOwner&&o.status==='مرتجع'&&!got)action='<button class="btn g" data-bid="'+ak231Id(b.id)+'" data-oid="'+ak231Id(o.id)+'" onclick="confirmOwnerReturnOrder(this.dataset.bid,this.dataset.oid)">✅ تأكيد استلام هذا الطلب</button>';
   const state=o.status==='مرتجع'?(got?'أكد المالك الاستلام':'أكد الموزع الإرجاع — بانتظار المالك'):'بانتظار تنفيذ الإرجاع';
   return '<div style="padding:10px;border-bottom:1px solid #e5e7eb"><b dir="ltr">'+htmlEscape(o.clientNo||o.seq||'—')+'</b> — '+htmlEscape(o.recipient||'—')+'<br><span dir="ltr">'+htmlEscape(o.phone||'—')+'</span> — '+cash(o.amount)+'<br><span class="badge">'+state+'</span>'+action+'</div>';
  }).join('');
  const done=b.status==='completed'||b.status==='owner_confirmed'||!!b.confirmedAt;
- const ownerAction=isOwner&&done&&!received?'<button class="btn g" style="width:100%;margin-top:9px" onclick="confirmOwnerReturnReceipt(\''+ak231Id(b.id)+'\\')">✅ تأكيد استلام الكيس كاملاً</button>':'';
- return '<div class="card" style="margin-top:12px;border:2px solid #d5e4ee"><h3>📦 كيس الرجوع: '+htmlEscape(b.bagCode||b.code||b.id)+'</h3><p><b>الموزع:</b> '+htmlEscape(b.workerName||'—')+'<br><b>عدد الطلبات:</b> '+os.length+'<br><b>تاريخ الإنشاء:</b> '+htmlEscape(b.bagCreatedLabel||b.createdLabel||'—')+'<br><b>تاريخ الإرسال:</b> '+htmlEscape(b.bagSentLabel||(sent?'—':'لم يُرسل بعد'))+'<br><b>الحالة:</b> '+(received?'استلم المالك الكيس':done?'وصلت الطلبات إلى المالك':sent?'أُرسل الكيس — بانتظار الإرجاع':'كيس غير مرسل')+'</p><button class="btn" onclick="ak231PrintBagInvoice(\''+ak231Id(b.id)+'\\')">🧾 فاتورة الكيس / PDF</button> <button class="btn" onclick="ak231ToggleBag(\''+ak231Id(b.id)+'\\')">'+(opened?'إخفاء الطلبات':'عرض طلبات الكيس')+'</button>'+(!isOwner&&!sent?'<button class="btn g" style="width:100%;margin-top:9px" onclick="ak231SendBag(\''+ak231Id(b.id)+'\\')">📤 إرسال الكيس</button>':'')+ownerAction+(opened?'<div style="margin-top:10px">'+lines+'</div>':'')+'</div>';
+ const ownerAction=isOwner&&done&&!received?'<button class="btn g" data-bid="'+ak231Id(b.id)+'" onclick="confirmOwnerReturnReceipt(this.dataset.bid)">✅ تأكيد استلام الكيس كاملاً</button>':'';
+ return '<div class="card" style="margin-top:12px;border:2px solid #d5e4ee"><h3>📦 كيس الرجوع: '+htmlEscape(b.bagCode||b.code||b.id)+'</h3><p><b>الموزع:</b> '+htmlEscape(b.workerName||'—')+'<br><b>عدد الطلبات:</b> '+os.length+'<br><b>تاريخ الإنشاء:</b> '+htmlEscape(b.bagCreatedLabel||b.createdLabel||'—')+'<br><b>تاريخ الإرسال:</b> '+htmlEscape(b.bagSentLabel||(sent?'—':'لم يُرسل بعد'))+'<br><b>الحالة:</b> '+(received?'استلم المالك الكيس':done?'وصلت الطلبات إلى المالك':sent?'أُرسل الكيس — بانتظار الإرجاع':'كيس غير مرسل')+'</p><button class="btn" data-bid="'+ak231Id(b.id)+'" onclick="ak231PrintBagInvoice(this.dataset.bid)">🧾 فاتورة الكيس / PDF</button> <button class="btn" data-bid="'+ak231Id(b.id)+'" onclick="ak231ToggleBag(this.dataset.bid)">'+(opened?'إخفاء الطلبات':'عرض طلبات الكيس')+'</button>'+(!isOwner&&!sent?'<button class="btn g" data-bid="'+ak231Id(b.id)+'" onclick="ak231SendBag(this.dataset.bid)">📤 إرسال الكيس</button>':'')+ownerAction+(opened?'<div style="margin-top:10px">'+lines+'</div>':'')+'</div>';
 }
 function renderReturnBatches(){
  ensureReturnBatches();const el=document.getElementById('returnBatchesList');if(!el)return;
@@ -6602,9 +6602,11 @@ function renderReturnBatches(){
  const term=String(document.getElementById('returnBatchSearch')?.value||'').trim().toLowerCase();
  const matches=b=>!term||String(b.bagCode||b.code||'').toLowerCase().includes(term)||ak231Orders(b).some(o=>[o.clientNo,o.recipient,o.phone].some(v=>String(v||'').toLowerCase().includes(term)));
  if(worker){
-  const req=ak231Requests(),selection=ak231BagCreateOpen?'<div class="card" style="margin:10px 0;background:#f8fbfd"><h3>اختر الطلبات التي تريد إرجاعها</h3><p><b>تم اختيار '+ak231SelectedReturnOrderIds.size+' طلبات</b></p>'+(req.length?req.map(o=>'<label style="display:flex;gap:10px;align-items:center;padding:11px;border-bottom:1px solid #ddd"><input type="checkbox" '+(ak231SelectedReturnOrderIds.has(String(o.id))?'checked':'')+' onchange="ak231Select(\''+ak231Id(o.id)+'\\',this.checked)" style="width:22px;height:22px"><span><b dir="ltr">'+htmlEscape(o.clientNo||o.seq||'—')+'</b> — '+htmlEscape(o.recipient||'—')+'<br><small>'+htmlEscape(o.phone||'—')+' — '+cash(o.amount)+'</small></span></label>').join(''):'لا توجد طلبات رجوع متاحة للاختيار.')+'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px"><button class="btn g" onclick="ak231CreateBag()">إنشاء الكيس ('+ak231SelectedReturnOrderIds.size+')</button><button class="btn" onclick="ak231BagCreateOpen=false;ak231SelectedReturnOrderIds.clear();renderReturnBatches()">إلغاء</button></div></div>':'';
+  const req=ak231Requests();
+  const selection=ak231BagCreateOpen?'<div class="card" style="margin:10px 0;background:#f8fbfd"><h3>اختر الطلبات التي تريد إرجاعها</h3><p><b>تم اختيار '+ak231SelectedReturnOrderIds.size+' طلبات</b></p>'+(req.length?req.map(o=>'<label style="display:flex;gap:10px;align-items:center;padding:11px;border-bottom:1px solid #ddd"><input type="checkbox" data-oid="'+ak231Id(o.id)+'" '+(ak231SelectedReturnOrderIds.has(String(o.id))?'checked':'')+' onchange="ak231Select(this.dataset.oid,this.checked)" style="width:22px;height:22px"><span><b dir="ltr">'+htmlEscape(o.clientNo||o.seq||'—')+'</b> — '+htmlEscape(o.recipient||'—')+'<br><small>'+htmlEscape(o.phone||'—')+' — '+cash(o.amount)+'</small></span></label>').join(''):'لا توجد طلبات رجوع متاحة للاختيار.')+'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px"><button class="btn g" onclick="ak231CreateBag()">إنشاء الكيس ('+ak231SelectedReturnOrderIds.size+')</button><button class="btn" onclick="ak231BagCreateOpen=false;ak231SelectedReturnOrderIds.clear();renderReturnBatches()">إلغاء</button></div></div>':'';
   const create=!ak231BagCreateOpen?'<button class="btn g" style="width:100%;margin:8px 0" onclick="ak231BagCreateOpen=true;ak231SelectedReturnOrderIds.clear();renderReturnBatches()">📦 إنشاء كيس الرجوع</button>':'';
-  el.innerHTML=create+selection+(bags.filter(matches).length?'<h3>أكياس الرجوع</h3>'+bags.filter(matches).map(b=>ak231BagCard(b,false)).join(''):'<p>لا توجد أكياس رجوع محفوظة بعد.</p>');
+  const visible=bags.filter(matches);
+  el.innerHTML=create+selection+(visible.length?'<h3>أكياس الرجوع</h3>'+visible.map(b=>ak231BagCard(b,false)).join(''):'<p>لا توجد أكياس رجوع محفوظة بعد.</p>');
  }else{
   const visible=bags.filter(matches);
   const legacy=(db.returnBatches||[]).filter(b=>b&&!b.deletedAt&&b.bagType!=='worker_return_bag'&&(b.orderIds||[]).some(id=>{const o=orderById(id);return o&&!o.deletedAt&&o.status==='طلب رجوع';}));
@@ -6612,6 +6614,7 @@ function renderReturnBatches(){
  }
  updateReturnRequestCount();
 }
+
 </script>
 
 </body></html>`;
