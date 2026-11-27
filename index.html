@@ -10808,22 +10808,22 @@ function migrateLegacyBatchRecords(){
  if(!target)return 0;
  const targetId=String(target.id),already=new Set();
  for(const bag of db.returnBatches)if(bag&&!bag.deletedAt&&bag.bagType==='worker_return_bag')for(const id of (bag.orderIds||[]))already.add(String(id));
- const sourceById=new Map();
+ const sourceById=new Map(),claimed=new Set(already);
  for(const source of db.returnBatches){
   if(!source||source.deletedAt||source.duplicateHidden||source.bagType==='worker_return_bag')continue;
   const ids=new Set([...(Array.isArray(source.orderIds)?source.orderIds:[]),...(Array.isArray(source.returnedOrderIds)?source.returnedOrderIds:[])].map(String));
   for(const o of db.orders)if(o&&!o.deletedAt&&String(o.returnBatchId||'')===String(source.id))ids.add(String(o.id));
   for(const id of ids){
    const o=db.orders.find(x=>x&&!x.deletedAt&&!x.duplicateHidden&&String(x.id)===id);
-   if(!o||o.status!=='مرتجع'||already.has(String(o.id))||typeof orderAssignedToWorker!=='function'||!orderAssignedToWorker(o,targetId))continue;
+   if(!o||o.status!=='مرتجع'||claimed.has(String(o.id))||typeof orderAssignedToWorker!=='function'||!orderAssignedToWorker(o,targetId))continue;
    if(!sourceById.has(String(source.id)))sourceById.set(String(source.id),{source,orders:[]});
-   sourceById.get(String(source.id)).orders.push(o);
+   sourceById.get(String(source.id)).orders.push(o);claimed.add(String(o.id));
   }
  }
  const grouped=[...sourceById.values()],sourced=new Set(grouped.flatMap(g=>g.orders.map(o=>String(o.id))));
  for(const o of db.orders){
-  if(!o||o.deletedAt||o.duplicateHidden||o.status!=='مرتجع'||already.has(String(o.id))||sourced.has(String(o.id))||typeof orderAssignedToWorker!=='function'||!orderAssignedToWorker(o,targetId))continue;
-  grouped.push({source:{id:'single-'+String(o.id)},orders:[o],standalone:true});
+  if(!o||o.deletedAt||o.duplicateHidden||o.status!=='مرتجع'||claimed.has(String(o.id))||sourced.has(String(o.id))||typeof orderAssignedToWorker!=='function'||!orderAssignedToWorker(o,targetId))continue;
+  grouped.push({source:{id:'single-'+String(o.id)},orders:[o],standalone:true});claimed.add(String(o.id));
  }
  let made=0;
  for(const g of grouped){
@@ -10846,7 +10846,7 @@ window.renderReturnBatches=function(){
  try{migrateLegacyBatchRecords();}catch(e){console.error('v234 legacy return-batch migration',e);}
  return previousRender.apply(this,arguments);
 };
-try{document.documentElement.dataset.build='234';const h=document.querySelector('#systemHealth h2');if(h)h.textContent='🩺 صحة النظام — AK Delivery 234';}catch(_){}
+try{document.documentElement.dataset.build='235';const h=document.querySelector('#systemHealth h2');if(h)h.textContent='🩺 صحة النظام — AK Delivery 235';}catch(_){}
 })();
 </script>
 
