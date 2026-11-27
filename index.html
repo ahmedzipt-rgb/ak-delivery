@@ -10536,6 +10536,7 @@ var ak231SelectedReturnOrderIds=new Set(),ak231BagCreateOpen=false,ak231OpenBagI
 function ak231Id(v){return String(v==null?'':v).replace(/\\/g,'\\\\').replace(/'/g,"\\'");}
 function ak231Orders(b){return (b&&Array.isArray(b.orderIds)?b.orderIds:[]).map(orderById).filter(o=>o&&!o.deletedAt);}
 function ak231HasBag(o){return !!(o&&(o.returnBagId||(db.returnBatches||[]).some(b=>b&&!b.deletedAt&&b.bagType==='worker_return_bag'&&(b.orderIds||[]).map(String).includes(String(o.id)))));}
+function ak231SentBagHasOrder(o){return !!(o&&(db.returnBatches||[]).some(b=>b&&!b.deletedAt&&b.bagType==='worker_return_bag'&&(b.bagStatus==='sent'||b.bagSentAt)&&(b.orderIds||[]).map(String).includes(String(o.id)))));}
 function ak231Requests(){const wid=String(session&&session.workerId||'');return (db.orders||[]).filter(o=>o&&!o.deletedAt&&!o.duplicateHidden&&o.status==='طلب رجوع'&&orderAssignedToWorker(o,wid)&&!ak231HasBag(o));}
 function ak231Snapshot(os,name){return os.map(o=>({id:String(o.id),clientNo:o.clientNo||'',seq:o.seq||'',sender:o.sender||'',recipient:o.recipient||'',phone:o.phone||'',address:o.address||'',city:o.city||'',product:o.product||'',amount:Number(o.amount)||0,workerName:name||''}));}
 function ak231CreateBag(){
@@ -10609,11 +10610,13 @@ function renderReturnBatches(){
   }
  }else{
   const visible=bags.filter(b=>(b.bagStatus==='sent'||b.bagSentAt)&&matches(b));
-  const legacy=(db.returnBatches||[]).filter(b=>b&&!b.deletedAt&&b.bagType!=='worker_return_bag'&&(b.orderIds||[]).some(id=>{const o=orderById(id);return o&&!o.deletedAt&&o.status==='طلب رجوع';}));
+  const legacy=(db.returnBatches||[]).filter(b=>b&&!b.deletedAt&&b.bagType!=='worker_return_bag'&&(b.orderIds||[]).some(id=>{const o=orderById(id);return o&&!o.deletedAt&&o.status==='طلب رجوع'&&!ak231SentBagHasOrder(o);}));
   el.innerHTML=(visible.length?'<h3>أكياس الرجوع المرسلة</h3>'+visible.map(b=>ak231BagCard(b,true)).join(''):'<p>لا توجد أكياس رجوع مرسلة حتى الآن.</p>')+(legacy.length?'<h3>طلبات رجوع لم تُدرج في كيس بعد</h3>'+legacy.map(b=>{const o=ak231Orders(b)[0];return o?'<div class="card" style="margin-top:8px"><b>'+htmlEscape(o.clientNo||o.seq||'—')+'</b> — '+htmlEscape(o.recipient||'—')+'<br><span class="badge">بانتظار إنشاء كيس من الموزع</span></div>':'';}).join(''):'');
  }
  updateReturnRequestCount();
 }
 
+
+try{document.documentElement.dataset.build='231';const h=document.querySelector('#systemHealth h2');if(h)h.textContent='🩺 صحة النظام — AK Delivery 231';}catch(_){}
 </script>
 </body></html>
