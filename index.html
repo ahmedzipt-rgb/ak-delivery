@@ -10536,7 +10536,10 @@ var ak231SelectedReturnOrderIds=new Set(),ak231BagCreateOpen=false,ak231OpenBagI
 function ak231Id(v){return String(v==null?'':v).replace(/\\/g,'\\\\').replace(/'/g,"\\'");}
 function ak231Orders(b){return (b&&Array.isArray(b.orderIds)?b.orderIds:[]).map(orderById).filter(o=>o&&!o.deletedAt);}
 function ak231HasBag(o){return !!(o&&(o.returnBagId||(db.returnBatches||[]).some(b=>b&&!b.deletedAt&&b.bagType==='worker_return_bag'&&(b.orderIds||[]).map(String).includes(String(o.id)))));}
-function ak231SentBagHasOrder(o){return !!(o&&(db.returnBatches||[]).some(b=>b&&!b.deletedAt&&b.bagType==='worker_return_bag'&&(b.bagStatus==='sent'||b.bagSentAt)&&(b.orderIds||[]).map(String).includes(String(o.id)))));}
+function ak231SentBagHasOrder(o){
+ if(!o)return false;
+ return (db.returnBatches||[]).some(function(b){return !!(b&&!b.deletedAt&&b.bagType==='worker_return_bag'&&(b.bagStatus==='sent'||b.bagSentAt)&&(b.orderIds||[]).map(String).includes(String(o.id)));});
+}
 function ak231Requests(){const wid=String(session&&session.workerId||'');return (db.orders||[]).filter(o=>o&&!o.deletedAt&&!o.duplicateHidden&&o.status==='طلب رجوع'&&orderAssignedToWorker(o,wid)&&!ak231HasBag(o));}
 function ak231Snapshot(os,name){return os.map(o=>({id:String(o.id),clientNo:o.clientNo||'',seq:o.seq||'',sender:o.sender||'',recipient:o.recipient||'',phone:o.phone||'',address:o.address||'',city:o.city||'',product:o.product||'',amount:Number(o.amount)||0,workerName:name||''}));}
 function ak231CreateBag(){
