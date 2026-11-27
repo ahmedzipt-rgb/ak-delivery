@@ -6548,7 +6548,7 @@ function exportExcel(){
 (function(){
 'use strict';
 const priorRender=window.renderReturnBatches;
-function isOwner(){return !!((window.session&&session.role==='owner')||window.ownerMode===true);}
+function isOwner(){return !!((typeof session!=='undefined'&&session&&session.role==='owner')||(typeof ownerMode!=='undefined'&&ownerMode===true));}
 function dayKey(o){
  const raw=String(o&&o.returnRequestedAt||'').trim();
  let m=raw.match(/(\\d{4})[-/](\\d{1,2})[-/](\\d{1,2})/);
@@ -6558,7 +6558,7 @@ function dayKey(o){
  const legacy=(db.returnBatches||[]).find(b=>b&&!b.deletedAt&&String(b.id)===String(o.returnBatchId||''));
  const t=legacy&&(legacy.createdAt||legacy.modifiedAt);
  if(t){const d=new Date(t);if(!isNaN(d))return d.toISOString().slice(0,10);}
- return 'unknown-date';
+ return 'unknown-date-'+String(o&&o.id||'unknown');
 }
 function migrate(){
  if(!isOwner()||!Array.isArray(db.orders)||!Array.isArray(db.returnBatches))return 0;
