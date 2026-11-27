@@ -10775,53 +10775,7 @@ function dayKey(o){
  if(t){const d=new Date(t);if(!isNaN(d))return d.toISOString().slice(0,10);}
  return 'unknown-date-'+String(o&&o.id||'unknown');
 }
-function migrate(){
- if(!isOwner()||!Array.isArray(db.orders)||!Array.isArray(db.returnBatches))return 0;
- const existing=new Set();
- for(const b of db.returnBatches){
-  if(b&&!b.deletedAt&&b.bagType==='worker_return_bag')
-   for(const id of (b.orderIds||[]))existing.add(String(id));
- }
- const groups=new Map();
- for(const o of db.orders){
-  if(!o||o.deletedAt||o.duplicateHidden||o.status!=='طلب رجوع'||!o.worker||existing.has(String(o.id)))continue;
-  const wid=String(o.worker),day=dayKey(o),key=wid+'|'+day;
-  if(!groups.has(key))groups.set(key,[]);
-  groups.get(key).push(o);
- }
- let created=0;
- for(const [key,orders] of groups){
-  const [wid,day]=key.split('|');
-  const worker=(db.workers||[]).find(w=>w&&!w.deletedAt&&String(w.id)===wid);
-  if(!worker)continue;
-  const ids=orders.map(o=>String(o.id));
-  const stable='RBAG233-'+wid.replace(/[^a-zA-Z0-9_-]/g,'_')+'-'+day.replace(/[^0-9-]/g,'');
-  if(db.returnBatches.some(b=>b&&String(b.id)===stable))continue;
-  const code='BAG-OLD-'+day.replace(/-/g,'')+'-'+String(wid).replace(/[^a-zA-Z0-9]/g,'').slice(-8);
-  const snapshot=orders.map(o=>({id:String(o.id),clientNo:o.clientNo||'',seq:o.seq||'',sender:o.sender||'',recipient:o.recipient||'',phone:o.phone||'',address:o.address||'',city:o.city||'',product:o.product||'',amount:Number(o.amount)||0,workerName:worker.name||''}));
-  const now=isoNow();
-  const bag={id:stable,code,bagCode:code,bagType:'worker_return_bag',bagStatus:'draft',
-   workerId:wid,workerName:worker.name||'—',orderIds:ids,count:ids.length,status:'pending',
-   legacyMigrated:true,legacyRequestDay:day,
-   bagCreatedLabel:'كيس تاريخي — تاريخ التجهيز الفعلي غير مسجل',
-   createdAt:now,createdLabel:'سجل ترحيل الطلبات القديمة',
-   invoiceNo:'INV-'+code,invoiceSnapshot:snapshot,
-   packedOrderIds:[],packedOrderTimes:{},packedOrderLabels:{},ownerReceivedOrderIds:[],
-   modifiedAt:now,modifiedBy:'ترحيل طلبات الرجوع القديمة v233'};
-  db.returnBatches.push(bag);
-  for(const o of orders){
-   o.returnBagId=stable;o.returnBagCode=code;
-   if(!Array.isArray(o.history))o.history=[];
-   o.history.push({time:tm(),text:'أُدرج طلب الرجوع القديم في كيس تاريخي '+code+' دون افتراض تاريخ التجهيز أو الإرسال'});
-   o.modifiedAt=now;o.modifiedBy='ترحيل طلبات الرجوع القديمة v233';
-  }
-  created++;
- }
- if(created){
-  save();
-  if(navigator.onLine)syncNow(true).catch(()=>{});
- }
- return created;
+function migrate(){return 0;
 }
 window.ak233MigrateOldReturnRequests=migrate;
 window.renderReturnBatches=function(){
@@ -10849,53 +10803,43 @@ function migrateLegacyBatchRecords(){
  if(!ownerNow())return 0;
  if(typeof ensureReturnBatches==='function')ensureReturnBatches();
  if(!Array.isArray(db.orders)||!Array.isArray(db.returnBatches))return 0;
- const already=new Set();
- for(const bag of db.returnBatches){
-  if(bag&&!bag.deletedAt&&bag.bagType==='worker_return_bag')
-   for(const id of (bag.orderIds||[]))already.add(String(id));
+ const norm=s=>String(s||'').trim().replace(/\s+/g,' ').toLocaleLowerCase();
+ const target=(db.workers||[]).find(w=>w&&!w.deletedAt&&norm(w.name)==='el bachir belkasmi');
+ if(!target)return 0;
+ const targetId=String(target.id),already=new Set();
+ for(const bag of db.returnBatches)if(bag&&!bag.deletedAt&&bag.bagType==='worker_return_bag')for(const id of (bag.orderIds||[]))already.add(String(id));
+ const sourceById=new Map();
+ for(const source of db.returnBatches){
+  if(!source||source.deletedAt||source.duplicateHidden||source.bagType==='worker_return_bag')continue;
+  const ids=new Set([...(Array.isArray(source.orderIds)?source.orderIds:[]),...(Array.isArray(source.returnedOrderIds)?source.returnedOrderIds:[])].map(String));
+  for(const o of db.orders)if(o&&!o.deletedAt&&String(o.returnBatchId||'')===String(source.id))ids.add(String(o.id));
+  for(const id of ids){
+   const o=db.orders.find(x=>x&&!x.deletedAt&&!x.duplicateHidden&&String(x.id)===id);
+   if(!o||o.status!=='مرتجع'||already.has(String(o.id))||typeof orderAssignedToWorker!=='function'||!orderAssignedToWorker(o,targetId))continue;
+   if(!sourceById.has(String(source.id)))sourceById.set(String(source.id),{source,orders:[]});
+   sourceById.get(String(source.id)).orders.push(o);
+  }
+ }
+ const grouped=[...sourceById.values()],sourced=new Set(grouped.flatMap(g=>g.orders.map(o=>String(o.id))));
+ for(const o of db.orders){
+  if(!o||o.deletedAt||o.duplicateHidden||o.status!=='مرتجع'||already.has(String(o.id))||sourced.has(String(o.id))||typeof orderAssignedToWorker!=='function'||!orderAssignedToWorker(o,targetId))continue;
+  grouped.push({source:{id:'single-'+String(o.id)},orders:[o],standalone:true});
  }
  let made=0;
- const sources=db.returnBatches.filter(b=>b&&!b.deletedAt&&!b.duplicateHidden&&b.bagType!=='worker_return_bag'&&Array.isArray(b.orderIds)&&b.orderIds.length);
- for(const source of sources){
-  const groups=new Map();
-  for(const raw of source.orderIds){
-   const o=orderFor(raw);
-   if(!o||o.deletedAt||o.duplicateHidden||!['طلب رجوع','مرتجع'].includes(o.status)||already.has(String(o.id)))continue;
-   const w=workerFor(o,source);
-   if(!w.id||!w.record)continue;
-   if(!groups.has(w.id))groups.set(w.id,{worker:w.record,orders:[]});
-   groups.get(w.id).orders.push(o);
-  }
-  for(const [wid,g] of groups){
-   const stable='RBAG234-'+String(source.id).replace(/[^a-zA-Z0-9_-]/g,'_')+'-'+String(wid).replace(/[^a-zA-Z0-9_-]/g,'_');
-   if(db.returnBatches.some(x=>x&&String(x.id)===stable))continue;
-   const orders=g.orders,ids=orders.map(o=>String(o.id));
-   const sourceDate=source.createdAt||source.modifiedAt||'';
-   const requestDay=String(orders.find(o=>o.returnRequestedAt)?.returnRequestedAt||source.createdLabel||'تاريخ الطلب غير متاح');
-   const code='BAG-LEGACY-'+String(source.id).replace(/[^a-zA-Z0-9]/g,'').slice(-12)+'-'+String(wid).replace(/[^a-zA-Z0-9]/g,'').slice(-6);
-   const snapshot=orders.map(o=>({id:String(o.id),clientNo:o.clientNo||'',seq:o.seq||'',sender:o.sender||'',recipient:o.recipient||'',phone:o.phone||'',address:o.address||'',city:o.city||'',product:o.product||'',amount:Number(o.amount)||0,workerName:g.worker.name||''}));
-   const now=isoNow();
-   const bag={id:stable,code,bagCode:code,bagType:'worker_return_bag',bagStatus:'draft',
-    workerId:String(wid),workerName:g.worker.name||'—',orderIds:ids,count:ids.length,status:'pending',
-    legacyMigrated:true,legacySourceBatchId:String(source.id),legacyRequestDate:requestDay,
-    bagCreatedLabel:'كيس تاريخي — تاريخ التجهيز الفعلي غير مسجل',
-    createdAt:now,createdLabel:'تاريخ إنشاء سجل الترحيل فقط',
-    invoiceNo:'INV-'+code,invoiceSnapshot:snapshot,
-    packedOrderIds:[],packedOrderTimes:{},packedOrderLabels:{},ownerReceivedOrderIds:[],
-    modifiedAt:now,modifiedBy:'ترحيل الحزم القديمة v234'};
-   // Keep the original source batch and all its timestamps intact.
-   db.returnBatches.push(bag);
-   for(const o of orders){
-    already.add(String(o.id));o.returnBagId=stable;o.returnBagCode=code;
-    if(!Array.isArray(o.history))o.history=[];
-    o.history.push({time:tm(),text:'نُقل مرجع طلب الرجوع القديم إلى كيس مستقل '+code+'؛ لم يُفترض تاريخ تجهيز أو إرسال أو استلام'});
-    o.modifiedAt=now;o.modifiedBy='ترحيل الحزم القديمة v234';
-   }
-   made++;
-  }
+ for(const g of grouped){
+  const source=g.source,orders=g.orders,sourceKey=String(source.id||orders[0].id);
+  const stable='RBAG235-'+sourceKey.replace(/[^a-zA-Z0-9_-]/g,'_')+'-'+targetId.replace(/[^a-zA-Z0-9_-]/g,'_');
+  if(db.returnBatches.some(x=>x&&String(x.id)===stable))continue;
+  const ids=orders.map(o=>String(o.id)),code='BAG-RET-'+sourceKey.replace(/[^a-zA-Z0-9]/g,'').slice(-12)+'-'+targetId.replace(/[^a-zA-Z0-9]/g,'').slice(-6);
+  const snapshot=orders.map(o=>({id:String(o.id),clientNo:o.clientNo||'',seq:o.seq||'',sender:o.sender||'',recipient:o.recipient||'',phone:o.phone||'',address:o.address||'',city:o.city||'',product:o.product||'',amount:Number(o.amount)||0,workerName:target.name||''}));
+  const now=isoNow(),bag={id:stable,code,bagCode:code,bagType:'worker_return_bag',bagStatus:'draft',workerId:targetId,workerName:target.name||'El bachir belkasmi',orderIds:ids,count:ids.length,status:'pending',legacyMigrated:true,legacySourceBatchId:g.standalone?'':sourceKey,legacyReturnOnly:true,bagCreatedLabel:'كيس تاريخي — تاريخ التجهيز الفعلي غير مسجل',createdAt:now,createdLabel:'تاريخ إنشاء سجل الترحيل فقط',invoiceNo:'INV-'+code,invoiceSnapshot:snapshot,packedOrderIds:[],packedOrderTimes:{},packedOrderLabels:{},ownerReceivedOrderIds:[],modifiedAt:now,modifiedBy:'ترحيل الطلبات المرجعة للموزع El bachir belkasmi v235'};
+  db.returnBatches.push(bag);
+  for(const o of orders){already.add(String(o.id));o.returnBagId=stable;o.returnBagCode=code;if(!Array.isArray(o.history))o.history=[];o.history.push({time:tm(),text:'أُدرج الطلب المرجع في كيس مستقل '+code+' للموزع El bachir belkasmi؛ لم يُفترض تاريخ تجهيز أو إرسال أو استلام'});o.modifiedAt=now;o.modifiedBy='ترحيل الطلبات المرجعة v235';}
+  made++;
  }
  if(made){save();if(navigator.onLine)syncNow(true).catch(()=>{});}
  return made;
+}
 }
 window.ak234MigrateLegacyReturnBatches=migrateLegacyBatchRecords;
 window.renderReturnBatches=function(){
