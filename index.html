@@ -6608,7 +6608,7 @@ function renderReturnBatches(){
  }else{
   const visible=bags.filter(matches);
   const legacy=(db.returnBatches||[]).filter(b=>b&&!b.deletedAt&&b.bagType!=='worker_return_bag'&&(b.orderIds||[]).some(id=>{const o=orderById(id);return o&&!o.deletedAt&&o.status==='طلب رجوع';}));
-  el.innerHTML+(visible.length?'<h3>أكياس الرجوع المرسلة</h3>'+visible.map(b=>ak231BagCard(b,true)).join(''):'<p>لا توجد أكياس رجوع مرسلة حتى الآن.</p>')+(legacy.length?'<h3>طلبات رجوع لم تُدرج في كيس بعد</h3>'+legacy.map(b=>{const o=ak231Orders(b)[0];return o?'<div class="card" style="margin-top:8px"><b>'+htmlEscape(o.clientNo||o.seq||'—')+'</b> — '+htmlEscape(o.recipient||'—')+'<br><span class="badge">بانتظار إنشاء كيس من الموزع</span></div>':'';}).join(''):'');
+  el.innerHTML=(visible.length?'<h3>أكياس الرجوع المرسلة</h3>'+visible.map(b=>ak231BagCard(b,true)).join(''):'<p>لا توجد أكياس رجوع مرسلة حتى الآن.</p>')+(legacy.length?'<h3>طلبات رجوع لم تُدرج في كيس بعد</h3>'+legacy.map(b=>{const o=ak231Orders(b)[0];return o?'<div class="card" style="margin-top:8px"><b>'+htmlEscape(o.clientNo||o.seq||'—')+'</b> — '+htmlEscape(o.recipient||'—')+'<br><span class="badge">بانتظار إنشاء كيس من الموزع</span></div>':'';}).join(''):'');
  }
  updateReturnRequestCount();
 }
