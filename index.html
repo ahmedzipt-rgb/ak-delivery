@@ -6539,6 +6539,154 @@ function exportExcel(){
 </style>
 
 
+<script>
+/* AK Delivery v232: isolated return-bag stages; cloud merge preserves every bag milestone. */
+(function(){
+'use strict';
+const oldMerge=window.ak205MergeReturnBatchRecord;
+const oldWorkerConfirm=window.confirmReturnOrder;
+const oldOwnerOrder=window.confirmOwnerReturnOrder;
+const oldOwnerBag=window.confirmOwnerReturnReceipt;
+function isBag(b){return !!(b&&b.bagType==='worker_return_bag');}
+function ids(b){return (b&&Array.isArray(b.orderIds)?b.orderIds:[]).map(String);}
+function mergeMap(a,b){
+ const out={};
+ [a,b].forEach(function(src){if(src&&typeof src==='object')Object.keys(src).forEach(function(k){if(src[k]!==undefined&&src[k]!==null&&src[k]!=='')out[k]=src[k];});});
+ return out;
+}
+function later(a,b){return timeValue(a)>=timeValue(b)?(a||b):(b||a);}
+window.ak205MergeReturnBatchRecord=function(local,cloud){
+ if(!isBag(local)&&!isBag(cloud))return oldMerge(local,cloud);
+ if(!local)return ak205Clone(cloud);
+ if(!cloud)return ak205Clone(local);
+ const x=oldMerge(local,cloud)||ak205Clone(local);
+ x.bagType='worker_return_bag';
+ x.orderIds=Array.from(new Set([...ids(cloud),...ids(local)]));
+ x.count=x.orderIds.length;
+ x.packedOrderIds=Array.from(new Set([...(cloud.packedOrderIds||[]),...(local.packedOrderIds||[])]).map(String));
+ x.packedOrderTimes=mergeMap(cloud.packedOrderTimes,local.packedOrderTimes);
+ x.packedOrderLabels=mergeMap(cloud.packedOrderLabels,local.packedOrderLabels);
+ x.ownerReceivedOrderIds=Array.from(new Set([...(cloud.ownerReceivedOrderIds||[]),...(local.ownerReceivedOrderIds||[])]).map(String));
+ const milestones=['bagClosedAt','bagSentAt','bagReceivedAt','allOrdersReceivedAt'];
+ const labels=['bagClosedLabel','bagSentLabel','bagReceivedLabel','allOrdersReceivedLabel'];
+ milestones.forEach(function(k){const v=later(local[k],cloud[k]);if(v)x[k]=v;});
+ labels.forEach(function(k){x[k]=local[k]||cloud[k]||x[k];});
+ const rank={draft:0,closed:1,sent:2,received:3,owner_confirmed:4};
+ const status=(rank[local.bagStatus]||0)>=(rank[cloud.bagStatus]||0)?local.bagStatus:cloud.bagStatus;
+ x.bagStatus=status||'draft';
+ if(x.allOrdersReceivedAt)x.bagStatus='owner_confirmed';
+ else if(x.bagReceivedAt&&rank[x.bagStatus]<3)x.bagStatus='received';
+ else if(x.bagSentAt&&rank[x.bagStatus]<2)x.bagStatus='sent';
+ else if(x.bagClosedAt&&rank[x.bagStatus]<1)x.bagStatus='closed';
+ x.modifiedAt=later(local.modifiedAt,cloud.modifiedAt)||x.modifiedAt;
+ return x;
+};
+window.ak232CloseBag=async function(id){
+ if(!(session&&session.role==='worker'))return alert('إغلاق الكيس متاح للموزع فقط');
+ const b=(db.returnBatches||[]).find(x=>isBag(x)&&String(x.id)===String(id)&&!x.deletedAt);
+ if(!b||String(b.workerId)!==String(session.workerId))return alert('الكيس غير موجود في حسابك');
+ if(b.bagStatus!=='draft'||b.bagClosedAt)return alert('هذا الكيس مغلق أو انتقل إلى مرحلة لاحقة');
+ const all=ids(b),packed=new Set((b.packedOrderIds||[]).map(String));
+ if(!all.length||all.some(x=>!packed.has(x)))return alert('أكد وضع كل طلب داخل الكيس قبل إغلاقه');
+ if(!confirm('إغلاق الكيس '+(b.bagCode||b.code)+'؟ لن يمكن إضافة طلبات إليه بعد ذلك.'))return;
+ b.bagClosedAt=isoNow();b.bagClosedLabel=tm();b.bagStatus='closed';b.modifiedAt=b.bagClosedAt;b.modifiedBy=actorName();
+ save();renderReturnBatches();
+ if(navigator.onLine)await syncNow(true).catch(()=>{});
+};
+window.ak231SendBag=async function(id){
+ if(!(session&&session.role==='worker'))return alert('إرسال الكيس متاح للموزع فقط');
+ const b=(db.returnBatches||[]).find(x=>isBag(x)&&String(x.id)===String(id)&&!x.deletedAt);
+ if(!b||String(b.workerId)!==String(session.workerId))return alert('الكيس غير موجود في حسابك');
+ if(b.bagSentAt||b.bagStatus==='sent'||b.bagStatus==='received'||b.bagStatus==='owner_confirmed')return alert('تم إرسال هذا الكيس سابقاً');
+ if(b.bagStatus!=='closed'||!b.bagClosedAt)return alert('يجب إغلاق الكيس بعد تأكيد جميع طلباته قبل الإرسال');
+ const all=ids(b),packed=new Set((b.packedOrderIds||[]).map(String));
+ if(!all.length||all.some(x=>!packed.has(x)))return alert('لا يمكن إرسال كيس غير مكتمل التجهيز');
+ if(!confirm('إرسال الكيس '+(b.bagCode||b.code)+' إلى المالك؟'))return;
+ b.bagSentAt=isoNow();b.bagSentLabel=tm();b.bagStatus='sent';b.modifiedAt=b.bagSentAt;b.modifiedBy=actorName();
+ ak231WorkerTab='sent';(ak231Orders(b)||[]).forEach(o=>appendOrderHistory(o,'أرسل الموزع كيس الرجوع '+(b.bagCode||b.code)+' إلى المالك'));
+ save();renderReturnBatches();
+ if(navigator.onLine){const ok=await syncNow(true);if(ok){showToast('تم إرسال الكيس وحفظه في السحابة ✓',4200);return;}}
+ showToast('تم تسجيل الإرسال محلياً وستتم المزامنة تلقائياً',4200);
+};
+window.confirmReturnOrder=async function(batchId,orderId){
+ const b=(db.returnBatches||[]).find(x=>String(x.id)===String(batchId)&&!x.deletedAt);
+ if(!isBag(b))return oldWorkerConfirm(batchId,orderId);
+ if(!(session&&session.role==='worker'))return alert('تأكيد وضع الطلب متاح للموزع فقط');
+ if(String(b.workerId)!==String(session.workerId))return alert('هذا الكيس ليس مخصصاً لحسابك');
+ if(b.bagStatus!=='draft'||b.bagClosedAt)return alert('لا يمكن تعديل كيس مغلق');
+ const id=String(orderId);
+ if(!ids(b).includes(id))return alert('الطلب غير موجود في هذا الكيس');
+ const o=orderById(id);if(!o||o.deletedAt)return alert('الطلب غير موجود');
+ const packed=new Set((b.packedOrderIds||[]).map(String));
+ if(packed.has(id))return alert('تم تأكيد وضع هذا الطلب داخل الكيس سابقاً');
+ if(!confirm('تأكيد أنك وضعت الطلب '+(o.clientNo||o.seq||'')+' فعلياً داخل الكيس؟'))return;
+ const now=isoNow();b.packedOrderIds=[...packed,id];b.packedOrderTimes=b.packedOrderTimes||{};b.packedOrderLabels=b.packedOrderLabels||{};
+ b.packedOrderTimes[id]=now;b.packedOrderLabels[id]=tm();b.modifiedAt=now;b.modifiedBy=actorName();
+ appendOrderHistory(o,'أكد الموزع وضع الطلب داخل كيس الرجوع '+(b.bagCode||b.code));
+ save();renderReturnBatches();
+ if(navigator.onLine)await syncNow(true).catch(()=>{});
+};
+window.confirmOwnerReturnReceipt=async function(batchId){
+ const b=(db.returnBatches||[]).find(x=>String(x.id)===String(batchId)&&!x.deletedAt);
+ if(!isBag(b))return oldOwnerBag(batchId);
+ if(!((session&&session.role==='owner')||ownerMode===true))return alert('تأكيد وصول الكيس للمالك فقط');
+ if(!b.bagSentAt)return alert('لم يسجل الموزع إرسال هذا الكيس بعد');
+ if(b.bagReceivedAt)return alert('سبق تأكيد وصول هذا الكيس');
+ if(!confirm('تأكيد وصول الكيس '+(b.bagCode||b.code)+' إلى المالك؟ هذا لا يؤكد استلام الطلبات الموجودة داخله.'))return;
+ b.bagReceivedAt=isoNow();b.bagReceivedLabel=tm();b.bagStatus='received';b.modifiedAt=b.bagReceivedAt;b.modifiedBy=actorName();
+ save();renderReturnBatches();
+ if(navigator.onLine){const ok=await syncNow(true);if(ok)showToast('تم تأكيد وصول الكيس وحفظه في السحابة ✓',4200);}
+};
+window.confirmOwnerReturnOrder=async function(batchId,orderId){
+ const b=(db.returnBatches||[]).find(x=>String(x.id)===String(batchId)&&!x.deletedAt);
+ if(!isBag(b))return oldOwnerOrder(batchId,orderId);
+ if(!((session&&session.role==='owner')||ownerMode===true))return alert('تأكيد استلام الطلب للمالك فقط');
+ if(!b.bagReceivedAt)return alert('أكد وصول الكيس أولاً');
+ const id=String(orderId);if(!ids(b).includes(id))return alert('الطلب غير موجود في هذا الكيس');
+ const o=orderById(id);if(!o||o.deletedAt)return alert('الطلب غير موجود');
+ if(o.returnOwnerConfirmedAt||(b.ownerReceivedOrderIds||[]).map(String).includes(id))return alert('سبق تأكيد استلام هذا الطلب');
+ if(!confirm('تأكيد استلام الطلب '+(o.clientNo||o.seq||'')+' من الكيس؟'))return;
+ const now=isoNow();o.returnOwnerConfirmedAt=now;o.returnOwnerConfirmedLabel=tm();
+ b.ownerReceivedOrderIds=Array.from(new Set([...(b.ownerReceivedOrderIds||[]).map(String),id]));
+ const all=ids(b);if(all.length&&all.every(x=>b.ownerReceivedOrderIds.includes(x))){b.allOrdersReceivedAt=now;b.allOrdersReceivedLabel=tm();b.bagStatus='owner_confirmed';}
+ b.modifiedAt=now;b.modifiedBy=actorName();appendOrderHistory(o,'أكد المالك استلام الطلب من كيس الرجوع '+(b.bagCode||b.code));
+ save();renderReturnBatches();
+ if(navigator.onLine){const ok=await syncNow(true);if(ok)showToast('تم تأكيد استلام الطلب وحفظه في السحابة ✓',4200);}
+};
+window.ak231BagCard=function(b,isOwner){
+ const os=ak231Orders(b),packed=new Set((b.packedOrderIds||[]).map(String)),receivedIds=new Set((b.ownerReceivedOrderIds||[]).map(String));
+ const sent=!!b.bagSentAt,received=!!b.bagReceivedAt,opened=String(ak231OpenBagId)===String(b.id);
+ const rows=os.map(function(o){
+  const id=String(o.id),isPacked=packed.has(id),got=receivedIds.has(id)||!!o.returnOwnerConfirmedAt;
+  let action='';
+  if(!isOwner&&!sent&&!b.bagClosedAt&&!isPacked)action='<button class="btn g" data-bid="'+ak231Id(b.id)+'" data-oid="'+ak231Id(id)+'" onclick="confirmReturnOrder(this.dataset.bid,this.dataset.oid)">تأكيد وضع الطلب داخل الكيس</button>';
+  if(isOwner&&received&&!got)action='<button class="btn g" data-bid="'+ak231Id(b.id)+'" data-oid="'+ak231Id(id)+'" onclick="confirmOwnerReturnOrder(this.dataset.bid,this.dataset.oid)">تأكيد استلام هذا الطلب</button>';
+  const requested=o.returnRequestedAt||'',packedAt=(b.packedOrderLabels||{})[id]||(b.packedOrderTimes||{})[id]||'';
+  return '<div style="padding:10px;border-bottom:1px solid #e5e7eb"><b dir="ltr">'+htmlEscape(o.clientNo||o.seq||'—')+'</b> — '+htmlEscape(o.recipient||'—')+'<br><span dir="ltr">'+htmlEscape(o.phone||'—')+'</span> — '+cash(o.amount)+'<br>طلب الرجوع: '+htmlEscape(requested||'غير مسجل')+'<br>تأكيد وضعه في الكيس: '+htmlEscape(packedAt||'بانتظار التأكيد')+'<br>تأكيد استلام المالك: '+htmlEscape(o.returnOwnerConfirmedLabel|| (got?'مؤكد':'بانتظار التأكيد'))+'<br><span class="badge">'+(got?'استلمه المالك':isPacked?'تم وضعه في الكيس':'بانتظار وضعه في الكيس')+'</span>'+action+'</div>';
+ }).join('');
+ const allPacked=os.length>0&&os.every(o=>packed.has(String(o.id)));
+ const allGot=os.length>0&&os.every(o=>receivedIds.has(String(o.id))||!!o.returnOwnerConfirmedAt);
+ let workerActions='';
+ if(!isOwner&&!sent&&!b.bagClosedAt)workerActions=allPacked?'<button class="btn g" data-bid="'+ak231Id(b.id)+'" onclick="ak232CloseBag(this.dataset.bid)">إغلاق الكيس</button>':'<p>أكد وضع كل الطلبات داخل الكيس، ثم سيظهر خيار الإغلاق.</p>';
+ if(!isOwner&&b.bagClosedAt&&!sent)workerActions='<button class="btn g" data-bid="'+ak231Id(b.id)+'" onclick="ak231SendBag(this.dataset.bid)">إرسال الكيس إلى المالك</button>';
+ let ownerActions='';
+ if(isOwner&&sent&&!received)ownerActions='<button class="btn g" data-bid="'+ak231Id(b.id)+'" onclick="confirmOwnerReturnReceipt(this.dataset.bid)">تأكيد وصول الكيس</button>';
+ const state=allGot?'اكتمل استلام جميع الطلبات':received?'وصل الكيس — تأكيد الطلبات فردياً':sent?'أُرسل الكيس — بانتظار وصوله':b.bagClosedAt?'الكيس مغلق — جاهز للإرسال':'قيد التجهيز';
+ return '<div class="card" style="margin-top:12px;border:2px solid #d5e4ee"><h3>📦 كيس الرجوع: '+htmlEscape(b.bagCode||b.code||b.id)+'</h3><p><b>الموزع:</b> '+htmlEscape(b.workerName||'—')+'<br><b>عدد الطلبات:</b> '+os.length+'<br><b>تاريخ إنشاء الكيس:</b> '+htmlEscape(b.bagCreatedLabel||b.createdLabel||'—')+'<br><b>تاريخ إغلاق الكيس:</b> '+htmlEscape(b.bagClosedLabel||'لم يُغلق بعد')+'<br><b>تاريخ الإرسال:</b> '+htmlEscape(b.bagSentLabel||'لم يُرسل بعد')+'<br><b>تاريخ وصول الكيس:</b> '+htmlEscape(b.bagReceivedLabel||'لم يصل بعد')+'<br><b>تاريخ اكتمال استلام الطلبات:</b> '+htmlEscape(b.allOrdersReceivedLabel||'لم يكتمل بعد')+'<br><b>الحالة:</b> '+state+'</p><button class="btn" data-bid="'+ak231Id(b.id)+'" onclick="ak231PrintBagInvoice(this.dataset.bid)">🧾 فاتورة الكيس / PDF</button> <button class="btn" data-bid="'+ak231Id(b.id)+'" onclick="ak231ToggleBag(this.dataset.bid)">'+(opened?'إخفاء الطلبات':'عرض طلبات الكيس')+'</button>'+workerActions+ownerActions+(opened?'<div style="margin-top:10px">'+rows+'</div>':'')+'</div>';
+};
+window.ak231PrintBagInvoice=function(id){
+ const b=(db.returnBatches||[]).find(x=>isBag(x)&&String(x.id)===String(id)&&!x.deletedAt);if(!b)return alert('الكيس غير موجود');
+ const os=ak231Orders(b);if(!os.length)return alert('لا توجد طلبات داخل الفاتورة');
+ const total=os.reduce((n,o)=>n+(Number(o.amount)||0),0);
+ const rows=os.map(function(o,i){const oid=String(o.id),p=(b.packedOrderLabels||{})[oid]||(b.packedOrderTimes||{})[oid]||'غير مسجل';return '<tr><td>'+(i+1)+'</td><td>'+htmlEscape(o.clientNo||o.seq||'—')+'</td><td>'+htmlEscape(o.recipient||'—')+'</td><td>'+cash(o.amount)+'</td><td>'+htmlEscape(o.returnRequestedAt||'غير مسجل')+'</td><td>'+htmlEscape(p)+'</td><td>'+htmlEscape(o.returnOwnerConfirmedLabel||'بانتظار التأكيد')+'</td></tr>';}).join('');
+ const win=window.open('','_blank');if(!win)return alert('اسمح بالنوافذ المنبثقة ثم حاول مجدداً');
+ win.document.write('<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>فاتورة '+htmlEscape(b.invoiceNo||b.bagCode||b.code)+'</title><style>body{font-family:Arial,Tahoma;padding:24px;color:#111}h1{text-align:center}table{width:100%;border-collapse:collapse;margin-top:20px;font-size:12px}td,th{border:1px solid #999;padding:7px;text-align:right}.total{font-size:20px;font-weight:bold;margin-top:18px}@page{size:A4 landscape;margin:12mm}</style></head><body><h1>فاتورة كيس رجوع الطلبات</h1><p>رقم الفاتورة: '+htmlEscape(b.invoiceNo||'—')+'　 رقم الكيس: '+htmlEscape(b.bagCode||b.code||'—')+'</p><p>الموزع: '+htmlEscape(b.workerName||'—')+'　 عدد الطلبات: '+os.length+'</p><p>إنشاء الكيس: '+htmlEscape(b.bagCreatedLabel||'—')+'　 إغلاقه: '+htmlEscape(b.bagClosedLabel||'—')+'　 إرساله: '+htmlEscape(b.bagSentLabel||'—')+'　 وصوله: '+htmlEscape(b.bagReceivedLabel||'—')+'</p><table><tr><th>م</th><th>رمز الطلب</th><th>المستلم</th><th>المبلغ</th><th>طلب الرجوع</th><th>وضعه في الكيس</th><th>تأكيد المالك</th></tr>'+rows+'</table><div class="total">المجموع الإجمالي: '+cash(total)+'</div><p>تاريخ الطباعة: '+htmlEscape(tm())+'</p><script>window.onload=()=>setTimeout(()=>window.print(),300)<\/script></body></html>');
+ win.document.close();
+};
+try{document.documentElement.dataset.build='232';const h=document.querySelector('#systemHealth h2');if(h)h.textContent='🩺 صحة النظام — AK Delivery 232';}catch(_){}
+})();
+</script>
+
 </body></html>`;
  let blob=new Blob(['\ufeff',html],{type:'application/vnd.ms-excel;charset=utf-8'});
  let a=document.createElement('a');a.href=URL.createObjectURL(blob);
