@@ -10840,7 +10840,6 @@ function migrateLegacyBatchRecords(){
  if(made){save();if(navigator.onLine)syncNow(true).catch(()=>{});}
  return made;
 }
-}
 window.ak234MigrateLegacyReturnBatches=migrateLegacyBatchRecords;
 window.renderReturnBatches=function(){
  try{migrateLegacyBatchRecords();}catch(e){console.error('v234 legacy return-batch migration',e);}
