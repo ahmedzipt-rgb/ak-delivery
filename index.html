@@ -6541,6 +6541,82 @@ function exportExcel(){
 
 
 
+
+<script>
+/* AK Delivery v233: migrate old pending return requests into dated, worker-specific bags.
+   No historical packing/sending/receipt dates are fabricated; original orders and legacy batches remain intact. */
+(function(){
+'use strict';
+const priorRender=window.renderReturnBatches;
+function isOwner(){return !!((window.session&&session.role==='owner')||window.ownerMode===true);}
+function dayKey(o){
+ const raw=String(o&&o.returnRequestedAt||'').trim();
+ let m=raw.match(/(\\d{4})[-/](\\d{1,2})[-/](\\d{1,2})/);
+ if(m)return m[1]+'-'+m[2].padStart(2,'0')+'-'+m[3].padStart(2,'0');
+ m=raw.match(/(\\d{1,2})[/.\\-](\\d{1,2})[/.\\-](\\d{4})/);
+ if(m)return m[3]+'-'+m[2].padStart(2,'0')+'-'+m[1].padStart(2,'0');
+ const legacy=(db.returnBatches||[]).find(b=>b&&!b.deletedAt&&String(b.id)===String(o.returnBatchId||''));
+ const t=legacy&&(legacy.createdAt||legacy.modifiedAt);
+ if(t){const d=new Date(t);if(!isNaN(d))return d.toISOString().slice(0,10);}
+ return 'unknown-date';
+}
+function migrate(){
+ if(!isOwner()||!Array.isArray(db.orders)||!Array.isArray(db.returnBatches))return 0;
+ const existing=new Set();
+ for(const b of db.returnBatches){
+  if(b&&!b.deletedAt&&b.bagType==='worker_return_bag')
+   for(const id of (b.orderIds||[]))existing.add(String(id));
+ }
+ const groups=new Map();
+ for(const o of db.orders){
+  if(!o||o.deletedAt||o.duplicateHidden||o.status!=='طلب رجوع'||!o.worker||existing.has(String(o.id)))continue;
+  const wid=String(o.worker),day=dayKey(o),key=wid+'|'+day;
+  if(!groups.has(key))groups.set(key,[]);
+  groups.get(key).push(o);
+ }
+ let created=0;
+ for(const [key,orders] of groups){
+  const [wid,day]=key.split('|');
+  const worker=(db.workers||[]).find(w=>w&&!w.deletedAt&&String(w.id)===wid);
+  if(!worker)continue;
+  const ids=orders.map(o=>String(o.id));
+  const stable='RBAG233-'+wid.replace(/[^a-zA-Z0-9_-]/g,'_')+'-'+day.replace(/[^0-9-]/g,'');
+  if(db.returnBatches.some(b=>b&&String(b.id)===stable))continue;
+  const code='BAG-OLD-'+day.replace(/-/g,'')+'-'+String(wid).replace(/[^a-zA-Z0-9]/g,'').slice(-8);
+  const snapshot=orders.map(o=>({id:String(o.id),clientNo:o.clientNo||'',seq:o.seq||'',sender:o.sender||'',recipient:o.recipient||'',phone:o.phone||'',address:o.address||'',city:o.city||'',product:o.product||'',amount:Number(o.amount)||0,workerName:worker.name||''}));
+  const now=isoNow();
+  const bag={id:stable,code,bagCode:code,bagType:'worker_return_bag',bagStatus:'draft',
+   workerId:wid,workerName:worker.name||'—',orderIds:ids,count:ids.length,status:'pending',
+   legacyMigrated:true,legacyRequestDay:day,
+   bagCreatedLabel:'كيس تاريخي — تاريخ التجهيز الفعلي غير مسجل',
+   createdAt:now,createdLabel:'سجل ترحيل الطلبات القديمة',
+   invoiceNo:'INV-'+code,invoiceSnapshot:snapshot,
+   packedOrderIds:[],packedOrderTimes:{},packedOrderLabels:{},ownerReceivedOrderIds:[],
+   modifiedAt:now,modifiedBy:'ترحيل طلبات الرجوع القديمة v233'};
+  db.returnBatches.push(bag);
+  for(const o of orders){
+   o.returnBagId=stable;o.returnBagCode=code;
+   if(!Array.isArray(o.history))o.history=[];
+   o.history.push({time:tm(),text:'أُدرج طلب الرجوع القديم في كيس تاريخي '+code+' دون افتراض تاريخ التجهيز أو الإرسال'});
+   o.modifiedAt=now;o.modifiedBy='ترحيل طلبات الرجوع القديمة v233';
+  }
+  created++;
+ }
+ if(created){
+  save();
+  if(navigator.onLine)syncNow(true).catch(()=>{});
+ }
+ return created;
+}
+window.ak233MigrateOldReturnRequests=migrate;
+window.renderReturnBatches=function(){
+ try{migrate();}catch(e){console.error('v233 old return migration',e);}
+ return priorRender.apply(this,arguments);
+};
+try{document.documentElement.dataset.build='233';const h=document.querySelector('#systemHealth h2');if(h)h.textContent='🩺 صحة النظام — AK Delivery 233';}catch(_){}
+})();
+</script>
+
 </body></html>`;
  let blob=new Blob(['\ufeff',html],{type:'application/vnd.ms-excel;charset=utf-8'});
  let a=document.createElement('a');a.href=URL.createObjectURL(blob);
