@@ -10,8 +10,8 @@ android {
         applicationId 'com.akdelivery.app'
         minSdk 23
         targetSdk 35
-        versionCode 2
-        versionName '1.1'
+        versionCode 3
+        versionName '1.2'
     }
 
     sourceSets {
@@ -20,11 +20,18 @@ android {
 }
 
 def generateLauncherIcon = tasks.register("generateLauncherIcon") {
-    def outputFile = file("$buildDir/generated/launcher-res/mipmap-nodpi/ic_launcher.webp")
+    def outputFile = file("$buildDir/generated/launcher-res/mipmap-anydpi/ic_launcher.xml")
     outputs.file(outputFile)
     doLast {
         outputFile.parentFile.mkdirs()
-        outputFile.bytes = file("../launcher-icon.webp.b64").text.trim().decodeBase64()
+        outputFile.text = '''<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="48dp" android:height="48dp"
+    android:viewportWidth="192" android:viewportHeight="192">
+    <path android:fillColor="#175d79" android:pathData="M42,0h108a42,42 0,0 1,42 42v108a42,42 0,0 1,-42 42h-108a42,42 0,0 1,-42 -42v-108a42,42 0,0 1,42 -42z"/>
+    <path android:fillColor="#00000000" android:strokeColor="#ffffff" android:strokeWidth="9" android:strokeLineJoin="round" android:pathData="M43,76 L96,48 L149,76 L149,132 L96,160 L43,132 Z M43,76 L96,105 L149,76 M96,105 L96,160"/>
+    <path android:fillColor="#00000000" android:strokeColor="#f4c95d" android:strokeWidth="10" android:strokeLineCap="round" android:strokeLineJoin="round" android:pathData="M77,112 L90,125 L117,96"/>
+</vector>'''
     }
 }
 
